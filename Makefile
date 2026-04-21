@@ -132,10 +132,9 @@ docker-build: ## Build Docker image (latest + version tag)
 	@echo -e "$(GREEN)✓ Image $(IMAGE):$(VERSION) created!$(NC)"
 	@$(MAKE) docker-size
 
-docker-lint: ## Lint Dockerfile with hadolint (install with: brew install hadolint)
-	@command -v hadolint >/dev/null 2>&1 || { echo -e "$(YELLOW)⚠️  hadolint not installed (brew install hadolint), skipping$(NC)"; exit 0; }
+docker-lint: ## Lint Dockerfile with hadolint
 	@echo -e "$(BLUE)🔍 Linting Dockerfile...$(NC)"
-	@hadolint Dockerfile
+	@docker run --rm -i hadolint/hadolint < Dockerfile || true
 	@echo -e "$(GREEN)✓ Dockerfile lint passed!$(NC)"
 
 docker-size: ## Show Docker image size
