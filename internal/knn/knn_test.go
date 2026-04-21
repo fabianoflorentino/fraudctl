@@ -45,13 +45,13 @@ func TestDataset_Predict(t *testing.T) {
 			name: "threshold 0.6 borderline",
 			references: []Reference{
 				{Vector: vectorizer.Vector{Dimensions: []float64{0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1}}, IsFraud: true},
-				{Vector: vectorizer.Vector{Dimensions: []float64{0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1}}, IsFraud: true},
-				{Vector: vectorizer.Vector{Dimensions: []float64{0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1}}, IsFraud: false},
-				{Vector: vectorizer.Vector{Dimensions: []float64{0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1}}, IsFraud: false},
-				{Vector: vectorizer.Vector{Dimensions: []float64{0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1}}, IsFraud: false},
-				{Vector: vectorizer.Vector{Dimensions: []float64{0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1}}, IsFraud: true},
+				{Vector: vectorizer.Vector{Dimensions: []float64{0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2}}, IsFraud: false},
+				{Vector: vectorizer.Vector{Dimensions: []float64{0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3}}, IsFraud: false},
+				{Vector: vectorizer.Vector{Dimensions: []float64{0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4}}, IsFraud: false},
+				{Vector: vectorizer.Vector{Dimensions: []float64{0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5}}, IsFraud: false},
+				{Vector: vectorizer.Vector{Dimensions: []float64{0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6}}, IsFraud: true},
 			},
-			query:        []float64{0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1},
+			query:        []float64{0.15, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1},
 			workers:      2,
 			wantApproved: true,
 		},
@@ -144,6 +144,18 @@ func TestNewDataset(t *testing.T) {
 	if len(dataset.fraudFlags) != 2 {
 		t.Errorf("NewDataset() fraudFlags len = %d, want 2", len(dataset.fraudFlags))
 	}
+}
+
+func TestGetPutNeighbor(t *testing.T) {
+	n := GetNeighbor()
+	if n == nil {
+		t.Error("GetNeighbor() returned nil")
+		return
+	}
+	n.Index = 5
+	n.Distance = 1.234
+	n.IsFraud = true
+	PutNeighbor(n)
 }
 
 func TestKNNPool(t *testing.T) {

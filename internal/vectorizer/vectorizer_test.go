@@ -117,6 +117,14 @@ func TestClamp(t *testing.T) {
 	}
 }
 
+func TestGetPutVectorF32(t *testing.T) {
+	v := GetVectorF32()
+	if v == nil {
+		t.Error("GetVectorF32() returned nil")
+	}
+	PutVectorF32(v)
+}
+
 func TestPool_GetPut(t *testing.T) {
 	vec := GetVector()
 	if len(vec) != VectorSize {
@@ -161,6 +169,50 @@ func TestVectorToF32(t *testing.T) {
 		if diff > 0.001 {
 			t.Errorf("VectorToF32() dim[%d] = %v, want ~%v", i, got, want)
 		}
+	}
+}
+
+func TestClampFloat32(t *testing.T) {
+	tests := []struct {
+		name string
+		val  float32
+		want float32
+	}{
+		{"within range", 0.5, 0.5},
+		{"below zero", -0.5, 0},
+		{"above one", 1.5, 1},
+		{"exactly zero", 0, 0},
+		{"exactly one", 1, 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := clampFloat32(tt.val); got != tt.want {
+				t.Errorf("clampFloat32(%v) = %v, want %v", tt.val, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseTimestamp(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		valid bool
+	}{
+		{"valid RFC3339", "2026-03-11T20:23:35Z", true},
+		{"valid with timezone", "2026-03-11T15:23:35-05:00", true},
+		{"invalid format", "2026-03-11", false},
+		{"empty string", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseTimestamp(tt.input)
+			if tt.valid && got.IsZero() {
+				t.Errorf("ParseTimestamp(%q) = zero, want valid time", tt.input)
+			}
+		})
 	}
 }
 
