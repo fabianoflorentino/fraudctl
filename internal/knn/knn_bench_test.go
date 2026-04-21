@@ -11,18 +11,18 @@ import (
 
 func generateTestDataset(size int, numWorkers int) *Dataset {
 	references := make([]Reference, size)
-	rand.Seed(42)
+	r := rand.New(rand.NewSource(42))
 
 	for i := 0; i < size; i++ {
 		vec := vectorizer.Vector{
 			Dimensions: make([]float64, 14),
 		}
 		for j := 0; j < 14; j++ {
-			vec.Dimensions[j] = rand.Float64()
+			vec.Dimensions[j] = r.Float64()
 		}
 		references[i] = Reference{
 			Vector:  vec,
-			IsFraud: rand.Float64() > 0.7,
+			IsFraud: r.Float64() > 0.7,
 		}
 	}
 
@@ -90,9 +90,10 @@ func BenchmarkKNN_WorkerScaling(b *testing.B) {
 func BenchmarkEuclideanDistance(b *testing.B) {
 	a := make([]float64, 14)
 	bVec := make([]float64, 14)
+	r := rand.New(rand.NewSource(42))
 	for i := range a {
-		a[i] = rand.Float64()
-		bVec[i] = rand.Float64()
+		a[i] = r.Float64()
+		bVec[i] = r.Float64()
 	}
 
 	b.ResetTimer()
@@ -103,12 +104,12 @@ func BenchmarkEuclideanDistance(b *testing.B) {
 
 func BenchmarkTopK(b *testing.B) {
 	results := make([]distanceResult, 100000)
-	rand.Seed(42)
+	r := rand.New(rand.NewSource(42))
 	for i := range results {
 		results[i] = distanceResult{
 			index:    i,
-			distance: rand.Float64(),
-			isFraud:  rand.Float64() > 0.7,
+			distance: r.Float64(),
+			isFraud:  r.Float64() > 0.7,
 		}
 	}
 
@@ -166,9 +167,10 @@ func BenchmarkMathSqrt(b *testing.B) {
 func BenchmarkEuclideanSquared(b *testing.B) {
 	a := make([]float64, 14)
 	bVec := make([]float64, 14)
+	r := rand.New(rand.NewSource(42))
 	for i := range a {
-		a[i] = rand.Float64()
-		bVec[i] = rand.Float64()
+		a[i] = r.Float64()
+		bVec[i] = r.Float64()
 	}
 
 	b.ResetTimer()

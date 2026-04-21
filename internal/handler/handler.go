@@ -67,7 +67,7 @@ func Adapt(h HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := h(NewResponseWriterAdapter(w), r); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			io.WriteString(w, err.Error())
+			_, _ = io.WriteString(w, err.Error())
 		}
 	}
 }

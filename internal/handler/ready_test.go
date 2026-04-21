@@ -75,7 +75,7 @@ func TestResponseWriterAdapter(t *testing.T) {
 		adapter := NewResponseWriterAdapter(w)
 
 		adapter.WriteHeader(http.StatusOK)
-		adapter.Write([]byte("test"))
+		_, _ = adapter.Write([]byte("test"))
 
 		if w.Code != http.StatusOK {
 			t.Errorf("WriteHeader() status = %v, want %v", w.Code, http.StatusOK)
@@ -94,7 +94,7 @@ func TestAdapt(t *testing.T) {
 
 		handler := Adapt(func(w ResponseWriter, r *http.Request) error {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("adapted"))
+			_, _ = w.Write([]byte("adapted"))
 			return nil
 		})
 
@@ -130,7 +130,7 @@ func TestRouter(t *testing.T) {
 		router := NewRouter()
 		router.Handle("/test", func(w ResponseWriter, r *http.Request) error {
 			w.WriteHeader(http.StatusCreated)
-			w.Write([]byte("created"))
+			_, _ = w.Write([]byte("created"))
 			return nil
 		})
 

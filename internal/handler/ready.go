@@ -12,6 +12,6 @@ import "net/http"
 // to check if the service is healthy.
 func Ready(w ResponseWriter, r *http.Request) error {
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("OK"))
+	_, _ = w.Write([]byte("OK"))
 	return nil
 }

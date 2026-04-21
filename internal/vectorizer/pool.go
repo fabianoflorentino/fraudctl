@@ -25,7 +25,10 @@ func GetVector() []float64 {
 
 // PutVector returns a vector to the pool for reuse.
 func PutVector(vec []float64) {
-	vectorPool.Put(vec[:VectorSize])
+	// sync.Pool stores interface{} which boxes the slice header but reuses
+	// the underlying array. SA6002 is a theoretical warning about potential
+	// allocations, but for fixed-size buffers this is idiomatic and efficient.
+	vectorPool.Put(vec[:VectorSize]) //nolint:staticcheck
 }
 
 // VectorF32 is a fixed-size vector using float32 for lower memory usage.
