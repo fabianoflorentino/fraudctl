@@ -17,6 +17,39 @@ Idiomatic Go patterns and best practices for building robust, efficient, and mai
 
 ## Core Principles
 
+### 0. SOLID (First)
+
+SOLID is the foundation. Apply these before any other pattern:
+
+**S — Single Responsibility Principle**
+- Each type/function has one reason to change
+- Handlers handle HTTP, services handle business logic, repositories handle data access
+
+**O — Open/Closed Principle**
+- Open for extension, closed for modification
+- Use interfaces to add behavior without changing existing code
+
+**L — Liskov Substitution Principle**
+- Subtypes must be substitutable for their base types
+- Don't tighten input types or loosen output types
+
+**I — Interface Segregation Principle**
+- Prefer small, focused interfaces
+- `io.Reader`, `io.Writer` (1 method) vs `io.ReadWriter` (composed)
+
+**D — Dependency Inversion Principle**
+- Depend on abstractions, not concretions
+- Functions accept interfaces, return concrete types
+
+```go
+// ✅ Good: Depends on interface (DIP)
+type Handler func(w ResponseWriter, r *http.Request) error
+func Adapt(h Handler) http.HandlerFunc { ... }
+
+// ❌ Bad: Depends on concrete type
+func Ready(w http.ResponseWriter, r *http.Request) { ... }
+```
+
 ### 1. Simplicity and Clarity
 
 Go favors simplicity over cleverness. Code should be obvious and easy to read.
@@ -626,6 +659,7 @@ issues:
 
 | Idiom | Description |
 |-------|-------------|
+| **SOLID first** | S.O.L.I.D. principles are the foundation |
 | Accept interfaces, return structs | Functions accept interface params, return concrete types |
 | Errors are values | Treat errors as first-class values, not exceptions |
 | Don't communicate by sharing memory | Use channels for coordination between goroutines |
@@ -634,6 +668,9 @@ issues:
 | Clear is better than clever | Prioritize readability over cleverness |
 | gofmt is no one's favorite but everyone's friend | Always format with gofmt/goimports |
 | Return early | Handle errors first, keep happy path unindented |
+| Preallocate slices | Use `make([]T, 0, len(input))` when size known |
+| sync.Pool for hot paths | Reuse objects in high-frequency code paths |
+| Benchmark to validate | Measure before optimizing |
 
 ## Anti-Patterns to Avoid
 

@@ -385,80 +385,6 @@ func TestUserService(t *testing.T) {
 }
 ```
 
-## Benchmarks
-
-### Basic Benchmarks
-
-```go
-func BenchmarkProcess(b *testing.B) {
-    data := generateTestData(1000)
-    b.ResetTimer() // Don't count setup time
-
-    for i := 0; i < b.N; i++ {
-        Process(data)
-    }
-}
-
-// Run: go test -bench=BenchmarkProcess -benchmem
-// Output: BenchmarkProcess-8   10000   105234 ns/op   4096 B/op   10 allocs/op
-```
-
-### Benchmark with Different Sizes
-
-```go
-func BenchmarkSort(b *testing.B) {
-    sizes := []int{100, 1000, 10000, 100000}
-
-    for _, size := range sizes {
-        b.Run(fmt.Sprintf("size=%d", size), func(b *testing.B) {
-            data := generateRandomSlice(size)
-            b.ResetTimer()
-
-            for i := 0; i < b.N; i++ {
-                // Make a copy to avoid sorting already sorted data
-                tmp := make([]int, len(data))
-                copy(tmp, data)
-                sort.Ints(tmp)
-            }
-        })
-    }
-}
-```
-
-### Memory Allocation Benchmarks
-
-```go
-func BenchmarkStringConcat(b *testing.B) {
-    parts := []string{"hello", "world", "foo", "bar", "baz"}
-
-    b.Run("plus", func(b *testing.B) {
-        for i := 0; i < b.N; i++ {
-            var s string
-            for _, p := range parts {
-                s += p
-            }
-            _ = s
-        }
-    })
-
-    b.Run("builder", func(b *testing.B) {
-        for i := 0; i < b.N; i++ {
-            var sb strings.Builder
-            for _, p := range parts {
-                sb.WriteString(p)
-            }
-            _ = sb.String()
-        }
-    })
-
-    b.Run("join", func(b *testing.B) {
-        for i := 0; i < b.N; i++ {
-            _ = strings.Join(parts, "")
-        }
-    })
-}
-```
-
 ## Fuzzing (Go 1.18+)
 
 ### Basic Fuzz Test
@@ -518,6 +444,76 @@ func FuzzCompare(f *testing.F) {
     })
 }
 ```
+
+## Benchmarking
+
+### Basic Benchmarks
+
+```go
+func BenchmarkProcess(b *testing.B) {
+    data := generateTestData(1000)
+    b.ResetTimer() // Don't count setup time
+
+    for i := 0; i < b.N; i++ {
+        Process(data)
+    }
+}
+
+// Run: go test -bench=BenchmarkProcess -benchmem
+// Output: BenchmarkProcess-8   10000   105234 ns/op   4096 B/op   10 allocs/op
+```
+
+### Benchmark with Different Sizes
+
+```go
+func BenchmarkSort(b *testing.B) {
+    sizes := []int{100, 1000, 10000, 100000}
+
+    for _, size := range sizes {
+        b.Run(fmt.Sprintf("size=%d", size), func(b *testing.B) {
+            data := generateRandomSlice(size)
+            b.ResetTimer()
+
+            for i := 0; i < b.N; i++ {
+                tmp := make([]int, len(data))
+                copy(tmp, data)
+                sort.Ints(tmp)
+            }
+        })
+    }
+}
+```
+
+### Benchmarking Commands
+
+```bash
+# Run benchmarks
+go test -bench=. -benchmem ./...
+
+# Run specific benchmark
+go test -bench=BenchmarkProcess -benchmem
+
+# Run with CPU profile
+go test -bench=. -cpuprofile=cpu.out
+go tool pprof cpu.out
+
+# Run parallel benchmarks
+go test -bench=. -benchtime=5s -count=3
+```
+
+### Performance Targets (Example: Rinha Backend)
+
+For latency-sensitive applications:
+
+| Metric | Target | Notes |
+|--------|--------|-------|
+| p99 latency | < 10ms | Target from Rinha 2026 |
+| Memory | < 350MB | Container limit |
+| CPU | < 1 core | Shared across services |
+
+**Rule:** Measure first, optimize only if needed.
+
+---
 
 ## Test Coverage
 
@@ -678,6 +674,118 @@ go test -fuzz=FuzzParse -fuzztime=30s ./...
 go test -count=10 ./...
 ```
 
+## Benchmarking
+
+### Basic Benchmarks
+
+```go
+func BenchmarkProcess(b *testing.B) {
+    data := generateTestData(1000)
+    b.ResetTimer() // Don't count setup time
+
+    for i := 0; i < b.N; i++ {
+        Process(data)
+    }
+}
+
+// Run: go test -bench=BenchmarkProcess -benchmem
+// Output: BenchmarkProcess-8   10000   105234 ns/op   4096 B/op   10 allocs/op
+```
+
+### Benchmark with Different Sizes
+
+```go
+func BenchmarkSort(b *testing.B) {
+    sizes := []int{100, 1000, 10000, 100000}
+
+    for _, size := range sizes {
+        b.Run(fmt.Sprintf("size=%d", size), func(b *testing.B) {
+            data := generateRandomSlice(size)
+            b.ResetTimer()
+
+            for i := 0; i < b.N; i++ {
+                // Make a copy to avoid sorting already sorted data
+                tmp := make([]int, len(data))
+                copy(tmp, data)
+                sort.Ints(tmp)
+            }
+        })
+    }
+}
+```
+
+### Memory Allocation Benchmarks
+
+```go
+func BenchmarkStringConcat(b *testing.B) {
+    parts := []string{"hello", "world", "foo", "bar", "baz"}
+
+    b.Run("plus", func(b *testing.B) {
+        for i := 0; i < b.N; i++ {
+            var s string
+            for _, p := range parts {
+                s += p
+            }
+            _ = s
+        }
+    })
+
+    b.Run("builder", func(b *testing.B) {
+        for i := 0; i < b.N; i++ {
+            var sb strings.Builder
+            for _, p := range parts {
+                sb.WriteString(p)
+            }
+            _ = sb.String()
+        }
+    })
+
+    b.Run("join", func(b *testing.B) {
+        for i := 0; i < b.N; i++ {
+            _ = strings.Join(parts, ",")
+        }
+    })
+}
+```
+
+### Benchmarking Commands
+
+```bash
+# Run benchmarks
+go test -bench=. -benchmem ./...
+
+# Run specific benchmark
+go test -bench=BenchmarkProcess -benchmem
+
+# Run benchmarks with CPU profile
+go test -bench=. -cpuprofile=cpu.out
+go tool pprof cpu.out
+
+# Run benchmarks with memory profile
+go test -bench=. -memprofile=mem.out
+go tool pprof mem.out
+
+# Run parallel benchmarks
+go test -bench=. -benchtime=5s -count=3
+
+# Compare benchmarks
+benchcmp old.txt new.txt
+```
+
+### Performance Targets (Rinha Example)
+
+For latency-sensitive applications:
+
+| Metric | Target | Notes |
+|--------|--------|-------|
+| p99 latency | < 10ms | Target from Rinha 2026 |
+| Memory | < 350MB | Total container limit |
+| CPU | < 1 core | Shared across services |
+
+**Rule:** Measure first, optimize only if needed. Profile before guessing.
+
+---
+
 ## Best Practices
 
 **DO:**
@@ -688,6 +796,7 @@ go test -count=10 ./...
 - Use `t.Parallel()` for independent tests
 - Clean up resources with `t.Cleanup()`
 - Use meaningful test names that describe the scenario
+- Use interfaces to enable mocking (DIP)
 
 **DON'T:**
 - Test private functions directly (test through public API)
@@ -695,6 +804,7 @@ go test -count=10 ./...
 - Ignore flaky tests (fix or remove them)
 - Mock everything (prefer integration tests when possible)
 - Skip error path testing
+- Depend on concrete types in handlers (violates DIP)
 
 ## Integration with CI/CD
 
