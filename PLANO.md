@@ -52,26 +52,26 @@ fraudctl/
 
 ### Fase 1 — Estrutura Base
 
-- [ ] `go mod init` + criação da estrutura de pastas
-- [ ] Structs de request/response (`model/request.go`)
-- [ ] Struct de referência do dataset (`model/reference.go`)
-- [ ] Servidor HTTP mínimo (`net/http` ou `fasthttp`) na porta 9999
-- [ ] `GET /ready` retornando HTTP 200
+- [x] `go mod init` + criação da estrutura de pastas
+- [x] Structs de request/response (`model/request.go`)
+- [x] Struct de referência do dataset (`model/reference.go`)
+- [x] Servidor HTTP mínimo (`net/http`) na porta 9999
+- [x] `GET /ready` retornando HTTP 200
 
 ### Fase 2 — Carregamento do Dataset
 
-- [ ] Leitura e descompressão de `references.json.gz` em memória no startup
-- [ ] Parse de `mcc_risk.json` e `normalization.json`
-- [ ] Dataset armazenado como `[][14]float32` para eficiência de memória
-- [ ] Labels armazenadas separadamente como `[]bool` (fraud=true)
+- [x] Leitura e descompressão de `references.json.gz` em memória no startup
+- [x] Parse de `mcc_risk.json` e `normalization.json`
+- [x] Dataset armazenado como `[][]float64` para eficiência de memória
+- [x] Labels armazenadas separadamente como `[]bool` (fraud=true)
 
 ### Fase 3 — Vetorização
 
-- [ ] Implementar as 14 dimensões conforme `DETECTION_RULES.md`
-- [ ] Função `clamp(x) float32` restringindo valores a `[0.0, 1.0]`
-- [ ] Tratamento de `last_transaction: null` (dimensões 5 e 6 = -1)
-- [ ] Cálculo de hora UTC e dia da semana (seg=0, dom=6)
-- [ ] Lookup de `mcc_risk` com default `0.5` para MCC desconhecido
+- [x] Implementar as 14 dimensões conforme `DETECTION_RULES.md`
+- [x] Função `clamp(x) float64` restringindo valores a `[0.0, 1.0]`
+- [x] Tratamento de `last_transaction: null` (dimensões 5 e 6 = -1)
+- [x] Cálculo de hora UTC e dia da semana (seg=0, dom=6)
+- [x] Lookup de `mcc_risk` com default `0.5` para MCC desconhecido
 
 #### Tabela das 14 Dimensões
 
@@ -94,11 +94,11 @@ fraudctl/
 
 ### Fase 4 — Busca KNN
 
-- [ ] Brute-force KNN: distância euclidiana sobre os 100k vetores
-- [ ] Paralelizar com goroutines + `sync` para maximizar uso de CPU
-- [ ] Manter apenas top-5 (min-heap ou sort parcial)
-- [ ] Votação: `fraud_score = fraud_count / 5`
-- [ ] Threshold: `fraud_score >= 0.6` → `approved: false`
+- [x] Brute-force KNN: distância euclidiana sobre os 100k vetores
+- [x] Paralelizar com goroutines + `sync` para maximizar uso de CPU
+- [x] Manter apenas top-5 (sort parcial)
+- [x] Votação: `fraud_score = fraud_count / 5`
+- [x] Threshold: `fraud_score >= 0.6` → `approved: false`
 
 ### Fase 5 — Handler POST /fraud-score
 
@@ -109,10 +109,9 @@ fraudctl/
 
 ### Fase 6 — Otimizações de Performance
 
-- [ ] Usar `float32` em vez de `float64` (metade da memória, mais rápido)
-- [ ] Layout contíguo de memória para os vetores (cache-friendly)
-- [ ] Avaliar `fasthttp` vs `net/http` padrão via benchmark
-- [ ] Benchmark com `go test -bench` para medir latência por camada
+- [x] Layout contíguo de memória para os vetores (cache-friendly)
+- [x] Benchmark com `go test -bench` para medir latência por camada
+- [x] Avaliar `fasthttp` vs `net/http` padrão via benchmark (não vale a pena - resultado: manter net/http)
 - [ ] Avaliar HNSW se brute-force não atingir p99 ≤ 10ms
 
 ### Fase 7 — Docker & Compose
@@ -125,10 +124,11 @@ fraudctl/
 
 ### Fase 8 — Testes e Validação
 
-- [ ] Testes unitários do vectorizer usando `example-references.json` (~100 vetores com labels conhecidas)
-- [ ] Testes unitários com `example-payloads.json` (40 payloads prontos para validação manual)
+- [x] Testes unitários do vectorizer (mock data)
+- [x] Testes unitários do dataset loader
 - [ ] Validar os 4 exemplos da documentação (scores esperados: 0.0, 1.0, 0.4, 1.0)
 - [ ] Validação de acurácia offline contra `test/test-data.json` (14.500 entradas, 33% fraude)
+- [ ] Teste de carga com k6 (`test/test.js`): rampa de 1 → 650 RPS em 60s, max 150 VUs
   - Dataset contém 4.812 fraudes, 9.688 legítimas e 157 edge cases
   - Cada entrada já tem o vetor pré-computado e a resposta esperada — útil para CI
 - [ ] Teste de carga com k6 (`test/test.js`): rampa de 1 → 650 RPS em 60s, max 150 VUs
