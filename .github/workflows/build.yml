@@ -1,0 +1,48 @@
+name: Build
+
+on:
+  workflow_call:
+    inputs:
+      run_tests:
+        description: 'Run tests during the build job'
+        required: false
+        type: boolean
+        default: true
+      dry_run:
+        description: 'Dry-run (skip publishing actions)'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build binary and (optionally) run tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run tests
+        if: ${{ inputs.run_tests }}
+        run: |
+          go test -race -timeout 120s ./... -v -cover
+
+      - name: Build binary
+        run: |
+          CGO_ENABLED=0 go build -ldflags="-s -w" -o fraudctl .
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fraudctl-linux-amd64
+          path: fraudctl
+          retention-days: 7
