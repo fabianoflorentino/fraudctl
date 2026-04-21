@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	resourcesPath = flag.String("resources", "./rinha2026/resources", "Path to resources directory")
+	resourcesPath = flag.String("resources", "./resources", "Path to resources directory")
 	port        = flag.Int("port", 9999, "Server port")
 )
 

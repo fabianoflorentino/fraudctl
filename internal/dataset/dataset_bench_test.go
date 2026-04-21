@@ -93,7 +93,7 @@ func BenchmarkDataset_FraudCount(b *testing.B) {
 
 func BenchmarkLoadNormalization(b *testing.B) {
 	loader := NewLoader("")
-	path := "../../rinha2026/resources/normalization.json"
+	path := "../../resources/normalization.json"
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -103,7 +103,7 @@ func BenchmarkLoadNormalization(b *testing.B) {
 
 func BenchmarkLoadMCCRisk(b *testing.B) {
 	loader := NewLoader("")
-	path := "../../rinha2026/resources/mcc_risk.json"
+	path := "../../resources/mcc_risk.json"
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

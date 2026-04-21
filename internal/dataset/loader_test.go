@@ -17,7 +17,7 @@ func TestLoader_LoadNormalization(t *testing.T) {
 	}{
 		{
 			name: "valid normalization file",
-			path: "../../rinha2026/resources/normalization.json",
+			path: "../../resources/normalization.json",
 			want: model.NormalizationConstants{
 				MaxAmount:            10000,
 				MaxInstallments:      12,
@@ -96,7 +96,7 @@ func TestLoader_LoadMCCRisk(t *testing.T) {
 	}{
 		{
 			name:    "valid mcc risk file",
-			path:    "../../rinha2026/resources/mcc_risk.json",
+			path:    "../../resources/mcc_risk.json",
 			wantErr: false,
 			check: func(t *testing.T, got model.MCCRisk) {
 				if got.Get("5411") != 0.15 {
@@ -150,7 +150,7 @@ func TestLoader_LoadReferences(t *testing.T) {
 	}{
 		{
 			name:    "valid gz file",
-			path:    "../../rinha2026/resources/references.json.gz",
+			path:    "../../resources/references.json.gz",
 			wantErr: false,
 			check: func(t *testing.T, got int) {
 				if got != 100000 {
@@ -198,7 +198,7 @@ func TestLoader_LoadAll(t *testing.T) {
 	}{
 		{
 			name:    "full load",
-			path:    "../../rinha2026/resources",
+			path:    "../../resources",
 			wantErr: false,
 			check: func(t *testing.T, ds *Dataset) {
 				if ds.Count() != 100000 {
@@ -252,9 +252,9 @@ func TestLoader_WithBasePath(t *testing.T) {
 	}{
 		{
 			name:     "default path",
-			basePath: "./rinha2026/resources",
+			basePath: "./resources/resources",
 			resource: "",
-			want:     "./rinha2026/resources/normalization.json",
+			want:     "./resources/resources/normalization.json",
 		},
 		{
 			name:     "custom path",
