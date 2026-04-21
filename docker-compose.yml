@@ -26,7 +26,7 @@ services:
           cpus: '0.1'
           memory: 50M
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9999/ready"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9999/ready"]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -51,7 +51,7 @@ services:
           cpus: '0.1'
           memory: 50M
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9999/ready"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9999/ready"]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -65,7 +65,7 @@ services:
     ports:
       - "9999:9999"
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./config/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       api-1:
         condition: service_healthy

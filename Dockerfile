@@ -15,8 +15,10 @@ COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o fraudctl ./cmd/api
 
-# Runtime stage (distroless - ~2 MB)
-FROM gcr.io/distroless/static-debian12:nonroot
+# Runtime stage (alpine with wget for healthcheck)
+FROM alpine:3.23
+
+RUN apk add --no-cache wget
 
 COPY --from=builder /build/fraudctl /fraudctl
 COPY --from=builder /build/resources /resources
