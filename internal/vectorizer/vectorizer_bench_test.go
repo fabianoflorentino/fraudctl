@@ -31,13 +31,13 @@ func BenchmarkVectorize(b *testing.B) {
 		},
 		Customer: model.CustomerData{
 			AvgAmount:      769.76,
-			TxCount24h:    3,
+			TxCount24h:     3,
 			KnownMerchants: []string{"MERC-009", "MERC-001"},
 		},
 		Merchant: model.MerchantData{
-			ID:          "MERC-001",
-			MCC:         "5912",
-			AvgAmount:   298.95,
+			ID:        "MERC-001",
+			MCC:       "5912",
+			AvgAmount: 298.95,
 		},
 		Terminal: model.TerminalData{
 			IsOnline:    false,
@@ -45,8 +45,8 @@ func BenchmarkVectorize(b *testing.B) {
 			KmFromHome:  13.7090520965,
 		},
 		LastTx: &model.LastTransactionData{
-			Timestamp:      "2026-03-11T14:58:35Z",
-			KmFromCurrent:  18.8626479774,
+			Timestamp:     "2026-03-11T14:58:35Z",
+			KmFromCurrent: 18.8626479774,
 		},
 	}
 
@@ -77,14 +77,14 @@ func BenchmarkVectorizeParallel(b *testing.B) {
 			RequestedAt:  "2026-03-11T20:23:35Z",
 		},
 		Customer: model.CustomerData{
-			AvgAmount:     100,
-			TxCount24h:   1,
+			AvgAmount:      100,
+			TxCount24h:     1,
 			KnownMerchants: []string{"MERC-001"},
 		},
 		Merchant: model.MerchantData{
-			ID:          "MERC-001",
-			MCC:         "5411",
-			AvgAmount:   100,
+			ID:        "MERC-001",
+			MCC:       "5411",
+			AvgAmount: 100,
 		},
 		Terminal: model.TerminalData{
 			IsOnline:    false,

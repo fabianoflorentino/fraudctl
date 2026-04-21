@@ -1,8 +1,8 @@
 package knn
 
 import (
-	"fraudctl/internal/vectorizer"
 	"fmt"
+	"fraudctl/internal/vectorizer"
 	"math"
 	"math/rand"
 	"sync"

@@ -34,7 +34,7 @@ import "time"
 //   - Terminal: Terminal information (online/offline, card present, location)
 //   - LastTx: Previous transaction data (optional, may be nil)
 type FraudScoreRequest struct {
-	ID          string              `json:"id"`
+	ID          string               `json:"id"`
 	Transaction TransactionData      `json:"transaction"`
 	Customer    CustomerData         `json:"customer"`
 	Merchant    MerchantData         `json:"merchant"`
@@ -44,36 +44,36 @@ type FraudScoreRequest struct {
 
 // TransactionData contains the transaction details.
 type TransactionData struct {
-	Amount      float64   `json:"amount"`
+	Amount       float64 `json:"amount"`
 	Installments int     `json:"installments"`
-	RequestedAt string   `json:"requested_at"`
+	RequestedAt  string  `json:"requested_at"`
 }
 
 // CustomerData contains cardholder information for fraud analysis.
 type CustomerData struct {
-	AvgAmount    float64   `json:"avg_amount"`
-	TxCount24h  int       `json:"tx_count_24h"`
+	AvgAmount      float64  `json:"avg_amount"`
+	TxCount24h     int      `json:"tx_count_24h"`
 	KnownMerchants []string `json:"known_merchants"`
 }
 
 // MerchantData contains merchant identification and category.
 type MerchantData struct {
-	ID          string  `json:"id"`
-	MCC         string  `json:"mcc"`
-	AvgAmount   float64 `json:"avg_amount"`
+	ID        string  `json:"id"`
+	MCC       string  `json:"mcc"`
+	AvgAmount float64 `json:"avg_amount"`
 }
 
 // TerminalData contains terminal/capture device information.
 type TerminalData struct {
 	IsOnline    bool    `json:"is_online"`
-	CardPresent bool   `json:"card_present"`
-	KmFromHome float64 `json:"km_from_home"`
+	CardPresent bool    `json:"card_present"`
+	KmFromHome  float64 `json:"km_from_home"`
 }
 
 // LastTransactionData contains the previous transaction for velocity checks.
 // This field is optional and may be nil.
 type LastTransactionData struct {
-	Timestamp      string  `json:"timestamp"`
+	Timestamp     string  `json:"timestamp"`
 	KmFromCurrent float64 `json:"km_from_current"`
 }
 

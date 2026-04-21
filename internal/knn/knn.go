@@ -39,7 +39,7 @@ const K = 5
 
 // Reference represents a labeled reference vector for KNN.
 type Reference struct {
-	Vector vectorizer.Vector
+	Vector  vectorizer.Vector
 	IsFraud bool
 }
 
@@ -109,7 +109,7 @@ type neighbor struct {
 type distanceResult struct {
 	index    int
 	distance float64
-	isFraud bool
+	isFraud  bool
 }
 
 // findKNearest finds the K nearest neighbors using parallel brute-force.

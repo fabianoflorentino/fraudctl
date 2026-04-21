@@ -70,14 +70,14 @@ func TestLastTransactionData_TimestampTime(t *testing.T) {
 		},
 		{
 			name:    "invalid format",
-			ts:     "invalid",
-			want:   time.Time{},
+			ts:      "invalid",
+			want:    time.Time{},
 			wantErr: true,
 		},
 		{
 			name:    "empty string",
-			ts:     "",
-			want:   time.Time{},
+			ts:      "",
+			want:    time.Time{},
 			wantErr: true,
 		},
 	}

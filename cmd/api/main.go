@@ -11,7 +11,7 @@ import (
 
 var (
 	resourcesPath = flag.String("resources", "./resources", "Path to resources directory")
-	port        = flag.Int("port", 9999, "Server port")
+	port          = flag.Int("port", 9999, "Server port")
 )
 
 func main() {

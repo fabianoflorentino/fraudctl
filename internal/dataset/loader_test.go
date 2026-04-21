@@ -25,7 +25,7 @@ func TestLoader_LoadNormalization(t *testing.T) {
 				MaxMinutes:           1440,
 				MaxKm:                1000,
 				MaxTxCount24h:        20,
-				MaxMerchantAvgAmount:  10000,
+				MaxMerchantAvgAmount: 10000,
 			},
 			wantErr: false,
 		},

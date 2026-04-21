@@ -112,6 +112,7 @@ func (l *Loader) LoadMCCRisk(path string) (model.MCCRisk, error) {
 // If path is empty, it uses the basePath from the Loader.
 //
 // The file is expected to be in the format:
+//
 //	[
 //	  {"vector": [0.1, 0.2, ...], "label": "fraud"},
 //	  {"vector": [0.9, 0.8, ...], "label": "legit"}

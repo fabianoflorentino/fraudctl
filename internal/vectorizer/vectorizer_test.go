@@ -7,31 +7,31 @@ import (
 
 func TestVectorizer_Vectorize(t *testing.T) {
 	tests := []struct {
-		name         string
-		req          *model.FraudScoreRequest
-		norm         model.NormalizationConstants
-		mccRisk      model.MCCRisk
-		wantLen      int
-		checkDim    func(t *testing.T, got Vector)
+		name     string
+		req      *model.FraudScoreRequest
+		norm     model.NormalizationConstants
+		mccRisk  model.MCCRisk
+		wantLen  int
+		checkDim func(t *testing.T, got Vector)
 	}{
 		{
 			name: "basic transaction",
 			req: &model.FraudScoreRequest{
 				ID: "tx-123",
 				Transaction: model.TransactionData{
-					Amount:      500,
+					Amount:       500,
 					Installments: 3,
-					RequestedAt: "2026-03-11T20:23:35Z",
+					RequestedAt:  "2026-03-11T20:23:35Z",
 				},
 				Customer: model.CustomerData{
 					AvgAmount:      500,
-					TxCount24h:    2,
+					TxCount24h:     2,
 					KnownMerchants: []string{"MERC-001"},
 				},
 				Merchant: model.MerchantData{
-					ID:          "MERC-001",
-					MCC:         "5411",
-					AvgAmount:   500,
+					ID:        "MERC-001",
+					MCC:       "5411",
+					AvgAmount: 500,
 				},
 				Terminal: model.TerminalData{
 					IsOnline:    false,
@@ -52,19 +52,19 @@ func TestVectorizer_Vectorize(t *testing.T) {
 			name: "null last transaction",
 			req: &model.FraudScoreRequest{
 				Transaction: model.TransactionData{
-					Amount:      100,
+					Amount:       100,
 					Installments: 1,
-					RequestedAt: "2026-03-11T20:23:35Z",
+					RequestedAt:  "2026-03-11T20:23:35Z",
 				},
 				Customer: model.CustomerData{
-					AvgAmount:    100,
-					TxCount24h:   1,
+					AvgAmount:      100,
+					TxCount24h:     1,
 					KnownMerchants: []string{"MERC-001"},
 				},
 				Merchant: model.MerchantData{
-					ID:          "MERC-001",
-					MCC:         "5411",
-					AvgAmount:   100,
+					ID:        "MERC-001",
+					MCC:       "5411",
+					AvgAmount: 100,
 				},
 				Terminal: model.TerminalData{
 					IsOnline:    true,
@@ -95,8 +95,8 @@ func TestVectorizer_Vectorize(t *testing.T) {
 
 func TestClamp(t *testing.T) {
 	tests := []struct {
-		name  string
-		val   float64
+		name string
+		val  float64
 		want float64
 	}{
 		{"within range", 0.5, 0.5},

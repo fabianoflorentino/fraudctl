@@ -7,18 +7,15 @@
 pre-commit:
   parallel: false
   commands:
-    # Run Go tests
     tests:
       run: go test ./...
       tags: [test]
 
-    # Check Go formatting
     format:
       run: gofmt -l .
       tags: [style]
       glob: "*.go"
 
-    # Run Go vet (static analysis)
     vet:
       run: go vet ./...
       tags: [analysis]
@@ -26,7 +23,6 @@ pre-commit:
 pre-push:
   parallel: false
   commands:
-    # Build to catch compilation errors
     build:
       run: go build ./...
       tags: [build]

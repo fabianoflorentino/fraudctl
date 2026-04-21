@@ -8,20 +8,21 @@
 // # Vector Dimensions
 //
 // The 14 dimensions are:
-//   0: amount (normalized by max_amount)
-//   1: installments (normalized by max_installments)
-//   2: amount vs customer average (normalized by ratio)
-//   3: hour of day (0-23 mapped to 0-1)
-//   4: day of week (0-6 mapped to 0-1)
-//   5: minutes since last transaction (-1 if null)
-//   6: km from last transaction (-1 if null)
-//   7: km from home
-//   8: transaction count in 24h
-//   9: is online (1/0)
-//  10: card present (1/0)
-//  11: unknown merchant (1 if not in known merchants)
-//  12: MCC risk score
-//   13: merchant average amount
+//
+//	 0: amount (normalized by max_amount)
+//	 1: installments (normalized by max_installments)
+//	 2: amount vs customer average (normalized by ratio)
+//	 3: hour of day (0-23 mapped to 0-1)
+//	 4: day of week (0-6 mapped to 0-1)
+//	 5: minutes since last transaction (-1 if null)
+//	 6: km from last transaction (-1 if null)
+//	 7: km from home
+//	 8: transaction count in 24h
+//	 9: is online (1/0)
+//	10: card present (1/0)
+//	11: unknown merchant (1 if not in known merchants)
+//	12: MCC risk score
+//	 13: merchant average amount
 //
 // # Usage
 //

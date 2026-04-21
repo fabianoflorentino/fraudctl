@@ -26,27 +26,27 @@ func newMockWriter() ResponseWriter {
 
 func TestReady(t *testing.T) {
 	tests := []struct {
-		name       string
-		method    string
-		wantCode  int
+		name     string
+		method   string
+		wantCode int
 		wantBody string
 	}{
 		{
-			name:       "GET returns OK",
-			method:    http.MethodGet,
-			wantCode:  http.StatusOK,
+			name:     "GET returns OK",
+			method:   http.MethodGet,
+			wantCode: http.StatusOK,
 			wantBody: "OK",
 		},
 		{
-			name:       "POST returns OK",
-			method:    http.MethodPost,
-			wantCode:  http.StatusOK,
+			name:     "POST returns OK",
+			method:   http.MethodPost,
+			wantCode: http.StatusOK,
 			wantBody: "OK",
 		},
 		{
-			name:       "PUT returns OK",
-			method:    http.MethodPut,
-			wantCode:  http.StatusOK,
+			name:     "PUT returns OK",
+			method:   http.MethodPut,
+			wantCode: http.StatusOK,
 			wantBody: "OK",
 		},
 	}

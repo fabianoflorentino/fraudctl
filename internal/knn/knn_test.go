@@ -7,10 +7,10 @@ import (
 
 func TestDataset_Predict(t *testing.T) {
 	tests := []struct {
-		name       string
-		references []Reference
-		query      []float64
-		workers    int
+		name         string
+		references   []Reference
+		query        []float64
+		workers      int
 		wantApproved bool
 	}{
 		{
