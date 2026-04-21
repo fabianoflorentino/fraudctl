@@ -29,6 +29,9 @@ func main() {
 	router := handler.NewRouter()
 	router.Handle("/ready", handler.Ready)
 
+	fraudHandler := handler.NewFraudScoreHandler(ds.Vectorizer(), ds.KNN(1))
+	router.Handle("/fraud-score", fraudHandler.Handle)
+
 	log.Printf("Server starting on port %d", *port)
 	if err := http.ListenAndServe(":9999", router); err != nil {
 		log.Fatalf("Server failed: %v", err)
