@@ -2,7 +2,7 @@
 # =============================================================================
 # fraudctl - Fraud Detection API
 # =============================================================================
-# Multi-stage build for optimized production image
+# Multi-stage build for optimized production image (distroless)
 # =============================================================================
 
 # Build stage
@@ -16,9 +16,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o fraudctl ./cmd/api
 
 # ── Production stage ─────────────────────────────────────────────────────────────
-FROM alpine:3.23 AS production
-
-RUN apk add --no-cache wget
+FROM gcr.io/distroless/static:nonroot AS production
 
 COPY --from=builder /build/fraudctl /fraudctl
 COPY --from=builder /build/resources /resources

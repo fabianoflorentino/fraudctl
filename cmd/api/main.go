@@ -13,10 +13,19 @@ import (
 
 var (
 	resourcesPath = flag.String("resources", "/resources", "Path to resources directory")
+	healthCheck   = flag.Bool("healthcheck", false, "Run healthcheck and exit")
 )
 
 func main() {
 	flag.Parse()
+
+	if *healthCheck {
+		if err := checkHealth(); err != nil {
+			log.Fatalf("Healthcheck failed: %v", err)
+		}
+		log.Println("Healthcheck OK")
+		return
+	}
 
 	port := 9999
 	if p := os.Getenv("PORT"); p != "" {
@@ -44,6 +53,18 @@ func main() {
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", port), router); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
+}
+
+func checkHealth() error {
+	resp, err := http.Get("http://localhost:9999/ready")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status: %d", resp.StatusCode)
+	}
+	return nil
 }
 
 func init() {
