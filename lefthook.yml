@@ -29,6 +29,24 @@ pre-commit:
       exclude: *go-exclude
       run: bash -c 'command -v golangci-lint >/dev/null 2>&1 || exit 0; golangci-lint run'
 
+    dockerfile-lint:
+      glob: "Dockerfile*"
+      run: |
+        command -v hadolint >/dev/null 2>&1 || { echo "hadolint not installed, skipping (brew install hadolint)"; exit 0; }
+        hadolint Dockerfile || exit 1
+
+    docker-compose-lint:
+      glob: "docker-compose*.yml"
+      run: |
+        command -v hadolint >/dev/null 2>&1 || exit 0
+        hadolint --ignore DL3008 docker-compose.yml || exit 1
+
+    nginx-lint:
+      glob: "nginx.conf"
+      run: |
+        command -v nginx >/dev/null 2>&1 || exit 0
+        nginx -t 2>&1 | grep -q "syntax is ok" || { echo "nginx config error"; nginx -t; exit 1; }
+
     test:
       exclude: *go-exclude
       run: |
