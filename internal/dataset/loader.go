@@ -1,3 +1,29 @@
+// Package dataset provides functionality for loading and managing the reference dataset.
+//
+// This package handles loading of the reference data files required for the fraud
+// detection KNN algorithm:
+//
+//   - references.json.gz: 100k labeled reference vectors
+//   - mcc_risk.json: MCC code to risk score mapping
+//   - normalization.json: Constants for feature normalization
+//
+// # Usage
+//
+// The package provides a Loader for loading individual files and a convenience
+// function LoadDefault for loading all files at once:
+//
+//	ds, err := dataset.LoadDefault("./rinha2026/resources")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//
+//	knn := ds.KNN(1)
+//	vectorizer := ds.Vectorizer()
+//
+// For testing, use NewLoader with a custom base path:
+//
+//	loader := dataset.NewLoader("/path/to/resources")
+//	norm, err := loader.LoadNormalization("")
 package dataset
 
 import (
@@ -10,21 +36,35 @@ import (
 	"path/filepath"
 )
 
+// Common errors returned by Loader methods.
 var (
+	// ErrInvalidPath is returned when the file path is invalid.
 	ErrInvalidPath = errors.New("invalid file path")
-	ErrReadFile    = errors.New("failed to read file")
-	ErrOpenGzip    = errors.New("failed to open gzip")
-	ErrDecodeJSON  = errors.New("failed to decode JSON")
+	// ErrReadFile is returned when a file cannot be read.
+	ErrReadFile = errors.New("failed to read file")
+	// ErrOpenGzip is returned when a gzip file cannot be opened.
+	ErrOpenGzip = errors.New("failed to open gzip")
+	// ErrDecodeJSON is returned when JSON decoding fails.
+	ErrDecodeJSON = errors.New("failed to decode JSON")
 )
 
+// Loader handles loading of reference data files.
+// It accepts a base path to the resources directory.
 type Loader struct {
 	basePath string
 }
 
+// NewLoader creates a new Loader with the specified base path.
+// If basePath is empty, it defaults to "./resources".
 func NewLoader(basePath string) *Loader {
 	return &Loader{basePath: basePath}
 }
 
+// LoadNormalization loads the normalization constants from a JSON file.
+// If path is empty, it uses the basePath from the Loader.
+//
+// Returns ErrReadFile if the file cannot be read.
+// Returns ErrDecodeJSON if the file contains invalid JSON.
 func (l *Loader) LoadNormalization(path string) (model.NormalizationConstants, error) {
 	var norm model.NormalizationConstants
 
@@ -44,6 +84,11 @@ func (l *Loader) LoadNormalization(path string) (model.NormalizationConstants, e
 	return norm, nil
 }
 
+// LoadMCCRisk loads the MCC risk scores from a JSON file.
+// If path is empty, it uses the basePath from the Loader.
+//
+// Returns ErrReadFile if the file cannot be read.
+// Returns ErrDecodeJSON if the file contains invalid JSON.
 func (l *Loader) LoadMCCRisk(path string) (model.MCCRisk, error) {
 	var risk model.MCCRisk
 
@@ -63,6 +108,18 @@ func (l *Loader) LoadMCCRisk(path string) (model.MCCRisk, error) {
 	return risk, nil
 }
 
+// LoadReferences loads the reference vectors from a gzipped JSON file.
+// If path is empty, it uses the basePath from the Loader.
+//
+// The file is expected to be in the format:
+//	[
+//	  {"vector": [0.1, 0.2, ...], "label": "fraud"},
+//	  {"vector": [0.9, 0.8, ...], "label": "legit"}
+//	]
+//
+// Returns ErrOpenGzip if the file cannot be opened.
+// Returns ErrReadFile if the gzip content cannot be read.
+// Returns ErrDecodeJSON if the file contains invalid JSON.
 func (l *Loader) LoadReferences(path string) ([]model.Reference, error) {
 	if path == "" {
 		path = filepath.Join(l.basePath, "references.json.gz")
@@ -93,6 +150,9 @@ func (l *Loader) LoadReferences(path string) ([]model.Reference, error) {
 	return references, nil
 }
 
+// LoadAll loads all reference data files and returns a Dataset.
+// This is a convenience function that calls LoadNormalization, LoadMCCRisk,
+// and LoadReferences in sequence.
 func (l *Loader) LoadAll() (*Dataset, error) {
 	norm, err := l.LoadNormalization("")
 	if err != nil {
