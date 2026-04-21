@@ -2,20 +2,28 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"fraudctl/internal/dataset"
 	"fraudctl/internal/handler"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 )
 
 var (
 	resourcesPath = flag.String("resources", "./resources", "Path to resources directory")
-	port          = flag.Int("port", 9999, "Server port")
 )
 
 func main() {
 	flag.Parse()
+
+	port := 9999
+	if p := os.Getenv("PORT"); p != "" {
+		if parsed, err := strconv.Atoi(p); err == nil {
+			port = parsed
+		}
+	}
 
 	log.Printf("Loading dataset from %s", *resourcesPath)
 	ds, err := dataset.LoadDefault(*resourcesPath)
@@ -32,8 +40,8 @@ func main() {
 	fraudHandler := handler.NewFraudScoreHandler(ds.Vectorizer(), ds.KNN(1))
 	router.Handle("/fraud-score", fraudHandler.Handle)
 
-	log.Printf("Server starting on port %d", *port)
-	if err := http.ListenAndServe(":9999", router); err != nil {
+	log.Printf("Server starting on port %d", port)
+	if err := http.ListenAndServe(fmt.Sprintf(":%d", port), router); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }

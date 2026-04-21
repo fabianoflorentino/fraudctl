@@ -116,11 +116,11 @@ fraudctl/
 
 ### Fase 7 — Docker & Compose
 
-- [ ] `Dockerfile` multi-stage (build → runtime scratch/alpine)
-- [ ] Copiar `resources/` na imagem final
-- [ ] `docker-compose.yml`: nginx (round-robin) + 2 instâncias API
-- [ ] Limites: 1 CPU total, 350 MB RAM total entre todos os serviços
-- [ ] Porta 9999 exposta no load balancer
+- [x] `Dockerfile` multi-stage (build → runtime alpine)
+- [x] Copiar `resources/` na imagem final
+- [x] `docker-compose.yml`: nginx (round-robin) + 2 instâncias API
+- [x] Limites: 1 CPU total, 350 MB RAM total entre todos os serviços
+- [x] Porta 9999 exposta no load balancer
 
 ### Fase 8 — Testes e Validação
 
