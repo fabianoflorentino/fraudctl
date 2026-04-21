@@ -1,28 +1,76 @@
-# lefthook.yml - Git hooks configuration for fraudctl
-#
-# Hooks configured for this Go project:
-# - pre-commit: fast checks (tests, format, vet)
-# - pre-push: build verification
-
 pre-commit:
-  parallel: false
+  parallel: true
   commands:
-    tests:
-      run: go test ./...
-      tags: [test]
+    fmt:
+      glob: "**/*.go"
+      exclude:
+        - '^\.agents/'
+      run: bash -c 'files=$(gofmt -l .); [ -z "$files" ] && exit 0; printf "unformatted files (run gofmt):\n%s\n" "$files"; exit 1'
 
-    format:
-      run: gofmt -l .
-      tags: [style]
-      glob: "*.go"
+    goimports:
+      glob: "**/*.go"
+      exclude:
+        - '^\.agents/'
+      run: bash -c 'command -v goimports >/dev/null 2>&1 || exit 0; files=$(goimports -l .); [ -z "$files" ] && exit 0; printf "goimports issues (run goimports -w .):\n%s\n" "$files"; exit 1'
 
     vet:
+      glob: "**/*.go"
+      exclude:
+        - '^\.agents/'
       run: go vet ./...
-      tags: [analysis]
+
+    lint:
+      glob: "**/*.go"
+      exclude:
+        - '^\.agents/'
+      run: bash -c 'command -v golangci-lint >/dev/null 2>&1 || exit 0; golangci-lint run --out-format=github-actions'
+
+    test:
+      exclude:
+        - '^\.agents/'
+      run: |
+        go test -race -coverprofile=/tmp/fraudctl-coverage.out ./... &&
+        go tool cover -func=/tmp/fraudctl-coverage.out &&
+        COV=$(go tool cover -func=/tmp/fraudctl-coverage.out | grep '^total:' | awk '{print $3}' | tr -d '%') &&
+        awk "BEGIN {if ($COV+0 < 80) {print \"❌ Coverage \" $COV \"% is below the required 80%\"; exit 1} else {print \"✅ Coverage \" $COV \"% meets the 80% threshold\"}}"
 
 pre-push:
-  parallel: false
+  parallel: true
   commands:
     build:
+      exclude:
+        - '^\.agents/'
       run: go build ./...
-      tags: [build]
+
+    mod-tidy:
+      exclude:
+        - '^\.agents/'
+      run: |
+        go mod tidy
+        git diff --exit-code -- go.mod go.sum || (echo "go.mod/go.sum are not tidy — run 'go mod tidy' and stage the changes"; exit 1)
+
+    lint-full:
+      exclude:
+        - '^\.agents/'
+      run: bash -c 'command -v golangci-lint >/dev/null 2>&1 || { echo "golangci-lint not installed, skipping"; exit 0; }; golangci-lint run --timeout=5m'
+
+    test-cover:
+      exclude:
+        - '^\.agents/'
+      run: |
+        go test -race -coverprofile=/tmp/fraudctl-coverage.out ./... &&
+        go tool cover -func=/tmp/fraudctl-coverage.out &&
+        COV=$(go tool cover -func=/tmp/fraudctl-coverage.out | grep '^total:' | awk '{print $3}' | tr -d '%') &&
+        awk "BEGIN {if ($COV+0 < 80) {print \"❌ Coverage \" $COV \"% is below the required 80%\"; exit 1} else {print \"✅ Coverage \" $COV \"% meets the 80% threshold\"}}"
+
+    vuln:
+      exclude:
+        - '^\.agents/'
+      run: bash -c 'command -v govulncheck >/dev/null 2>&1 || { echo "govulncheck not installed, skipping"; exit 0; }; govulncheck ./...'
+
+    semgrep:
+      exclude:
+        - '^\.agents/'
+      run: |
+        command -v semgrep >/dev/null 2>&1 || { echo "semgrep not installed, skipping"; exit 0; }
+        semgrep --config p/go
