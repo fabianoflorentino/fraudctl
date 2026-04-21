@@ -1,7 +1,7 @@
 # =============================================================================
 # fraudctl - Fraud Detection API
 # =============================================================================
-# Multi-stage build for minimal runtime image
+# Multi-stage build with distroless runtime (~2 MB base)
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -13,38 +13,31 @@ RUN apk add --no-cache gcc musl-dev
 
 WORKDIR /build
 
-# Copy go mod files (only go.mod - no external dependencies)
+# Copy go mod files
 COPY go.mod ./
 
 # Copy source code
 COPY . .
 
-# Build the binary
+# Build the binary (statically linked, no C dependencies)
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -ldflags="-s -w" \
     -o fraudctl ./cmd/api
 
 # -----------------------------------------------------------------------------
-# Runtime stage
+# Runtime stage (distroless - ~2 MB)
 # -----------------------------------------------------------------------------
-FROM alpine:3.19
+FROM gcr.io/distroless/static-debian12:nonroot
 
-RUN apk add --no-cache ca-certificates wget
+# Copy binary and resources
+COPY --from=builder /build/fraudctl /fraudctl
+COPY --from=builder /build/resources /resources
 
-WORKDIR /home/appuser
-
-# Copy binary
-COPY --from=builder /build/fraudctl .
-
-# Copy resources (required for operation)
-COPY --from=builder /build/resources ./resources
+# Set resources path
+ENV RESOURCES=/resources
 
 # Expose API port
 EXPOSE 9999
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:9999/ready || exit 1
-
 # Run the application
-CMD ["./fraudctl"]
+ENTRYPOINT ["/fraudctl"]

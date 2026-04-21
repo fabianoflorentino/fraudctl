@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	resourcesPath = flag.String("resources", "./resources", "Path to resources directory")
+	resourcesPath = flag.String("resources", "/resources", "Path to resources directory")
 )
 
 func main() {
