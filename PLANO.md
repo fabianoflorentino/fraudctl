@@ -127,17 +127,16 @@ fraudctl/
 - [x] Testes unitários do vectorizer (mock data)
 - [x] Testes unitários do dataset loader
 - [ ] Validar os 4 exemplos da documentação (scores esperados: 0.0, 1.0, 0.4, 1.0)
-- [ ] Validação de acurácia offline contra `test/test-data.json` (14.500 entradas, 33% fraude)
-- [ ] Teste de carga com k6 (`test/test.js`): rampa de 1 → 650 RPS em 60s, max 150 VUs
+- [ ] Validação de acurácia offline contra `rinha2026/test/test-data.json` (14.500 entradas, 33% fraude)
   - Dataset contém 4.812 fraudes, 9.688 legítimas e 157 edge cases
   - Cada entrada já tem o vetor pré-computado e a resposta esperada — útil para CI
-- [ ] Teste de carga com k6 (`test/test.js`): rampa de 1 → 650 RPS em 60s, max 150 VUs
+- [ ] Teste de carga com k6 (`rinha2026/test/test.js`): rampa de 1 → 650 RPS em 60s, max 150 VUs
 - [ ] Ajuste fino de goroutines/workers conforme CPU disponível no container
 
 ### Fase 9 — Visualização e Análise (opcional)
 
-- [ ] Executar `visualization/generate.sh` para gerar gráficos radar das 14 dimensões
-- [ ] Analisar `fraud_14d_visualization.png` (perfil médio fraude vs. legítima) para identificar dimensões mais discriminativas
+- [ ] Executar `rinha2026/visualization/generate.sh` para gerar gráficos radar das 14 dimensões
+- [ ] Analisar `rinha2026/visualization/fraud_14d_visualization.png` (perfil médio fraude vs. legítima) para identificar dimensões mais discriminativas
 - [ ] Usar os insights para priorizar dimensões no KNN ou ajustar pesos se necessário
 
 Dimensões com maior separação entre fraude e legítima (observadas nos gráficos):
