@@ -38,7 +38,7 @@ NC     := \033[0m
 help: ## Show this help message
 	@echo ""
 	@echo -e "$(BLUE)╔══════════════════════════════════════════════════════════════╗$(NC)"
-	@echo -e "$(BLUE)║            fraudctl — Available Commands                ║$(NC)"
+	@echo -e "$(BLUE)║            fraudctl — Available Commands                     ║$(NC)"
 	@echo -e "$(BLUE)╚══════════════════════════════════════════════════════════════╝$(NC)"
 	@echo ""
 	@awk 'BEGIN {FS = ":.*##"; printf ""} /^[a-zA-Z_-]+:.*?##/ { printf "  $(GREEN)%-18s$(NC) %s\n", $$1, $$2 } /^##@/ { printf "\n$(YELLOW)%s$(NC)\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
@@ -49,7 +49,7 @@ help: ## Show this help message
 build: ## Compile the binary to ./bin/fraudctl
 	@echo -e "$(BLUE)🔨 Building $(BINARY)...$(NC)"
 	@mkdir -p bin
-	@$(BUILD_FLAGS) go build -trimpath -ldflags="$(LDFLAGS)" -o bin/$(BINARY) .
+	@$(BUILD_FLAGS) go build -trimpath -ldflags="$(LDFLAGS)" -o bin/$(BINARY) ./cmd/api
 	@echo -e "$(GREEN)✓ Binary created at bin/$(BINARY)$(NC)"
 
 run: ## Run the API server (requires resources/)
