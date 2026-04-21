@@ -5,7 +5,7 @@ import "sync"
 const VectorSize = 14
 
 var vectorPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return make([]float64, VectorSize)
 	},
 }
@@ -23,7 +23,7 @@ type VectorF32 struct {
 }
 
 var vectorF32Pool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return new(VectorF32)
 	},
 }
@@ -38,7 +38,7 @@ func PutVectorF32(v *VectorF32) {
 
 func VectorToF32(vec Vector) VectorF32 {
 	var result VectorF32
-	for i := 0; i < VectorSize; i++ {
+	for i := range VectorSize {
 		result.Dimensions[i] = float32(vec.Dimensions[i])
 	}
 	return result

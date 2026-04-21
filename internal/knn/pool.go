@@ -3,7 +3,7 @@ package knn
 import "sync"
 
 var vectorPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return make([]float64, 14)
 	},
 }
@@ -17,7 +17,7 @@ func PutVector(vec []float64) {
 }
 
 var neighborPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return &neighbor{}
 	},
 }
