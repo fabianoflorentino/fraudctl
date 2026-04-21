@@ -398,7 +398,7 @@ func FuzzParseJSON(f *testing.F) {
     f.Add(`""`)
 
     f.Fuzz(func(t *testing.T, input string) {
-        var result map[string]interface{}
+        var result map[string]any
         err := json.Unmarshal([]byte(input), &result)
 
         if err != nil {
