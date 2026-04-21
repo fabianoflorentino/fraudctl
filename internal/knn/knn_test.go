@@ -10,7 +10,6 @@ func TestDataset_Predict(t *testing.T) {
 		name         string
 		references   []Reference
 		query        []float64
-		workers      int
 		wantApproved bool
 	}{
 		{
@@ -24,7 +23,6 @@ func TestDataset_Predict(t *testing.T) {
 				{Vector: vectorizer.Vector{Dimensions: []float64{0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6}}, IsFraud: false},
 			},
 			query:        []float64{0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15},
-			workers:      2,
 			wantApproved: false,
 		},
 		{
@@ -38,13 +36,12 @@ func TestDataset_Predict(t *testing.T) {
 				{Vector: vectorizer.Vector{Dimensions: []float64{0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1}}, IsFraud: true},
 			},
 			query:        []float64{0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85},
-			workers:      2,
 			wantApproved: true,
 		},
 		{
-			name: "threshold 0.6 borderline",
+			name: "threshold 0.6 borderline - approved",
 			references: []Reference{
-				{Vector: vectorizer.Vector{Dimensions: []float64{0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1}}, IsFraud: true},
+				{Vector: vectorizer.Vector{Dimensions: []float64{0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1}}, IsFraud: false},
 				{Vector: vectorizer.Vector{Dimensions: []float64{0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2}}, IsFraud: false},
 				{Vector: vectorizer.Vector{Dimensions: []float64{0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3}}, IsFraud: false},
 				{Vector: vectorizer.Vector{Dimensions: []float64{0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4}}, IsFraud: false},
@@ -52,14 +49,26 @@ func TestDataset_Predict(t *testing.T) {
 				{Vector: vectorizer.Vector{Dimensions: []float64{0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6}}, IsFraud: true},
 			},
 			query:        []float64{0.15, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1},
-			workers:      2,
 			wantApproved: true,
+		},
+		{
+			name: "threshold 0.6 borderline - denied",
+			references: []Reference{
+				{Vector: vectorizer.Vector{Dimensions: []float64{0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1}}, IsFraud: true},
+				{Vector: vectorizer.Vector{Dimensions: []float64{0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2}}, IsFraud: true},
+				{Vector: vectorizer.Vector{Dimensions: []float64{0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3}}, IsFraud: true},
+				{Vector: vectorizer.Vector{Dimensions: []float64{0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4}}, IsFraud: true},
+				{Vector: vectorizer.Vector{Dimensions: []float64{0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5}}, IsFraud: false},
+				{Vector: vectorizer.Vector{Dimensions: []float64{0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6}}, IsFraud: false},
+			},
+			query:        []float64{0.15, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1},
+			wantApproved: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dataset := NewDataset(tt.references, tt.workers)
+			dataset := NewDataset(tt.references, 1)
 			_, approved := dataset.Predict(tt.query)
 
 			if approved != tt.wantApproved {
@@ -69,7 +78,7 @@ func TestDataset_Predict(t *testing.T) {
 	}
 }
 
-func TestEuclideanDistance(t *testing.T) {
+func TestEuclideanDistanceSquared(t *testing.T) {
 	tests := []struct {
 		name     string
 		a        []float64
@@ -98,34 +107,11 @@ func TestEuclideanDistance(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := euclideanDistance(tt.a, tt.b)
+			got := euclideanDistanceSquared(tt.a, tt.b)
 			if got != tt.wantDist {
-				t.Errorf("euclideanDistance() = %v, want %v", got, tt.wantDist)
+				t.Errorf("euclideanDistanceSquared() = %v, want %v", got, tt.wantDist)
 			}
 		})
-	}
-}
-
-func TestTopK(t *testing.T) {
-	results := []distanceResult{
-		{index: 0, distance: 5.0, isFraud: false},
-		{index: 1, distance: 3.0, isFraud: true},
-		{index: 2, distance: 1.0, isFraud: true},
-		{index: 3, distance: 4.0, isFraud: false},
-		{index: 4, distance: 2.0, isFraud: true},
-		{index: 5, distance: 6.0, isFraud: false},
-	}
-
-	neighbors := topK(results, 5)
-
-	if len(neighbors) != 5 {
-		t.Errorf("topK() len = %d, want 5", len(neighbors))
-	}
-
-	for _, n := range neighbors {
-		if n.Index < 0 || n.Index > 5 {
-			t.Errorf("topK() invalid index %d", n.Index)
-		}
 	}
 }
 
@@ -135,7 +121,7 @@ func TestNewDataset(t *testing.T) {
 		{Vector: vectorizer.Vector{Dimensions: []float64{0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9}}, IsFraud: false},
 	}
 
-	dataset := NewDataset(references, 2)
+	dataset := NewDataset(references, 1)
 
 	if len(dataset.vectors) != 2 {
 		t.Errorf("NewDataset() vectors len = %d, want 2", len(dataset.vectors))
@@ -144,33 +130,4 @@ func TestNewDataset(t *testing.T) {
 	if len(dataset.fraudFlags) != 2 {
 		t.Errorf("NewDataset() fraudFlags len = %d, want 2", len(dataset.fraudFlags))
 	}
-}
-
-func TestGetPutNeighbor(t *testing.T) {
-	n := GetNeighbor()
-	if n == nil {
-		t.Error("GetNeighbor() returned nil")
-		return
-	}
-	n.Index = 5
-	n.Distance = 1.234
-	n.IsFraud = true
-	PutNeighbor(n)
-}
-
-func TestKNNPool(t *testing.T) {
-	vec := GetVector()
-	if len(vec) != 14 {
-		t.Errorf("GetVector() len = %d, want 14", len(vec))
-	}
-
-	vec[0] = 1.0
-	PutVector(vec)
-
-	vec2 := GetVector()
-	vec2[0] = 0.5
-	if vec2[0] != 0.5 {
-		t.Error("Pool should return usable vector")
-	}
-	PutVector(vec2)
 }

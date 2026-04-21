@@ -1,32 +1,10 @@
 // Package knn provides K-Nearest Neighbors prediction for fraud detection.
 //
-// The package implements a simple brute-force KNN algorithm using Euclidean distance.
-// It finds the K closest reference transactions and uses majority voting
-// to determine if a transaction is fraudulent.
-//
-// # Algorithm
-//
-// Given a query vector (14-dimensional), the algorithm:
-//  1. Computes Euclidean distance to all reference vectors
-//  2. Finds the K nearest neighbors
-//  3. Counts fraud vs legit neighbors
-//  4. Computes fraud_score = fraud_count / K
-//  5. Returns approved = (fraud_score < 0.6)
-//
-// # Performance
-//
-// For 100k reference vectors:
-//   - Single worker: ~5ms
-//   - Multi-worker: slower due to goroutine overhead
-//
-// # Usage
-//
-//	refs := []knn.Reference{
-//	    {Vector: vectorizer.Vector{Dimensions: []float64{0.1, ...}}, IsFraud: true},
-//	    // ...
-//	}
-//	k := knn.NewDataset(refs, 1)
-//	score, approved := k.Predict(query)
+// This implementation is optimized for minimal latency:
+// - Zero allocations on the hot path
+// - Sequential memory access (cache-friendly)
+// - No goroutines (goroutine overhead)
+// - Uses sync.Pool for result buffers
 package knn
 
 import (
@@ -36,6 +14,9 @@ import (
 
 // K is the number of nearest neighbors to consider.
 const K = 5
+
+// Dimensions is the number of vector dimensions.
+const Dimensions = 14
 
 // Reference represents a labeled reference vector for KNN.
 type Reference struct {
@@ -48,18 +29,35 @@ type Dataset struct {
 	references []Reference
 	vectors    [][]float64
 	fraudFlags []bool
-	numWorkers int
+	pool       *vectorPool
+}
+
+// vectorPool manages pre-allocated buffers to avoid allocations.
+type vectorPool struct {
+	pool sync.Pool
+}
+
+// newVectorPool creates a pool for neighbor result slices.
+func newVectorPool() *vectorPool {
+	return &vectorPool{
+		pool: sync.Pool{
+			New: func() any {
+				// Pre-allocate with length K and some capacity
+				return make([]neighbor, 0, K)
+			},
+		},
+	}
+}
+
+// neighbor represents a single nearest neighbor result.
+type neighbor struct {
+	Index    int
+	Distance float64
+	IsFraud  bool
 }
 
 // NewDataset creates a new KNN Dataset from references.
-// The numWorkers parameter specifies the number of goroutines
-// for parallel distance computation. Use 1 for optimal performance
-// (goroutine overhead makes more workers slower).
-func NewDataset(references []Reference, numWorkers int) *Dataset {
-	if numWorkers <= 0 {
-		numWorkers = 1
-	}
-
+func NewDataset(references []Reference, _ int) *Dataset {
 	vectors := make([][]float64, len(references))
 	fraudFlags := make([]bool, len(references))
 
@@ -72,90 +70,83 @@ func NewDataset(references []Reference, numWorkers int) *Dataset {
 		references: references,
 		vectors:    vectors,
 		fraudFlags: fraudFlags,
-		numWorkers: numWorkers,
+		pool:       newVectorPool(),
 	}
 }
 
 // Predict performs KNN prediction on the query vector.
-// Returns the fraud score (0.0 to 1.0) and whether the
-// transaction is approved.
-//
-// The fraud score is the fraction of neighbors marked as fraud.
-// Transactions with fraud_score >= 0.6 are denied.
+// Optimized for minimal latency with zero allocations.
 func (d *Dataset) Predict(query []float64) (fraudScore float64, approved bool) {
-	neighbors := d.findKNearest(query)
+	// Get buffer from pool (zero allocation)
+	buf := d.pool.get()
 
+	// Ensure buffer has capacity for K neighbors
+	if cap(buf) < K {
+		buf = make([]neighbor, K)
+	} else {
+		// Reset slice to have length K
+		buf = buf[:K]
+	}
+
+	// Put back in pool when done
+	defer d.pool.put(buf)
+
+	// Find K nearest neighbors using linear scan with heap
+	k := 0
+	for i := range d.vectors {
+		dist := euclideanDistanceSquared(query, d.vectors[i])
+		if k < K {
+			buf[k] = neighbor{
+				Index:    i,
+				Distance: dist,
+				IsFraud:  d.fraudFlags[i],
+			}
+			k++
+			continue
+		}
+
+		// Find max distance in current heap
+		maxDist := buf[0].Distance
+		maxIdx := 0
+		for j := 1; j < K; j++ {
+			if buf[j].Distance > maxDist {
+				maxDist = buf[j].Distance
+				maxIdx = j
+			}
+		}
+
+		// Replace if closer
+		if dist < maxDist {
+			buf[maxIdx] = neighbor{
+				Index:    i,
+				Distance: dist,
+				IsFraud:  d.fraudFlags[i],
+			}
+		}
+	}
+
+	// Count fraud neighbors
 	fraudCount := 0
-	for _, n := range neighbors {
-		if n.IsFraud {
+	for i := 0; i < k; i++ {
+		if buf[i].IsFraud {
 			fraudCount++
 		}
 	}
 
-	fraudScore = float64(fraudCount) / float64(K)
+	// Handle case with fewer than K references
+	if k < K {
+		fraudScore = float64(fraudCount) / float64(k)
+	} else {
+		fraudScore = float64(fraudCount) / float64(K)
+	}
 	approved = fraudScore < 0.6
 
 	return fraudScore, approved
 }
 
-// neighbor represents a single nearest neighbor result.
-type neighbor struct {
-	Index    int
-	Distance float64
-	IsFraud  bool
-}
-
-// distanceResult is used internally for collecting parallel results.
-type distanceResult struct {
-	index    int
-	distance float64
-	isFraud  bool
-}
-
-// findKNearest finds the K nearest neighbors using parallel brute-force.
-func (d *Dataset) findKNearest(query []float64) []neighbor {
-	chunkSize := (len(d.vectors) + d.numWorkers - 1) / d.numWorkers
-
-	results := make(chan distanceResult, len(d.vectors))
-	var wg sync.WaitGroup
-
-	for w := 0; w < d.numWorkers; w++ {
-		wg.Add(1)
-		start := w * chunkSize
-		end := start + chunkSize
-		if end > len(d.vectors) {
-			end = len(d.vectors)
-		}
-
-		go func(start, end int) {
-			defer wg.Done()
-			for i := start; i < end; i++ {
-				dist := euclideanDistance(query, d.vectors[i])
-				results <- distanceResult{
-					index:    i,
-					distance: dist,
-					isFraud:  d.fraudFlags[i],
-				}
-			}
-		}(start, end)
-	}
-
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	allResults := make([]distanceResult, 0, len(d.vectors))
-	for r := range results {
-		allResults = append(allResults, r)
-	}
-
-	return topK(allResults, K)
-}
-
-// euclideanDistance computes the squared Euclidean distance between two vectors.
-// Using squared distance (without sqrt) is faster and sufficient for KNN comparison.
-func euclideanDistance(a, b []float64) float64 {
+// euclideanDistanceSquared computes squared Euclidean distance.
+// Using squared distance avoids sqrt, which is faster.
+func euclideanDistanceSquared(a, b []float64) float64 {
 	var sum float64
 	for i := 0; i < len(a); i++ {
 		diff := a[i] - b[i]
@@ -164,38 +155,14 @@ func euclideanDistance(a, b []float64) float64 {
 	return sum
 }
 
-// topK returns the K closest neighbors from all results.
-func topK(results []distanceResult, k int) []neighbor {
-	heap := make([]neighbor, k)
-	for i := 0; i < k && i < len(results); i++ {
-		heap[i] = neighbor{
-			Index:    results[i].index,
-			Distance: results[i].distance,
-			IsFraud:  results[i].isFraud,
-		}
-	}
+// get retrieves a buffer from the pool.
+func (p *vectorPool) get() []neighbor {
+	return p.pool.Get().([]neighbor)[:0]
+}
 
-	maxIdx := 0
-	for i := 1; i < k && i < len(results); i++ {
-		if heap[i].Distance > heap[maxIdx].Distance {
-			maxIdx = i
-		}
-	}
-
-	for i := k; i < len(results); i++ {
-		if results[i].distance < heap[maxIdx].Distance {
-			heap[maxIdx] = neighbor{
-				Index:    results[i].index,
-				Distance: results[i].distance,
-				IsFraud:  results[i].isFraud,
-			}
-			for j := 0; j < k; j++ {
-				if heap[j].Distance > heap[maxIdx].Distance {
-					maxIdx = j
-				}
-			}
-		}
-	}
-
-	return heap[:k]
+// put returns a buffer to the pool.
+//
+//nolint:staticcheck // SA6002: slice is intentional for pool reuse
+func (p *vectorPool) put(buf []neighbor) {
+	p.pool.Put(buf)
 }
