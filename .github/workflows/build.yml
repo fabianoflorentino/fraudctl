@@ -38,7 +38,7 @@ jobs:
 
       - name: Build binary
         run: |
-          CGO_ENABLED=0 go build -ldflags="-s -w" -o fraudctl .
+          CGO_ENABLED=0 go build -ldflags="-s -w" -o fraudctl ./cmd/api
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
