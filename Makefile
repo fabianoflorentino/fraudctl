@@ -159,18 +159,18 @@ docker-clean: ## Remove local Docker images
 
 docker-up: ## Start services with docker compose
 	@echo -e "$(BLUE)🚀 Starting services...$(NC)"
-	@docker compose up -d
+	@./scripts/docker-up.sh
 	@echo -e "$(GREEN)✓ Services started!$(NC)"
 	@echo -e "$(BLUE)  API available at http://localhost:9999$(NC)"
 	@echo -e "$(BLUE)  Endpoints: /ready, /fraud-score$(NC)"
 
 docker-down: ## Stop docker compose services
 	@echo -e "$(YELLOW)🛑 Stopping services...$(NC)"
-	@docker compose down
+	@./scripts/docker-up.sh down
 	@echo -e "$(GREEN)✓ Services stopped!$(NC)"
 
 docker-logs: ## Show docker compose logs
-	@docker compose logs -f
+	@./scripts/docker-up.sh logs
 
 ##@ Cleanup
 
