@@ -4,7 +4,7 @@
 # Fraud detection API using KNN vector search
 # ============================================================================
 
-.PHONY: help build run test test-short test-race coverage fmt vet lint tidy clean bench bench-knn bench-vectorizer all docker-build docker-up docker-down
+.PHONY: help build run test test-short test-race coverage fmt vet lint tidy clean bench bench-knn bench-vectorizer all docker-build docker-push docker-run docker-lint docker-clean docker-size docker-up docker-down
 
 # ============================================================================
 # Variables
@@ -12,10 +12,13 @@
 
 BINARY        := fraudctl
 MODULE        := github.com/fabianoratm/fraudctl
-VERSION       ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+VERSION      ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS       := -s -w -X main.version=$(VERSION)
 BUILD_FLAGS   := CGO_ENABLED=0 GOARCH=amd64
 GOTEST_FLAGS  := -v -race -count=1
+IMAGE         := fraudctl
+REGISTRY      ?= ghcr.io/$(MODULE)
+BUILD_OPTS    := --platform linux/amd64 --load
 
 # ============================================================================
 # Output colors
@@ -123,18 +126,52 @@ bench-dataset: ## Run dataset benchmarks only
 
 ##@ Docker
 
-docker-build: ## Build production Docker image
+docker-build: ## Build Docker image (latest + version tag)
 	@echo -e "$(BLUE)🔨 Building Docker image...$(NC)"
-	@docker build -t fraudctl:latest .
-	@echo -e "$(GREEN)✓ Image fraudctl:latest created!$(NC)"
+	@docker build -t $(IMAGE):latest -t $(IMAGE):$(VERSION) .
+	@echo -e "$(GREEN)✓ Image $(IMAGE):$(VERSION) created!$(NC)"
+	@$(MAKE) docker-size
+
+docker-lint: ## Lint Dockerfile with hadolint
+	@command -v hadolint >/dev/null 2>&1 || { echo -e "$(YELLOW)⚠️  hadolint not installed, skipping$(NC)"; exit 0; }
+	@echo -e "$(BLUE)🔍 Linting Dockerfile...$(NC)"
+	@hadolint Dockerfile
+	@echo -e "$(GREEN)✓ Dockerfile lint passed!$(NC)"
+
+docker-size: ## Show Docker image size
+	@echo -e "$(BLUE)📦 Image size:$(NC)"
+	@docker images $(IMAGE) --format "  {{.Repository}}:{{.Tag}} — {{.Size}}"
+
+docker-run: ## Run container locally for testing
+	@echo -e "$(BLUE)▶  Running container...$(NC)"
+	@docker run --rm -p 9999:9999 $(IMAGE):latest
+	@echo -e "$(GREEN)✓ Container stopped!$(NC)"
+
+docker-push: ## Push image to registry
+	@echo -e "$(BLUE)📤 Pushing to registry...$(NC)"
+	@docker push $(REGISTRY):$(VERSION)
+	@docker push $(REGISTRY):latest
+	@echo -e "$(GREEN)✓ Image pushed!$(NC)"
+
+docker-clean: ## Remove local Docker images
+	@echo -e "$(YELLOW)🧹 Removing Docker images...$(NC)"
+	@docker images $(IMAGE) -q | xargs -r docker rmi 2>/dev/null || true
+	@echo -e "$(GREEN)✓ Docker images cleaned!$(NC)"
 
 docker-up: ## Start services with docker compose
 	@echo -e "$(BLUE)🚀 Starting services...$(NC)"
 	@docker compose up -d
+	@echo -e "$(GREEN)✓ Services started!$(NC)"
+	@echo -e "$(BLUE)  API available at http://localhost:9999$(NC)"
+	@echo -e "$(BLUE)  Endpoints: /ready, /fraud-score$(NC)"
 
 docker-down: ## Stop docker compose services
-	@echo -e "$(BLUE)🛑 Stopping services...$(NC)"
+	@echo -e "$(YELLOW)🛑 Stopping services...$(NC)"
 	@docker compose down
+	@echo -e "$(GREEN)✓ Services stopped!$(NC)"
+
+docker-logs: ## Show docker compose logs
+	@docker compose logs -f
 
 ##@ Cleanup
 
