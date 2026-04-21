@@ -2,10 +2,10 @@
 # =============================================================================
 # fraudctl - Fraud Detection API
 # =============================================================================
-# Multi-stage build with distroless runtime (~2 MB base)
+# Multi-stage build for optimized production image
 # =============================================================================
 
-# Build stage (CGO_ENABLED=0 means no C dependencies needed)
+# Build stage
 FROM golang:1.26-alpine AS builder
 
 WORKDIR /build
@@ -15,8 +15,8 @@ COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o fraudctl ./cmd/api
 
-# Runtime stage (alpine with wget for healthcheck)
-FROM alpine:3.23
+# ── Production stage ─────────────────────────────────────────────────────────────
+FROM alpine:3.23 AS production
 
 RUN apk add --no-cache wget
 
