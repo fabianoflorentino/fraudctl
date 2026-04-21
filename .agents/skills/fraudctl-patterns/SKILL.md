@@ -1,0 +1,251 @@
+---
+name: fraudctl-patterns
+description: fraudctl-specific patterns including KNN vector search optimization, 14D vectorization, sync.Pool patterns, and performance best practices for high-throughput fraud detection APIs.
+origin: fraudctl
+---
+
+# fraudctl Development Patterns
+
+Patterns and best practices specific to the fraudctl fraud detection API.
+
+## When to Activate
+
+- Working on KNN search optimization
+- Adding new vector dimensions
+- Optimizing hot paths in fraud-score handler
+- Benchmarking performance-critical code
+- Adding unit tests for vectorizer or KNN
+
+## Architecture Overview
+
+### Data Flow
+
+```
+HTTP Request (JSON)
+    ↓
+[Handler] Parse JSON
+    ↓
+[Vectorizer] → 14D float64 vector
+    ↓
+[KNN] → top-5 neighbors by euclidean distance
+    ↓
+[Fraud Score] = fraud_neighbors / 5
+    ↓
+HTTP Response { approved, fraud_score }
+```
+
+### Key Components
+
+| Component | File | Responsibility |
+|-----------|------|----------------|
+| Handler | `internal/handler/fraud_score.go` | HTTP parsing + response |
+| Vectorizer | `internal/vectorizer/vectorizer.go` | JSON → 14D vector |
+| KNN | `internal/knn/knn.go` | Brute-force vector search |
+| Dataset | `internal/dataset/dataset.go` | In-memory reference vectors |
+
+## KNN Search Pattern
+
+### Zero-Allocation Top-K Heap
+
+```go
+type neighbor struct {
+    dist float64
+    idx  int
+}
+
+// Fixed-size heap, no allocations after initialization
+topK := make([]neighbor, k)
+for i := range topK {
+    topK[i] = neighbor{dist: 1e9}
+}
+
+for i, ref := range ds.vectors {
+    dist := euclideanDistanceSquared(query, ref)
+    if dist < topK[k-1].dist {
+        topK[k-1] = neighbor{dist: dist, idx: i}
+        // Bubble sort is faster than sort.Sort for small k
+        for j := k - 2; j >= 0; j-- {
+            if topK[j].dist > topK[j+1].dist {
+                topK[j], topK[j+1] = topK[j+1], topK[j]
+            }
+        }
+    }
+}
+```
+
+### Euclidean Distance (Inline)
+
+```go
+// Always inline small, hot functions
+func euclideanDistanceSquared(a, b []float64) float64 {
+    var sum float64
+    for i := range a {
+        diff := a[i] - b[i]
+        sum += diff * diff
+    }
+    return sum
+}
+```
+
+**Benchmark:** 100k vectors × 14D → ~0.85ms
+
+## sync.Pool Pattern
+
+### Object Pool for Hot Path
+
+```go
+type vectorPool struct {
+    pool sync.Pool
+}
+
+func NewVectorPool(size int) *vectorPool {
+    return &vectorPool{
+        pool: sync.Pool{
+            New: func() any {
+                return make([]float64, size)
+            },
+        },
+    }
+}
+
+func (vp *vectorPool) Get() []float64 {
+    return vp.pool.Get().([]float64)[:cap(vp.pool.Get().([]float64))]
+}
+
+func (vp *vectorPool) Put(v []float64) {
+    // Reset and return
+    vp.pool.Put(v[:cap(v)])
+}
+```
+
+## Vectorization Pattern
+
+### 14 Dimensions
+
+| Idx | Dimension | Range | Note |
+|-----|-----------|-------|-------|
+| 0-4 | Transaction features | [0, 1] | Normalized |
+| 5-6 | Velocity features | [-1, 1] | -1 if null |
+| 7-11 | Merchant/card features | [0, 1] | Binary or normalized |
+| 12-13 | Risk features | [0, 1] | Lookup or normalized |
+
+### clamp Function
+
+```go
+func clamp(v float64) float64 {
+    if v < 0 {
+        return 0
+    }
+    if v > 1 {
+        return 1
+    }
+    return v
+}
+```
+
+## Benchmarking Pattern
+
+### Measure Hot Paths
+
+```bash
+# Run benchmarks with profiling
+go test -bench=BenchmarkKNN_Predict -benchtime=5s \
+    -cpuprofile=cpu.prof -memprofile=mem.prof ./internal/knn/
+
+# Analyze with pprof
+go tool pprof --text cpu.prof
+```
+
+### Key Benchmarks
+
+| Benchmark | Target | Current |
+|-----------|--------|---------|
+| KNN Predict (1k) | < 0.1ms | ~9μs |
+| KNN Predict (10k) | < 0.5ms | ~83μs |
+| KNN Predict (100k) | < 1ms | ~0.85ms |
+
+## Performance Quick Reference
+
+| Pattern | When to Use | Impact |
+|---------|-------------|--------|
+| Inline euclidean | Hot path distance calc | High |
+| Fixed heap (no sort.Sort) | Top-K with small K | High |
+| sync.Pool | Repeated object allocation | Medium |
+| Contiguous [][]float64 | Cache-friendly iteration | Medium |
+| No goroutines | Single-threaded KNN | High |
+
+## Testing Pattern
+
+### Vectorizer Tests
+
+```go
+func TestVectorizer(t *testing.T) {
+    tests := []struct {
+        name    string
+        request model.FraudRequest
+        want    []float64
+    }{
+        {
+            name:    "basic transaction",
+            request: basicTransaction(),
+            want:    []float64{0.5, 0.25, 0.8, /* ... */},
+        },
+        // ...
+    }
+
+    v := vectorizer.New(norm)
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            got := v.Vectorize(tt.request)
+            if !slices.Equal(got, tt.want) {
+                t.Errorf("Vectorize() = %v, want %v", got, tt.want)
+            }
+        })
+    }
+}
+```
+
+### KNN Tests
+
+```go
+func TestKNN_Predict(t *testing.T) {
+    ds := dataset.NewDataset(100)
+    query := make([]float64, 14)
+    // ... setup
+
+    score := ds.Predict(query, 5)
+    if score < 0 || score > 1 {
+        t.Errorf("Predict() score = %v, want [0, 1]", score)
+    }
+}
+```
+
+## Key Files
+
+```
+internal/
+├── knn/
+│   ├── knn.go           # Core KNN implementation
+│   ├── knn_test.go      # Unit tests
+│   └── knn_bench_test.go # Benchmarks
+├── vectorizer/
+│   ├── vectorizer.go    # 14D vectorization
+│   └── vectorizer_test.go
+├── handler/
+│   ├── fraud_score.go   # HTTP handler
+│   └── fraud_score_test.go
+└── dataset/
+    └── dataset.go      # Dataset loader
+```
+
+## Quick Reference
+
+| Check | Command |
+|-------|---------|
+| Run tests | `go test ./... -v` |
+| Run benchmarks | `go test -bench=. -benchtime=3s ./...` |
+| Check coverage | `go test -cover ./...` |
+| Profile CPU | `go test -cpuprofile=cpu.prof -bench=.` |
+| Profile memory | `go test -memprofile=mem.prof -bench=.` |
+
+**Remember**: The hot path is KNN (98% of CPU time). Optimize there first, then only optimize other areas if benchmarks show improvement.
