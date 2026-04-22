@@ -70,18 +70,13 @@ go build -o fraudctl ./cmd/api
 
 ## Architecture
 
-```
-HTTP Request (JSON)
-    ↓
-[Handler] Parse JSON
-    ↓
-[Vectorizer] → 14D vector
-    ↓
-[KNN] → top-5 neighbors
-    ↓
-[Fraud Score] = fraud_count / 5
-    ↓
-HTTP Response { approved, fraud_score }
+```mermaid
+flowchart TD
+  A[HTTP Request JSON] --> B[Handler: Parse JSON]
+  B --> C[Vectorizer: 14D vector]
+  C --> D[KNN: top-5 neighbors]
+  D --> E[Fraud Score: fraud_count / 5]
+  E --> F[HTTP Response: approved, fraud_score]
 ```
 
 ### 14 Dimensions
