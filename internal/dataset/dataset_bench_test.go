@@ -1,8 +1,9 @@
 package dataset
 
 import (
-	"fraudctl/internal/model"
 	"testing"
+
+	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
 
 func BenchmarkNewDataset(b *testing.B) {

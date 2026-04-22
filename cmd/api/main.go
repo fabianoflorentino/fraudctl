@@ -3,12 +3,13 @@ package main
 import (
 	"flag"
 	"fmt"
-	"fraudctl/internal/dataset"
-	"fraudctl/internal/handler"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
+
+	"github.com/fabianoflorentino/fraudctl/internal/dataset"
+	"github.com/fabianoflorentino/fraudctl/internal/handler"
 )
 
 var (

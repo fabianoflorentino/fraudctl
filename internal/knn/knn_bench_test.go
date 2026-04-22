@@ -1,10 +1,11 @@
 package knn
 
 import (
-	"fraudctl/internal/vectorizer"
 	"math/rand"
 	"sync"
 	"testing"
+
+	"github.com/fabianoflorentino/fraudctl/internal/vectorizer"
 )
 
 func generateTestDataset(size int) *Dataset {

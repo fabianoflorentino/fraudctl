@@ -31,8 +31,9 @@
 package vectorizer
 
 import (
-	"fraudctl/internal/model"
 	"time"
+
+	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
 
 // Vectorizer normalizes transaction data into a 14-dimensional vector.

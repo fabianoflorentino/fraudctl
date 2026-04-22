@@ -2,12 +2,13 @@ package handler
 
 import (
 	"encoding/json"
-	"fraudctl/internal/model"
-	"fraudctl/internal/vectorizer"
 	"io"
 	"log"
 	"net/http"
 	"sync"
+
+	"github.com/fabianoflorentino/fraudctl/internal/model"
+	"github.com/fabianoflorentino/fraudctl/internal/vectorizer"
 )
 
 type Vectorizer interface {

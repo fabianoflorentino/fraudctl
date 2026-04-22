@@ -1,10 +1,11 @@
 package dataset
 
 import (
-	"fraudctl/internal/model"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
 
 func TestLoader_LoadNormalization(t *testing.T) {

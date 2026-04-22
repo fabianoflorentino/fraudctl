@@ -30,10 +30,11 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"errors"
-	"fraudctl/internal/model"
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
 
 // Common errors returned by Loader methods.

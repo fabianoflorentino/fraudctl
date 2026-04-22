@@ -1,8 +1,9 @@
 package vectorizer
 
 import (
-	"fraudctl/internal/model"
 	"testing"
+
+	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
 
 func BenchmarkVectorize(b *testing.B) {

@@ -1,13 +1,14 @@
 package handler
 
 import (
-	"fraudctl/internal/model"
-	"fraudctl/internal/vectorizer"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/fabianoflorentino/fraudctl/internal/model"
+	"github.com/fabianoflorentino/fraudctl/internal/vectorizer"
 )
 
 type mockVec struct{}

@@ -6,9 +6,9 @@
 package dataset
 
 import (
-	"fraudctl/internal/knn"
-	"fraudctl/internal/model"
-	"fraudctl/internal/vectorizer"
+	"github.com/fabianoflorentino/fraudctl/internal/knn"
+	"github.com/fabianoflorentino/fraudctl/internal/model"
+	"github.com/fabianoflorentino/fraudctl/internal/vectorizer"
 )
 
 // Dataset holds the reference data in memory for fraud detection.

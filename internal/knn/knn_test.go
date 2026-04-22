@@ -1,8 +1,9 @@
 package knn
 
 import (
-	"fraudctl/internal/vectorizer"
 	"testing"
+
+	"github.com/fabianoflorentino/fraudctl/internal/vectorizer"
 )
 
 func TestDataset_Predict(t *testing.T) {

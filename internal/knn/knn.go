@@ -8,8 +8,9 @@
 package knn
 
 import (
-	"fraudctl/internal/vectorizer"
 	"sync"
+
+	"github.com/fabianoflorentino/fraudctl/internal/vectorizer"
 )
 
 // K is the number of nearest neighbors to consider.
