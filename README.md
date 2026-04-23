@@ -200,5 +200,5 @@ See [LICENSE](LICENSE) for details.
 
 ## Documentation
 
-- [PROJECT_PLAN.md](PROJECT_PLAN.md) - Detailed project plan
+- [PROJECT_PLAN.md](docs/PROJECT_PLAN.md) - Detailed project plan
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - Architecture diagrams (Mermaid)
