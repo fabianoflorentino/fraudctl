@@ -61,15 +61,15 @@ flowchart LR
     E -->|Yes| V[Count fraud]
     V --> S["fraud / 5"]
 
-    style Q fill:#e1f5fe
-    style S fill:#e8f5e8
-    style D fill:#fffbe6
+    style Q fill:#e1f5fe color:#000000
+    style S fill:#e8f5e8 color:#000000
+    style D fill:#fffbe6 color:#000000
 ```
 
 ## Performance Comparison
 
 | Path | Latency | Use Case |
-|------|---------|----------|
+| ------ | --------- | ---------- |
 | Cache Hit | ~0.01ms | Known transaction IDs |
 | KNN Search | ~0.85ms | Unknown transaction IDs |
 | HTTP Overhead | ~0.15ms | Network + parsing |
