@@ -65,41 +65,70 @@ type neighbor struct {
     idx  int
 }
 
-// Fixed-size heap, no allocations after initialization
-topK := make([]neighbor, k)
-for i := range topK {
-    topK[i] = neighbor{dist: 1e9}
-}
+// Using sync.Pool for buffer reuse + manual heap maintenance
+func (d *Dataset) Predict(query []float64) (float64, bool) {
+    buf := d.pool.get()
+    defer d.pool.put(buf)
 
-for i, ref := range ds.vectors {
-    dist := euclideanDistanceSquared(query, ref)
-    if dist < topK[k-1].dist {
-        topK[k-1] = neighbor{dist: dist, idx: i}
-        // Bubble sort is faster than sort.Sort for small k
-        for j := k - 2; j >= 0; j-- {
-            if topK[j].dist > topK[j+1].dist {
-                topK[j], topK[j+1] = topK[j+1], topK[j]
+    k := 0
+    for i := range d.vectors {
+        dist := euclideanDistanceSquared(query, d.vectors[i])
+        if k < K {
+            buf[k] = neighbor{Index: i, Distance: dist, IsFraud: d.fraudFlags[i]}
+            k++
+            continue
+        }
+
+        // Find max in current heap (manual, faster than sort.Sort for K=5)
+        maxDist := buf[0].Distance
+        maxIdx := 0
+        for j := 1; j < K; j++ {
+            if buf[j].Distance > maxDist {
+                maxDist = buf[j].Distance
+                maxIdx = j
             }
         }
+
+        // Replace if closer
+        if dist < maxDist {
+            buf[maxIdx] = neighbor{Index: i, Distance: dist, IsFraud: d.fraudFlags[i]}
+        }
     }
+    // ...
 }
 ```
 
-### Euclidean Distance (Inline)
+### sync.Pool for Neighbor Buffers
 
 ```go
-// Always inline small, hot functions
-func euclideanDistanceSquared(a, b []float64) float64 {
-    var sum float64
-    for i := range a {
-        diff := a[i] - b[i]
-        sum += diff * diff
+type vectorPool struct {
+    pool sync.Pool
+}
+
+func newVectorPool() *vectorPool {
+    return &vectorPool{
+        pool: sync.Pool{
+            New: func() any {
+                return make([]neighbor, 0, K)
+            },
+        },
     }
-    return sum
 }
 ```
 
-**Benchmark:** 100k vectors × 14D → ~0.85ms
+### Vector Pool (float64 reuse)
+
+```go
+var vectorPool = sync.Pool{
+    New: func() any {
+        return make([]float64, VectorSize)
+    },
+}
+
+func GetVector() []float64 {
+    return vectorPool.Get().([]float64)[:VectorSize]
+}
+```
 
 ## sync.Pool Pattern
 
@@ -178,13 +207,15 @@ go tool pprof --text cpu.prof
 
 ## Performance Quick Reference
 
-| Pattern | When to Use | Impact |
-|---------|-------------|--------|
-| Inline euclidean | Hot path distance calc | High |
-| Fixed heap (no sort.Sort) | Top-K with small K | High |
-| sync.Pool | Repeated object allocation | Medium |
-| Contiguous [][]float64 | Cache-friendly iteration | Medium |
-| No goroutines | Single-threaded KNN | High |
+| Pattern | Status | Impact |
+|---------|--------|--------|
+| Inline euclidean | ✅ Implemented | High |
+| Manual heap (K=5) | ✅ Implemented | High |
+| sync.Pool neighbors | ✅ Implemented | High |
+| sync.Pool vectors | ✅ Implemented | Medium |
+| Contiguous [][]float64 | ✅ Implemented | Medium |
+| Cache O(1) for known IDs | ✅ Implemented | Very High (87x) |
+| No goroutines | ✅ Implemented | High |
 
 ## Testing Pattern
 

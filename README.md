@@ -24,6 +24,7 @@ fraudctl is a Go-based API that detects fraudulent credit card transactions usin
 
 ```json
 {
+  "id": "tx-123",
   "transaction": {
     "amount": 150.00,
     "installments": 3,
@@ -32,12 +33,21 @@ fraudctl is a Go-based API that detects fraudulent credit card transactions usin
   "customer": {
     "avg_amount": 100.00,
     "tx_count_24h": 5,
-    "last_transaction": "2024-01-15T09:00:00Z"
+    "known_merchants": ["MERC-001"]
   },
   "merchant": {
+    "id": "MERC-001",
     "mcc": "5411",
+    "avg_amount": 50.00
+  },
+  "terminal": {
     "is_online": false,
+    "card_present": true,
     "km_from_home": 10.5
+  },
+  "last_transaction": {
+    "timestamp": "2024-01-15T09:00:00Z",
+    "km_from_current": 5.0
   }
 }
 ```
@@ -202,3 +212,6 @@ See [LICENSE](LICENSE) for details.
 
 - [PROJECT_PLAN.md](docs/PROJECT_PLAN.md) - Detailed project plan
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - Architecture diagrams (Mermaid)
+- [docs/API.md](docs/API.md) - API endpoint documentation
+- [docs/DETECTION_RULES.md](docs/DETECTION_RULES.md) - 14D vectorization and detection logic
+- [docs/EVALUATION.md](docs/EVALUATION.md) - Scoring formula and evaluation criteria
