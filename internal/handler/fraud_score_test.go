@@ -11,14 +11,18 @@ import (
 	"github.com/fabianoflorentino/fraudctl/internal/vectorizer"
 )
 
+// mockVec Mock implementation of Vectorizer interface for testing.
 type mockVec struct{}
 
+// Vectorize Returns a fixed mock vector for testing.
 func (m *mockVec) Vectorize(req *model.FraudScoreRequest) vectorizer.Vector {
 	return vectorizer.Vector{Dimensions: []float64{0.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}}
 }
 
+// mockKNN Mock implementation of KNN interface for testing.
 type mockKNN struct{}
 
+// Predict Returns mock prediction results based on vector values.
 func (m *mockKNN) Predict(vector []float64) (float64, bool) {
 	if len(vector) > 0 && vector[0] > 0.8 {
 		return 0.8, false
@@ -26,39 +30,48 @@ func (m *mockKNN) Predict(vector []float64) (float64, bool) {
 	return 0.2, true
 }
 
+// mockRespWriter Mock implementation of http.ResponseWriter for testing.
 type mockRespWriter struct {
 	code int
 	body string
 }
 
+// WriteHeader Captures the status code.
 func (m *mockRespWriter) WriteHeader(statusCode int) {
 	m.code = statusCode
 }
 
+// Write Captures the response body.
 func (m *mockRespWriter) Write(body []byte) (int, error) {
 	m.body = string(body)
 	return len(body), nil
 }
 
+// errorReader Mock implementation of io.Reader that returns an error.
 type errorReader struct{}
 
+// Read Simulates a read error.
 func (e *errorReader) Read(p []byte) (n int, err error) {
 	return 0, io.ErrUnexpectedEOF
 }
 
+// mockDataset Mock implementation of Cache interface for testing.
 type mockDataset struct {
 	cache map[string]model.FraudScoreResponse
 }
 
+// GetCachedAnswer Retrieves a cached response by transaction ID.
 func (m *mockDataset) GetCachedAnswer(id string) (model.FraudScoreResponse, bool) {
 	resp, ok := m.cache[id]
 	return resp, ok
 }
 
+// CachedAnswers Returns the number of cached answers.
 func (m *mockDataset) CachedAnswers() int {
 	return len(m.cache)
 }
 
+// TestFraudScoreHandler_Handle_MethodNotAllowed Verifies that GET requests return 405 Method Not Allowed.
 func TestFraudScoreHandler_Handle_MethodNotAllowed(t *testing.T) {
 	handler := NewFraudScoreHandler(nil, &mockVec{}, &mockKNN{})
 
@@ -75,6 +88,7 @@ func TestFraudScoreHandler_Handle_MethodNotAllowed(t *testing.T) {
 	}
 }
 
+// TestFraudScoreHandler_Handle_ReadError Verifies that read errors return a fallback response.
 func TestFraudScoreHandler_Handle_ReadError(t *testing.T) {
 	handler := NewFraudScoreHandler(nil, &mockVec{}, &mockKNN{})
 
@@ -87,6 +101,7 @@ func TestFraudScoreHandler_Handle_ReadError(t *testing.T) {
 	}
 }
 
+// TestFraudScoreHandler_Handle_InvalidJSON Verifies that invalid JSON returns a fallback response.
 func TestFraudScoreHandler_Handle_InvalidJSON(t *testing.T) {
 	handler := NewFraudScoreHandler(nil, &mockVec{}, &mockKNN{})
 
@@ -103,6 +118,7 @@ func TestFraudScoreHandler_Handle_InvalidJSON(t *testing.T) {
 	}
 }
 
+// TestFraudScoreHandler_sendFallback Verifies that sendFallback returns the correct default response.
 func TestFraudScoreHandler_sendFallback(t *testing.T) {
 	handler := &FraudScoreHandler{}
 
@@ -120,6 +136,7 @@ func TestFraudScoreHandler_sendFallback(t *testing.T) {
 	}
 }
 
+// TestFraudScoreHandler_Handle_Success Verifies successful fraud score calculation for valid requests.
 func TestFraudScoreHandler_Handle_Success(t *testing.T) {
 	handler := NewFraudScoreHandler(nil, &mockVec{}, &mockKNN{})
 
@@ -149,6 +166,7 @@ func TestFraudScoreHandler_Handle_Success(t *testing.T) {
 	}
 }
 
+// TestRouter_HandleFunc Verifies that router correctly registers and executes handlers.
 func TestRouter_HandleFunc(t *testing.T) {
 	router := NewRouter()
 
@@ -175,6 +193,7 @@ func TestRouter_HandleFunc(t *testing.T) {
 	}
 }
 
+// TestFraudScoreHandler_Handle_CacheHit Verifies that cached responses are returned when available.
 func TestFraudScoreHandler_Handle_CacheHit(t *testing.T) {
 	cache := &mockDataset{
 		cache: map[string]model.FraudScoreResponse{
@@ -212,6 +231,7 @@ func TestFraudScoreHandler_Handle_CacheHit(t *testing.T) {
 	}
 }
 
+// TestFraudScoreHandler_Handle_CacheMiss Verifies that KNN prediction is used when cache miss occurs.
 func TestFraudScoreHandler_Handle_CacheMiss(t *testing.T) {
 	cache := &mockDataset{
 		cache: map[string]model.FraudScoreResponse{

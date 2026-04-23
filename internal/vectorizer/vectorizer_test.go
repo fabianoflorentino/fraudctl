@@ -6,6 +6,7 @@ import (
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
 
+// TestVectorizer_Vectorize Tests vector generation from fraud score requests with various configurations.
 func TestVectorizer_Vectorize(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -94,6 +95,7 @@ func TestVectorizer_Vectorize(t *testing.T) {
 	}
 }
 
+// TestClamp Tests clamping of float64 values to the range [0, 1].
 func TestClamp(t *testing.T) {
 	tests := []struct {
 		name string
@@ -118,6 +120,7 @@ func TestClamp(t *testing.T) {
 	}
 }
 
+// TestGetPutVectorF32 Tests retrieval and return of float32 vectors from the pool.
 func TestGetPutVectorF32(t *testing.T) {
 	v := GetVectorF32()
 	if v == nil {
@@ -126,6 +129,7 @@ func TestGetPutVectorF32(t *testing.T) {
 	PutVectorF32(v)
 }
 
+// TestPool_GetPut Tests basic pool operations for float64 vectors.
 func TestPool_GetPut(t *testing.T) {
 	vec := GetVector()
 	if len(vec) != VectorSize {
@@ -135,6 +139,7 @@ func TestPool_GetPut(t *testing.T) {
 	PutVector(vec)
 }
 
+// TestPool_Concurrent Tests thread safety of the vector pool under concurrent access.
 func TestPool_Concurrent(t *testing.T) {
 	done := make(chan bool, 10)
 
@@ -153,6 +158,7 @@ func TestPool_Concurrent(t *testing.T) {
 	}
 }
 
+// TestVectorToF32 Tests conversion of Vector (float64) to VectorF32 (float32).
 func TestVectorToF32(t *testing.T) {
 	vec := Vector{
 		Dimensions: []float64{0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 0.11, 0.12, 0.13, 0.14},
@@ -173,6 +179,7 @@ func TestVectorToF32(t *testing.T) {
 	}
 }
 
+// TestClampFloat32 Tests clamping of float32 values to the range [0, 1].
 func TestClampFloat32(t *testing.T) {
 	tests := []struct {
 		name string
@@ -195,6 +202,7 @@ func TestClampFloat32(t *testing.T) {
 	}
 }
 
+// TestParseTimestamp Tests parsing of RFC3339 timestamp strings.
 func TestParseTimestamp(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -217,6 +225,7 @@ func TestParseTimestamp(t *testing.T) {
 	}
 }
 
+// TestVectorClone Tests that Clone creates an independent copy of the vector.
 func TestVectorClone(t *testing.T) {
 	original := Vector{
 		Dimensions: []float64{0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 0.11, 0.12, 0.13, 0.14},

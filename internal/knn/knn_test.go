@@ -6,6 +6,7 @@ import (
 	"github.com/fabianoflorentino/fraudctl/internal/vectorizer"
 )
 
+// TestDataset_Predict Tests KNN prediction with various neighbor configurations.
 func TestDataset_Predict(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -79,6 +80,7 @@ func TestDataset_Predict(t *testing.T) {
 	}
 }
 
+// TestEuclideanDistanceSquared Tests Euclidean distance calculation for various vector pairs.
 func TestEuclideanDistanceSquared(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -116,6 +118,7 @@ func TestEuclideanDistanceSquared(t *testing.T) {
 	}
 }
 
+// TestNewDataset Verifies that dataset initialization correctly populates internal data structures.
 func TestNewDataset(t *testing.T) {
 	references := []Reference{
 		{Vector: vectorizer.Vector{Dimensions: []float64{0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1}}, IsFraud: true},

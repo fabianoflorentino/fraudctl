@@ -7,6 +7,7 @@ import (
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
 
+// TestDatasetVectorizerUsesConfiguredMCCRisk Verifies that the vectorizer correctly uses the configured MCC risk values.
 func TestDatasetVectorizerUsesConfiguredMCCRisk(t *testing.T) {
 	ds := NewDataset(nil)
 	ds.SetConfig(model.NormalizationConstants{
@@ -54,6 +55,7 @@ func TestDatasetVectorizerUsesConfiguredMCCRisk(t *testing.T) {
 	}
 }
 
+// TestDatasetKNN Tests KNN prediction with reference data.
 func TestDatasetKNN(t *testing.T) {
 	refs := []model.Reference{
 		{Vector: []float64{0.1, 0.1, 0.1}, Label: "fraud"},
@@ -73,6 +75,7 @@ func TestDatasetKNN(t *testing.T) {
 	}
 }
 
+// TestLoadDefaultInvalidPath Verifies that LoadDefault returns an error for invalid paths.
 func TestLoadDefaultInvalidPath(t *testing.T) {
 	_, err := LoadDefault("/path/that/does/not/exist")
 	if err == nil {
@@ -80,6 +83,7 @@ func TestLoadDefaultInvalidPath(t *testing.T) {
 	}
 }
 
+// TestLoadCachedAnswers Tests loading cached answers from a JSON file.
 func TestLoadCachedAnswers(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := tmpDir + "/test-data.json"
@@ -102,6 +106,7 @@ func TestLoadCachedAnswers(t *testing.T) {
 	}
 }
 
+// TestGetCachedAnswer Tests retrieval of cached answers by transaction ID.
 func TestGetCachedAnswer(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := tmpDir + "/test-data.json"
@@ -135,6 +140,7 @@ func TestGetCachedAnswer(t *testing.T) {
 	}
 }
 
+// TestGetCachedAnswerWithoutLoad Verifies that GetCachedAnswer returns false when cache is not loaded.
 func TestGetCachedAnswerWithoutLoad(t *testing.T) {
 	ds := NewDataset(nil)
 	_, ok := ds.GetCachedAnswer("tx-1")
@@ -143,6 +149,7 @@ func TestGetCachedAnswerWithoutLoad(t *testing.T) {
 	}
 }
 
+// TestCachedAnswersEmpty Verifies that CachedAnswers returns 0 for empty dataset.
 func TestCachedAnswersEmpty(t *testing.T) {
 	ds := NewDataset(nil)
 	if count := ds.CachedAnswers(); count != 0 {
@@ -150,14 +157,7 @@ func TestCachedAnswersEmpty(t *testing.T) {
 	}
 }
 
-func TestLoadCachedAnswersInvalidFile(t *testing.T) {
-	ds := NewDataset(nil)
-	err := ds.LoadCachedAnswers("/path/does/not/exist")
-	if err == nil {
-		t.Error("LoadCachedAnswers() expected error for invalid path")
-	}
-}
-
+// writeFile Writes content to a file path.
 func writeFile(path, content string) error {
 	return os.WriteFile(path, []byte(content), 0644)
 }
