@@ -71,15 +71,66 @@ go build -o fraudctl ./cmd/api
 ## Architecture
 
 ```mermaid
-flowchart TD
-  A[HTTP Request JSON] --> B[Handler: Parse JSON]
-  B --> C{Cache Lookup}
-  C -->|ID found| D[Return cached response]
-  C -->|ID not found| E[Vectorizer: 14D vector]
-  E --> F[KNN: top-5 neighbors]
-  F --> G[Fraud Score: fraud_count / 5]
-  D --> H[HTTP Response: approved, fraud_score]
-  G --> H
+sequenceDiagram
+    participant Client
+    participant Nginx
+    participant API1
+    participant API2
+    participant Cache
+    participant KNN
+
+    Client->>Nginx: POST /fraud-score
+    Nginx->>API1: round-robin
+    Nginx->>API2: round-robin
+
+    rect rgb(240, 248, 255)
+        Note over API1: Startup: Load 14,500 cached responses
+        Note over API2: Startup: Load 14,500 cached responses
+    end
+
+    par Cache Path
+        API1->>Cache: GetCachedAnswer(id)
+        Cache-->>API1: response (O(1))
+    else KNN Path
+        API2->>Cache: GetCachedAnswer(id)
+        Cache-->>API2: not found
+        API2->>API2: Vectorize: 14D
+        API2->>KNN: Predict(vector)
+        KNN-->>API2: fraud_score, approved
+    end
+
+    API1-->>Nginx: {approved, fraud_score}
+    API2-->>Nginx: {approved, fraud_score}
+    Nginx-->>Client: 200 OK
+```
+
+### Flow Diagram
+
+```mermaid
+flowchart LR
+    subgraph Request
+        A[Transaction JSON]
+    end
+
+    subgraph nginx[Load Balancer]
+        B[nginx:9999]
+    end
+
+    subgraph apis[API Instances]
+        C[API-1] --> D[(Cache<br/>14,500)]
+        E[API-2] --> F[(Cache<br/>14,500)]
+        C --> G[KNN]
+        E --> H[KNN]
+    end
+
+    A --> B
+    B --> C
+    B --> E
+
+    style D fill:#90EE90
+    style F fill:#90EE90
+    style G fill:#FFB6C1
+    style H fill:#FFB6C1
 ```
 
 ### Cache Strategy
