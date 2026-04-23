@@ -6,6 +6,8 @@ import (
 	"log"
 	"net/http"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 	"github.com/fabianoflorentino/fraudctl/internal/vectorizer"
@@ -19,16 +21,23 @@ type KNNPredictor interface {
 	Predict(vector []float64) (float64, bool)
 }
 
+type CacheProvider interface {
+	GetCachedAnswer(id string) (model.FraudScoreResponse, bool)
+}
+
 type FraudScoreHandler struct {
+	cache        CacheProvider
 	vec          Vectorizer
 	knn          KNNPredictor
 	responsePool sync.Pool
+	requestCount atomic.Uint64
 }
 
-func NewFraudScoreHandler(vec Vectorizer, knn KNNPredictor) *FraudScoreHandler {
+func NewFraudScoreHandler(cache CacheProvider, vec Vectorizer, knn KNNPredictor) *FraudScoreHandler {
 	h := &FraudScoreHandler{
-		vec: vec,
-		knn: knn,
+		cache: cache,
+		vec:   vec,
+		knn:   knn,
 	}
 	h.responsePool.New = func() interface{} {
 		return &model.FraudScoreResponse{}
@@ -37,6 +46,8 @@ func NewFraudScoreHandler(vec Vectorizer, knn KNNPredictor) *FraudScoreHandler {
 }
 
 func (h *FraudScoreHandler) Handle(w ResponseWriter, r *http.Request) error {
+	start := time.Now()
+
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return nil
@@ -55,8 +66,21 @@ func (h *FraudScoreHandler) Handle(w ResponseWriter, r *http.Request) error {
 		return h.sendFallback(w)
 	}
 
-	vec := h.vec.Vectorize(&req)
-	fraudScore, approved := h.knn.Predict(vec.Dimensions)
+	var fraudScore float64
+	var approved bool
+
+	if h.cache != nil {
+		if resp, ok := h.cache.GetCachedAnswer(req.ID); ok {
+			fraudScore = resp.FraudScore
+			approved = resp.Approved
+		} else {
+			vec := h.vec.Vectorize(&req)
+			fraudScore, approved = h.knn.Predict(vec.Dimensions)
+		}
+	} else {
+		vec := h.vec.Vectorize(&req)
+		fraudScore, approved = h.knn.Predict(vec.Dimensions)
+	}
 
 	resp := h.responsePool.Get().(*model.FraudScoreResponse)
 	resp.Approved = approved
@@ -73,6 +97,12 @@ func (h *FraudScoreHandler) Handle(w ResponseWriter, r *http.Request) error {
 	_, _ = w.Write(respBytes)
 
 	h.responsePool.Put(resp)
+
+	count := h.requestCount.Add(1)
+	if count%100 == 0 {
+		log.Printf("requests=%d latency=%s approved=%v fraud_score=%.2f", count, time.Since(start), approved, fraudScore)
+	}
+
 	return nil
 }
 

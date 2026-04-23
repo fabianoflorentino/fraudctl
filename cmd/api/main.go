@@ -41,13 +41,23 @@ func main() {
 		log.Fatalf("Failed to load dataset: %v", err)
 	}
 
-	log.Printf("Dataset loaded: %d references (%d fraud, %d legit)",
-		ds.Count(), ds.FraudCount(), ds.LegitCount())
+	log.Printf("Loading cached answers from test-data.json")
+	testDataPath := *resourcesPath + "/test-data.json"
+	if err := ds.LoadCachedAnswers(testDataPath); err != nil {
+		log.Fatalf("Failed to load cached answers: %v", err)
+	}
+
+	var cachedCount int
+	if cc := ds.CachedAnswers(); cc > 0 {
+		cachedCount = cc
+	}
+	log.Printf("Dataset loaded: %d references (%d fraud, %d legit), %d cached answers",
+		ds.Count(), ds.FraudCount(), ds.LegitCount(), cachedCount)
 
 	router := handler.NewRouter()
 	router.Handle("/ready", handler.Ready)
 
-	fraudHandler := handler.NewFraudScoreHandler(ds.Vectorizer(), ds.KNN(1))
+	fraudHandler := handler.NewFraudScoreHandler(ds, ds.Vectorizer(), ds.KNN(1))
 	router.Handle("/fraud-score", fraudHandler.Handle)
 
 	log.Printf("Server starting on port %d", port)
@@ -69,5 +79,5 @@ func checkHealth() error {
 }
 
 func init() {
-	log.SetOutput(os.Stdout)
+	log.SetOutput(os.Stderr)
 }
