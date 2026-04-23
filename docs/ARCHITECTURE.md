@@ -13,36 +13,29 @@ sequenceDiagram
 
     C->>N: POST /fraud-score
     N->>H: route to API
-
-    rect rgb(240, 248, 255)
-        Note over H: Parse JSON & Extract ID
-    end
-
+    Note over H: Parse JSON & Extract ID
     H->>Ca: GetCachedAnswer(id)
+    Ca-->>H: response or not found
 
-    alt Cache Hit
-        Ca-->>H: {approved, fraud_score}
-        H->>C: 200 OK
-    else Cache Miss
+    alt ID found in cache
+        H->>C: 200 OK {approved, fraud_score}
+    else ID not found
         H->>V: Vectorize(transaction)
         V-->>H: 14D Vector
         H->>K: Predict(vector)
         K-->>H: {fraud_score, approved}
-        H->>C: 200 OK
+        H->>C: 200 OK {approved, fraud_score}
     end
-
-    style Ca fill:#90EE90
-    style K fill:#FFB6C1
 ```
 
 ### Request Processing Paths
 
 ```mermaid
-flowchart TD
+flowchart LR
     A[HTTP Request] --> B[Parse JSON]
-    B --> C{ID in Cache?}
+    B --> C{ID in<br/>Cache?}
 
-    C -->|Yes| D[(Cache<br/>O(1) lookup)]
+    C -->|Yes| D["Cache<br/>(O(1))"]
     D --> E[Return Response]
 
     C -->|No| F[Vectorizer]
@@ -52,30 +45,25 @@ flowchart TD
     I --> J[Voting]
     J --> K[Fraud Score]
     K --> E
-
-    style D fill:#90EE90
-    style H fill:#FFB6C1
-    style I fill:#FFB6C1
-    style J fill:#FFB6C1
-    style K fill:#FFB6C1
 ```
 
 ## KNN Algorithm
 
 ```mermaid
-flowchart TD
-    Q[Query Vector<br/>14D] --> F[For each reference vector]
-    F --> D[Calculate Euclidean<br/>Distance²]
-    D --> C{Is distance<br/>less than<br/>top-K?}
-    C -->|Yes| U[Update top-K heap]
-    C -->|No| S[Skip]
+flowchart LR
+    Q[Query<br/>14D] --> F[For each ref]
+    F --> D[Euclidean Dist]
+    D --> C{dist <<br/>top-K?}
+    C -->|Yes| U[Update heap]
+    C -->|No| N[Skip]
     U --> E{K = 5?}
     E -->|No| F
-    E -->|Yes| V[Count fraud neighbors]
-    V --> Score[fraud_count / 5]
+    E -->|Yes| V[Count fraud]
+    V --> S["fraud / 5"]
 
-    style Q fill:#e1f5fe color:#000000
-    style Score fill:#e8f5e8 color:#000000
+    style Q fill:#e1f5fe
+    style S fill:#e8f5e8
+    style D fill:#fffbe6
 ```
 
 ## Performance Comparison
