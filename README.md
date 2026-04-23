@@ -118,10 +118,10 @@ flowchart LR
     G --> I
     H --> I
 
-    style E fill:#90EE90
-    style F fill:#90EE90
-    style G fill:#FFB6C1
-    style H fill:#FFB6C1
+    style E fill:#90EE90 color:#000000
+    style F fill:#90EE90 color:#000000
+    style G fill:#FFB6C1 color:#000000
+    style H fill:#FFB6C1 color:#000000
 ```
 
 ### Cache Strategy
@@ -131,7 +131,7 @@ For known transaction IDs (from test-data.json), responses are served from a pre
 ### 14 Dimensions
 
 | Idx | Feature | Description |
-|-----|---------|-------------|
+| ----- | --------- | ------------- |
 | 0 | amount | Normalized transaction amount |
 | 1 | installments | Number of installments |
 | 2 | amount_vs_avg | Amount vs customer average |
