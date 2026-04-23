@@ -127,10 +127,10 @@ flowchart LR
     B --> C
     B --> E
 
-    style D fill:#90EE90
-    style F fill:#90EE90
-    style G fill:#FFB6C1
-    style H fill:#FFB6C1
+    style D fill:#90EE90 color: #000000
+    style F fill:#90EE90 color: #000000
+    style G fill:#FFB6C1 color: #000000
+    style H fill:#FFB6C1 color: #000000
 ```
 
 ### Cache Strategy

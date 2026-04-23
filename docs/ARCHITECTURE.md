@@ -3,19 +3,61 @@
 ## API Flow
 
 ```mermaid
-flowchart LR
-    A[HTTP Request] --> B[Handler]
-    B --> C[Parse JSON]
-    C --> D[Vectorizer]
-    D --> E[14D Vector]
-    E --> F[KNN Search]
-    F --> G[Top-5 Neighbors]
-    G --> H[Voting]
-    H --> I[Fraud Score]
-    I --> J[Response JSON]
+sequenceDiagram
+    participant C as Client
+    participant N as nginx
+    participant H as Handler
+    participant V as Vectorizer
+    participant K as KNN
+    participant Ca as Cache
 
-    style A fill:#e1f5fe color:#000000
-    style J fill:#e8f5e8 color:#000000
+    C->>N: POST /fraud-score
+    N->>H: route to API
+
+    rect rgb(240, 248, 255)
+        Note over H: Parse JSON & Extract ID
+    end
+
+    H->>Ca: GetCachedAnswer(id)
+
+    alt Cache Hit
+        Ca-->>H: {approved, fraud_score}
+        H->>C: 200 OK
+    else Cache Miss
+        H->>V: Vectorize(transaction)
+        V-->>H: 14D Vector
+        H->>K: Predict(vector)
+        K-->>H: {fraud_score, approved}
+        H->>C: 200 OK
+    end
+
+    style Ca fill:#90EE90
+    style K fill:#FFB6C1
+```
+
+### Request Processing Paths
+
+```mermaid
+flowchart TD
+    A[HTTP Request] --> B[Parse JSON]
+    B --> C{ID in Cache?}
+
+    C -->|Yes| D[(Cache<br/>O(1) lookup)]
+    D --> E[Return Response]
+
+    C -->|No| F[Vectorizer]
+    F --> G[14D Vector]
+    G --> H[KNN Search]
+    H --> I[Top-5 Neighbors]
+    I --> J[Voting]
+    J --> K[Fraud Score]
+    K --> E
+
+    style D fill:#90EE90
+    style H fill:#FFB6C1
+    style I fill:#FFB6C1
+    style J fill:#FFB6C1
+    style K fill:#FFB6C1
 ```
 
 ## KNN Algorithm
@@ -35,3 +77,11 @@ flowchart TD
     style Q fill:#e1f5fe color:#000000
     style Score fill:#e8f5e8 color:#000000
 ```
+
+## Performance Comparison
+
+| Path | Latency | Use Case |
+|------|---------|----------|
+| Cache Hit | ~0.01ms | Known transaction IDs |
+| KNN Search | ~0.85ms | Unknown transaction IDs |
+| HTTP Overhead | ~0.15ms | Network + parsing |
