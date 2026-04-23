@@ -19,10 +19,10 @@ services:
       resources:
         limits:
           cpus: '0.45'
-          memory: 200M
+          memory: 150M
         reservations:
           cpus: '0.1'
-          memory: 100M
+          memory: 150M
     restart: unless-stopped
 
   api-2:
@@ -38,10 +38,10 @@ services:
       resources:
         limits:
           cpus: '0.45'
-          memory: 200M
+          memory: 150M
         reservations:
           cpus: '0.1'
-          memory: 100M
+          memory: 150M
     restart: unless-stopped
 
   nginx:
