@@ -72,65 +72,56 @@ go build -o fraudctl ./cmd/api
 
 ```mermaid
 sequenceDiagram
-    participant Client
-    participant Nginx
-    participant API1
-    participant API2
-    participant Cache
-    participant KNN
+    participant C as Client
+    participant N as nginx
+    participant A1 as API-1
+    participant A2 as API-2
+    participant Ca as Cache
+    participant K as KNN
 
-    Client->>Nginx: POST /fraud-score
-    Nginx->>API1: round-robin
-    Nginx->>API2: round-robin
-
-    rect rgb(240, 248, 255)
-        Note over API1: Startup: Load 14,500 cached responses
-        Note over API2: Startup: Load 14,500 cached responses
-    end
+    Note over A1,A2: Startup: Load 14,500 cached responses
+    C->>N: POST /fraud-score
+    N-->>A1: route (round-robin)
+    N-->>A2: route (round-robin)
 
     par Cache Path
-        API1->>Cache: GetCachedAnswer(id)
-        Cache-->>API1: response (O(1))
-    else KNN Path
-        API2->>Cache: GetCachedAnswer(id)
-        Cache-->>API2: not found
-        API2->>API2: Vectorize: 14D
-        API2->>KNN: Predict(vector)
-        KNN-->>API2: fraud_score, approved
+        A1->>Ca: GetCachedAnswer(id)
+        Ca-->>A1: response (O(1))
+        A1-->>N: {approved, fraud_score}
+    and KNN Path
+        A2->>Ca: GetCachedAnswer(id)
+        Ca-->>A2: not found
+        A2->>A2: Vectorize: 14D
+        A2->>K: Predict(vector)
+        K-->>A2: {fraud_score, approved}
+        A2-->>N: {approved, fraud_score}
     end
 
-    API1-->>Nginx: {approved, fraud_score}
-    API2-->>Nginx: {approved, fraud_score}
-    Nginx-->>Client: 200 OK
+    N-->>C: 200 OK
 ```
 
 ### Flow Diagram
 
 ```mermaid
 flowchart LR
-    subgraph Request
-        A[Transaction JSON]
-    end
+    A[Transaction] --> B[nginx:9999]
+    B --> C[API-1]
+    B --> D[API-2]
 
-    subgraph nginx[Load Balancer]
-        B[nginx:9999]
-    end
+    C --> E["Cache (14,500)"]
+    D --> F["Cache (14,500)"]
+    C --> G[KNN]
+    D --> H[KNN]
 
-    subgraph apis[API Instances]
-        C[API-1] --> D[(Cache<br/>14,500)]
-        E[API-2] --> F[(Cache<br/>14,500)]
-        C --> G[KNN]
-        E --> H[KNN]
-    end
+    E --> I[Response]
+    F --> I
+    G --> I
+    H --> I
 
-    A --> B
-    B --> C
-    B --> E
-
-    style D fill:#90EE90 color: #000000
-    style F fill:#90EE90 color: #000000
-    style G fill:#FFB6C1 color: #000000
-    style H fill:#FFB6C1 color: #000000
+    style E fill:#90EE90
+    style F fill:#90EE90
+    style G fill:#FFB6C1
+    style H fill:#FFB6C1
 ```
 
 ### Cache Strategy
