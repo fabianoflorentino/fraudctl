@@ -16,7 +16,7 @@ fraudctl is a Go-based API that detects fraudulent credit card transactions usin
 ## API Endpoints
 
 | Endpoint | Method | Description |
-|---------|--------|-------------|
+| --------- | -------- | ------------- |
 | `/ready` | GET | Health check |
 | `/fraud-score` | POST | Fraud detection |
 
@@ -150,7 +150,7 @@ For known transaction IDs (from test-data.json), responses are served from a pre
 ## Performance
 
 | Metric | Value |
-|--------|-------|
+| -------- | ------- |
 | KNN Latency (100k) | ~0.85ms |
 | Cache Lookup | ~0.01ms |
 | HTTP Errors | 0% |
@@ -168,14 +168,14 @@ GitHub Actions workflows for automated builds and releases:
 ### Secrets Required
 
 | Secret | Description |
-|--------|------------|
+| -------- | ------------ |
 | `DOCKERHUB_USERNAME` | Docker Hub login |
 | `DOCKERHUB_TOKEN` | Docker Hub access token |
 | `GIT_HUB_TOKEN` | GitHub PAT (contents:write) |
 
 ## Project Structure
 
-```
+```bash
 fraudctl/
 ├── cmd/api/               # Main application
 ├── internal/
