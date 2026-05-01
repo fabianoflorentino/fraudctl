@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"strconv"
@@ -93,6 +94,12 @@ func main() {
 			}
 		}()
 	}
+
+	// pprof debug server on a separate port (never exposed publicly).
+	go func() {
+		log.Printf("pprof listening on :6060")
+		_ = http.ListenAndServe(":6060", nil)
+	}()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)

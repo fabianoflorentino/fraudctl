@@ -1,6 +1,7 @@
 package knn
 
 import (
+	"encoding/binary"
 	"math"
 	"math/rand"
 	"os"
@@ -31,38 +32,61 @@ func BenchmarkIVFPredict(b *testing.B) {
 	}
 }
 
-// buildSmallIVF creates a minimal IVFIndex with two clusters for unit tests.
+// f32ToBytes converts a []float32 to []byte (little-endian).
+func f32ToBytes(vecs []float32) []byte {
+	buf := make([]byte, len(vecs)*4)
+	for i, v := range vecs {
+		binary.LittleEndian.PutUint32(buf[i*4:], math.Float32bits(v))
+	}
+	return buf
+}
+
+// buildSmallIVF creates a minimal IVFIndex with two clusters using the float32 arena.
 // cluster 0: 3 fraud vectors near [1,0,...], cluster 1: 3 legit vectors near [0,0,...].
 func buildSmallIVF() *IVFIndex {
 	const dim = 14
 	nlist := 2
+
 	centroids := make([]float32, nlist*dim)
-	// centroid 0: dim[0]=1, rest 0
-	centroids[0] = 1.0
+	centroids[0] = 1.0 // centroid 0: dim[0]=1, rest 0
 	// centroid 1: all 0s (default)
 
-	// cluster 0: 3 fraud vectors — each 14 floats, dim[0] near 1
-	fraud := make([]float32, 3*dim)
-	fraud[0*dim+0] = 0.90
-	fraud[1*dim+0] = 0.95
-	fraud[2*dim+0] = 1.00
-
-	// cluster 1: 3 legit vectors — each 14 floats, dim[0] near 0
-	legit := make([]float32, 3*dim)
-	legit[0*dim+0] = 0.05
-	legit[1*dim+0] = 0.10
-	legit[2*dim+0] = 0.02
-
-	clusters := []ivfCluster{
-		{flat: fraud, labels: []bool{true, true, true}},
-		{flat: legit, labels: []bool{false, false, false}},
+	// cluster 0: 3 fraud vectors
+	fraudF := []float32{
+		0.90, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0.95, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		1.00, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 	}
+	fraudLabels := []byte{1, 1, 1}
+
+	// cluster 1: 3 legit vectors
+	legitF := []float32{
+		0.05, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0.10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0.02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	}
+	legitLabels := []byte{0, 0, 0}
+
+	fraud0 := f32ToBytes(fraudF)
+	legit0 := f32ToBytes(legitF)
+
+	// arena: [fraud flat][fraud labels][legit flat][legit labels]
+	arena := append(append(append(fraud0, fraudLabels...), legit0...), legitLabels...)
+
+	fraudFlatOff := uint32(0)
+	fraudLabelOff := uint32(len(fraud0))
+	legitFlatOff := fraudLabelOff + uint32(len(fraudLabels))
+	legitLabelOff := legitFlatOff + uint32(len(legit0))
 
 	return &IVFIndex{
 		nlist:     nlist,
 		nprobe:    1,
 		centroids: centroids,
-		clusters:  clusters,
+		arena:     arena,
+		descs: []ivfClusterDesc{
+			{flatOff: fraudFlatOff, labelOff: fraudLabelOff, n: 3},
+			{flatOff: legitFlatOff, labelOff: legitLabelOff, n: 3},
+		},
 	}
 }
 
@@ -93,7 +117,8 @@ func TestIVFIndex_Predict_EmptyIndex(t *testing.T) {
 		nlist:     1,
 		nprobe:    1,
 		centroids: make([]float32, 14),
-		clusters:  []ivfCluster{{flat: nil, labels: nil}},
+		descs:     []ivfClusterDesc{{flatOff: 0, labelOff: 0, n: 0}},
+		arena:     []byte{},
 	}
 	var query model.Vector14
 	score := idx.Predict(query, K)
