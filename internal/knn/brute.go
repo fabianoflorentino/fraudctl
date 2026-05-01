@@ -514,15 +514,6 @@ func kmeansUpdate(flat []float32, n int, centroids []float32, k int, assign []in
 	}
 }
 
-func l2sq(a, b []float32) float32 {
-	var s float32
-	for i := 0; i < 14; i++ {
-		diff := a[i] - b[i]
-		s += diff * diff
-	}
-	return s
-}
-
 // ─── shared helpers ───────────────────────────────────────────────────────────
 
 type candidate struct {

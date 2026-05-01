@@ -11,7 +11,7 @@
 # ============================================================================
 
 BINARY        := fraudctl
-MODULE        := github.com/fabianoratm/fraudctl
+MODULE        := github.com/fabianoflorentino/fraudctl
 VERSION      ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS       := -s -w -X main.version=$(VERSION)
 BUILD_FLAGS   := CGO_ENABLED=0 GOARCH=amd64

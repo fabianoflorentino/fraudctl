@@ -1,6 +1,6 @@
-# Architecture Diagrams
+# Architecture
 
-## API Flow
+## Request Flow
 
 ```mermaid
 sequenceDiagram
@@ -8,68 +8,65 @@ sequenceDiagram
     participant N as nginx
     participant H as Handler
     participant V as Vectorizer
-    participant K as KNN
-    participant Ca as Cache
+    participant K as IVFIndex
 
     C->>N: POST /fraud-score
-    N->>H: route to API
-    Note over H: Parse JSON & Extract ID
-    H->>Ca: GetCachedAnswer(id)
-    Ca-->>H: response or not found
-
-    alt ID found in cache
-        H->>C: 200 OK {approved, fraud_score}
-    else ID not found
-        H->>V: Vectorize(transaction)
-        V-->>H: 14D Vector
-        H->>K: Predict(vector)
-        K-->>H: {fraud_score, approved}
-        H->>C: 200 OK {approved, fraud_score}
-    end
+    N->>H: round-robin to API-1 or API-2
+    H->>H: stream-decode JSON
+    H->>V: Vectorize(request)
+    V-->>H: float32[14]
+    H->>K: Predict(vector, k=5)
+    K-->>H: fraud_score
+    H->>C: 200 OK {approved, fraud_score}
 ```
 
-### Request Processing Paths
+## IVF KNN Algorithm
 
 ```mermaid
 flowchart LR
-    A[HTTP Request] --> B[Parse JSON]
-    B --> C{ID in<br/>Cache?}
+    Q[Query float32-14] --> C[Find nearest centroid\nEuclidean over K=300]
+    C --> CL[Load cluster\n~10k vectors]
+    CL --> S[Scan cluster\nmin-heap k=5]
+    S --> V[Count fraud neighbors]
+    V --> R[fraud_score = fraud / 5]
 
-    C -->|Yes| D["Cache<br/>(O(1))"]
-    D --> E[Return Response]
-
-    C -->|No| F[Vectorizer]
-    F --> G[14D Vector]
-    G --> H[KNN Search]
-    H --> I[Top-5 Neighbors]
-    I --> J[Voting]
-    J --> K[Fraud Score]
-    K --> E
+    style Q fill:#e1f5fe,color:#000000
+    style R fill:#e8f5e8,color:#000000
+    style C fill:#fffbe6,color:#000000
 ```
 
-## KNN Algorithm
+## Index Build (docker build time)
 
 ```mermaid
 flowchart LR
-    Q[Query<br/>14D] --> F[For each ref]
-    F --> D[Euclidean Dist]
-    D --> C{dist <<br/>top-K?}
-    C -->|Yes| U[Update heap]
-    C -->|No| N[Skip]
-    U --> E{K = 5?}
-    E -->|No| F
-    E -->|Yes| V[Count fraud]
-    V --> S["fraud / 5"]
+    G[references.json.gz\n3M vectors] --> KM[k-means\nK=300, 15 iters\nparallel workers]
+    KM --> B[ivf.bin\n164MB\nbaked into image]
+    B --> L[LoadDefault\nstartup ~148ms]
+    L --> I[IVFIndex\nin memory]
 
-    style Q fill:#e1f5fe color:#000000
-    style S fill:#e8f5e8 color:#000000
-    style D fill:#fffbe6 color:#000000
+    style G fill:#e1f5fe,color:#000000
+    style B fill:#fffbe6,color:#000000
+    style I fill:#e8f5e8,color:#000000
 ```
 
-## Performance Comparison
+## Resource Allocation
 
-| Path | Latency | Use Case |
-| ------ | --------- | ---------- |
-| Cache Hit | ~0.01ms | Known transaction IDs |
-| KNN Search | ~0.85ms | Unknown transaction IDs |
-| HTTP Overhead | ~0.15ms | Network + parsing |
+| Component | CPU | Memory |
+|---|---|---|
+| nginx | 0.10 | 30MB |
+| api-1 | 0.45 | 150MB |
+| api-2 | 0.45 | 150MB |
+| **Total** | **1.00** | **330MB** |
+
+Key env vars per API instance: `GOMAXPROCS=1`, `GOGC=500`, `GOMEMLIMIT=140MiB`
+
+## Performance
+
+| Path | Latency |
+|---|---|
+| Index load (startup) | ~148ms |
+| Find nearest centroid (K=300) | ~5μs |
+| Scan cluster (~10k vectors) | ~62μs |
+| KNN total | ~67μs |
+| HTTP handler p50 | ~50μs |
+| p99 (250 VUs, k6) | 170ms |

@@ -19,8 +19,6 @@ type Reference struct {
 	Label  string   `json:"label"`
 }
 
-// ReferenceSlice is a slice of Reference for sorting operations.
-type ReferenceSlice []Reference
 
 // NormalizationConstants contains the maximum values used for feature normalization.
 // These values are loaded from normalization.json and used to scale raw transaction

@@ -1,24 +1,26 @@
 # fraudctl
 
-High-performance fraud detection API using KNN vector search for credit card transactions.
+High-performance fraud detection API for [Rinha de Backend 2026](https://github.com/zanfranceschi/rinha-de-backend-2026).
 
 ## Overview
 
-fraudctl is a Go-based API that detects fraudulent credit card transactions using KNN (K-Nearest Neighbors) vector search. It transforms transactions into 14-dimensional vectors and compares them against a reference dataset of 100k labeled transactions.
+fraudctl is a pure-Go API that scores credit card transactions for fraud using an IVF (Inverted File Index) KNN search over 3 million labeled reference vectors. The IVF index is built at `docker build` time and baked into the image — startup loads it in ~148ms with zero disk I/O at request time.
 
 ### Key Features
 
-- **14D Vectorization**: Transaction features normalized to 14 dimensions
-- **KNN Search**: Brute-force euclidean distance over 100k reference vectors
-- **Fast Response**: Optimized KNN achieving ~0.85ms per prediction
-- **Low Resource**: Runs on 1 CPU / 350 MB RAM total
+- **IVF KNN**: K=300 clusters, nprobe=1 — ~67μs per prediction over 3M vectors
+- **14D Vectorization**: Transaction features normalized to float32[14]
+- **Pure Go**: `CGO_ENABLED=0`, `distroless/static:nonroot` image
+- **Resource budget**: 2× API (150MB, 0.45 CPU) + nginx (30MB, 0.10 CPU) = 1 CPU / 330MB total
+- **No caching**: prohibited by contest rules; every request goes through KNN
+- **p99 = 170ms** (k6 official test, 250 VUs)
 
 ## API Endpoints
 
 | Endpoint | Method | Description |
-| --------- | -------- | ------------- |
-| `/ready` | GET | Health check |
-| `/fraud-score` | POST | Fraud detection |
+|---|---|---|
+| `/ready` | GET | Health check — returns 200 once index is loaded |
+| `/fraud-score` | POST | Score a transaction |
 
 ### Request
 
@@ -63,155 +65,110 @@ fraudctl is a Go-based API that detects fraudulent credit card transactions usin
 
 ## Quick Start
 
-### Docker Compose
-
 ```bash
 docker compose up -d
 ```
 
-Access the API at `http://localhost:9999`
+API available at `http://localhost:9999`. The first `/ready` poll may take up to ~15s while the IVF index loads.
 
 ### Build from Source
 
 ```bash
-go build -o fraudctl ./cmd/api
-./fraudctl
+# Build IVF index (writes resources/ivf.bin, ~164MB)
+go run ./cmd/build-index -nlist 300 -iterations 15
+
+# Run API
+PORT=9999 RESOURCES=./resources go run ./cmd/api
 ```
 
 ## Architecture
 
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant N as nginx
-    participant A1 as API-1
-    participant A2 as API-2
-    participant Ca as Cache
-    participant K as KNN
-
-    Note over A1,A2: Startup: Load 14,500 cached responses
-    C->>N: POST /fraud-score
-    N-->>A1: route (round-robin)
-    N-->>A2: route (round-robin)
-
-    par Cache Path
-        A1->>Ca: GetCachedAnswer(id)
-        Ca-->>A1: response (O(1))
-        A1-->>N: {approved, fraud_score}
-    and KNN Path
-        A2->>Ca: GetCachedAnswer(id)
-        Ca-->>A2: not found
-        A2->>A2: Vectorize: 14D
-        A2->>K: Predict(vector)
-        K-->>A2: {fraud_score, approved}
-        A2-->>N: {approved, fraud_score}
-    end
-
-    N-->>C: 200 OK
+```
+HTTP Request (JSON)
+    ↓
+[nginx] round-robin to API-1 / API-2
+    ↓
+[Handler] stream-decode JSON → model.FraudScoreRequest
+    ↓
+[Vectorizer] → float32[14]  (pre-computed inverse constants, no division)
+    ↓
+[IVFIndex.Predict] → find nearest centroid → scan ~10k cluster vectors
+    ↓
+[Voting] fraud neighbors / K  →  fraud_score  →  approved = score < 0.5
+    ↓
+HTTP Response { approved, fraud_score }
 ```
 
-### Flow Diagram
+### IVF Index
 
-```mermaid
-flowchart LR
-    A[Transaction] --> B[nginx:9999]
-    B --> C[API-1]
-    B --> D[API-2]
+The index is built once at image build time by `cmd/build-index`:
 
-    C --> E["Cache (14,500)"]
-    D --> F["Cache (14,500)"]
-    C --> G[KNN]
-    D --> H[KNN]
+1. Stream `resources/references.json.gz` (3M vectors)
+2. Run parallel k-means (K=300, 15 iterations, `GOMAXPROCS` workers)
+3. Write `resources/ivf.bin` (magic `0x49564649`, version 1, centroids + per-cluster flat float32 + label bytes)
 
-    E --> I[Response]
-    F --> I
-    G --> I
-    H --> I
-
-    style E fill:#90EE90 color:#000000
-    style F fill:#90EE90 color:#000000
-    style G fill:#FFB6C1 color:#000000
-    style H fill:#FFB6C1 color:#000000
-```
-
-### Cache Strategy
-
-For known transaction IDs (from test-data.json), responses are served from a pre-loaded map cache in O(1) time. For unknown IDs, the KNN algorithm runs normally.
+At startup, `dataset.LoadDefault` memory-maps `ivf.bin` in ~148ms.
 
 ### 14 Dimensions
 
-| Idx | Feature | Description |
-| ----- | --------- | ------------- |
-| 0 | amount | Normalized transaction amount |
-| 1 | installments | Number of installments |
-| 2 | amount_vs_avg | Amount vs customer average |
-| 3 | hour_of_day | Transaction hour (0-23) |
-| 4 | day_of_week | Day of week (0-6) |
-| 5 | minutes_since_last_tx | Time since last transaction |
-| 6 | km_from_last_tx | Distance from last transaction |
-| 7 | km_from_home | Distance from home |
-| 8 | tx_count_24h | Transactions in last 24h |
-| 9 | is_online | Online transaction flag |
-| 10 | card_present | Card present flag |
-| 11 | unknown_merchant | Unknown merchant flag |
-| 12 | mcc_risk | MCC risk score |
-| 13 | merchant_avg_amount | Merchant average amount |
+| Idx | Feature | Range |
+|---|---|---|
+| 0 | amount | [0, 1] |
+| 1 | installments | [0, 1] |
+| 2 | amount vs avg | [0, 1] |
+| 3 | hour of day | [0, 1] |
+| 4 | day of week | [0, 1] |
+| 5 | minutes since last tx | [-1, 1] |
+| 6 | km from last tx | [-1, 1] |
+| 7 | km from home | [0, 1] |
+| 8 | tx count 24h | [0, 1] |
+| 9 | is online | {0, 1} |
+| 10 | card present | {0, 1} |
+| 11 | unknown merchant | {0, 1} |
+| 12 | MCC risk score | [0, 1] |
+| 13 | merchant avg amount | [0, 1] |
 
 ## Performance
 
 | Metric | Value |
-| -------- | ------- |
-| KNN Latency (100k) | ~0.85ms |
-| Cache Lookup | ~0.01ms |
-| HTTP Errors | 0% |
-| Accuracy | 100% |
-| p99 Latency | ~1.2ms |
-| Final Score | ~14,300 |
-
-## CI/CD
-
-GitHub Actions workflows for automated builds and releases:
-
-- **build.yml**: Runs tests and builds binary
-- **docker.yml**: Builds Docker image, pushes to Docker Hub, creates GitHub release
-
-### Secrets Required
-
-| Secret | Description |
-| -------- | ------------ |
-| `DOCKERHUB_USERNAME` | Docker Hub login |
-| `DOCKERHUB_TOKEN` | Docker Hub access token |
-| `GIT_HUB_TOKEN` | GitHub PAT (contents:write) |
+|---|---|
+| IVF build time | ~27s (16 CPUs) |
+| Index load time | ~148ms |
+| KNN predict (IVF, 3M) | ~67μs |
+| HTTP handler p50 | ~50μs |
+| p99 latency (250 VUs) | 170ms |
+| HTTP errors | 0% |
+| F1 score | ~97.5% |
+| Memory per instance | ~147MB |
 
 ## Project Structure
 
-```bash
-fraudctl/
-├── cmd/api/               # Main application
-├── internal/
-│   ├── handler/          # HTTP handlers
-│   ├── knn/              # KNN search algorithm
-│   ├── vectorizer/       # 14D vectorization
-│   ├── dataset/          # Dataset loader + cache
-│   └── model/            # Data models
-├── resources/             # Reference data + test-data.json
-├── config/               # nginx configuration
-├── scripts/              # Automation scripts
-│   └── run-k6-test.sh    # Run k6 load tests
-├── test-local/           # k6 load tests
-├── Dockerfile
-├── docker-compose.yml
-└── PROJECT_PLAN.md       # Detailed project plan
 ```
+fraudctl/
+├── cmd/
+│   ├── api/            # HTTP server entrypoint
+│   └── build-index/    # IVF index builder (runs at docker build time)
+├── internal/
+│   ├── handler/        # HTTP handler (stream decode + manual JSON encode)
+│   ├── knn/            # IVFIndex + BruteIndex (tests/fallback)
+│   ├── vectorizer/     # 14D float32 vectorization
+│   ├── dataset/        # LoadDefault (ivf.bin → BruteIndex fallback)
+│   └── model/          # Vector14, FraudScoreRequest/Response, NormalizationConstants
+├── resources/          # references.json.gz (3M vectors); ivf.bin (gitignored, built by Docker)
+├── config/             # nginx.conf
+├── scripts/            # docker-up.sh, run-k6-test.sh
+├── docs/               # Architecture, API, detection rules, evaluation
+├── Dockerfile
+└── docker-compose.yml
+```
+
+## Documentation
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — flow and KNN diagrams
+- [docs/API.md](docs/API.md) — full endpoint spec
+- [docs/DETECTION_RULES.md](docs/DETECTION_RULES.md) — vectorization and scoring logic
+- [docs/EVALUATION.md](docs/EVALUATION.md) — contest scoring formula
 
 ## License
 
 See [LICENSE](LICENSE) for details.
-
-## Documentation
-
-- [PROJECT_PLAN.md](docs/PROJECT_PLAN.md) - Detailed project plan
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - Architecture diagrams (Mermaid)
-- [docs/API.md](docs/API.md) - API endpoint documentation
-- [docs/DETECTION_RULES.md](docs/DETECTION_RULES.md) - 14D vectorization and detection logic
-- [docs/EVALUATION.md](docs/EVALUATION.md) - Scoring formula and evaluation criteria
