@@ -1,18 +1,17 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"log"
 	"net"
-	"net/http"
-	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"strconv"
 	"syscall"
 	"time"
+
+	"github.com/valyala/fasthttp"
 
 	"github.com/fabianoflorentino/fraudctl/internal/dataset"
 	"github.com/fabianoflorentino/fraudctl/internal/handler"
@@ -54,51 +53,51 @@ func main() {
 	knnIndex := ds.Index()
 	log.Printf("KNN index ready: %d vectors", knnIndex.Count())
 
-	router := handler.NewRouter()
-	router.Handle("/ready", handler.Ready)
-
 	fraudHandler := handler.NewFraudScoreHandler(ds.Vectorizer(), knnIndex)
-	router.Handle("/fraud-score", fraudHandler.Handle)
 
-	srv := &http.Server{
-		Handler:           router,
-		ReadHeaderTimeout: 2 * time.Second,
-		ReadTimeout:       5 * time.Second,
-		WriteTimeout:      10 * time.Second,
-		IdleTimeout:       30 * time.Second,
+	requestHandler := func(ctx *fasthttp.RequestCtx) {
+		switch string(ctx.Path()) {
+		case "/ready":
+			handler.Ready(ctx)
+		case "/fraud-score":
+			fraudHandler.Handle(ctx)
+		default:
+			ctx.SetStatusCode(fasthttp.StatusNotFound)
+		}
 	}
 
+	var ln net.Listener
 	if socketPath != "" {
-		// Remove stale socket if it exists.
 		_ = os.Remove(socketPath)
-		ln, err := net.Listen("unix", socketPath)
+		ln, err = net.Listen("unix", socketPath)
 		if err != nil {
 			log.Fatalf("Failed to listen on unix socket %s: %v", socketPath, err)
 		}
-		// Allow nginx (other users) to connect.
 		if err := os.Chmod(socketPath, 0666); err != nil {
 			log.Fatalf("Failed to chmod socket: %v", err)
 		}
-		log.Printf("Server starting on unix socket %s", socketPath)
-		go func() {
-			if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
-				log.Fatalf("Server failed: %v", err)
-			}
-		}()
+		log.Printf("Server starting on unix socket %s (fasthttp)", socketPath)
 	} else {
-		srv.Addr = fmt.Sprintf(":%d", port)
-		go func() {
-			log.Printf("Server starting on port %d", port)
-			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				log.Fatalf("Server failed: %v", err)
-			}
-		}()
+		ln, err = net.Listen("tcp", fmt.Sprintf(":%d", port))
+		if err != nil {
+			log.Fatalf("Failed to listen on port %d: %v", port, err)
+		}
+		log.Printf("Server starting on port %d (fasthttp)", port)
 	}
 
-	// pprof debug server on a separate port (never exposed publicly).
+	srv := &fasthttp.Server{
+		Handler:            requestHandler,
+		ReadTimeout:        2 * time.Second,
+		WriteTimeout:       5 * time.Second,
+		IdleTimeout:        30 * time.Second,
+		MaxRequestBodySize: 4096,
+		NoDefaultServerHeader: true,
+	}
+
 	go func() {
-		log.Printf("pprof listening on :6060")
-		_ = http.ListenAndServe(":6060", nil)
+		if err := srv.Serve(ln); err != nil {
+			log.Fatalf("Server failed: %v", err)
+		}
 	}()
 
 	quit := make(chan os.Signal, 1)
@@ -107,10 +106,7 @@ func main() {
 
 	log.Println("Shutting down server...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	if err := srv.Shutdown(ctx); err != nil {
+	if err := srv.Shutdown(); err != nil {
 		log.Fatalf("Server forced to shutdown: %v", err)
 	}
 
@@ -120,26 +116,24 @@ func main() {
 func checkHealth() error {
 	socketPath := os.Getenv("UNIX_SOCKET")
 
-	var client *http.Client
+	c := &fasthttp.Client{}
+
+	var uri string
 	if socketPath != "" {
-		client = &http.Client{
-			Transport: &http.Transport{
-				DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-					return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
-				},
-			},
+		uri = "http://unix/ready"
+		c.Dial = func(addr string) (net.Conn, error) {
+			return net.Dial("unix", socketPath)
 		}
 	} else {
-		client = http.DefaultClient
+		uri = "http://localhost:9999/ready"
 	}
 
-	resp, err := client.Get("http://localhost/ready")
+	status, _, err := c.Get(nil, uri)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status: %d", resp.StatusCode)
+	if status != fasthttp.StatusOK {
+		return fmt.Errorf("unexpected status: %d", status)
 	}
 	return nil
 }
