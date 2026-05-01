@@ -3,135 +3,147 @@ package knn
 import (
 	"testing"
 
-	"github.com/fabianoflorentino/fraudctl/internal/vectorizer"
+	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
 
-// TestDataset_Predict Tests KNN prediction with various neighbor configurations.
-func TestDataset_Predict(t *testing.T) {
+func TestBruteForce_Predict(t *testing.T) {
+	vectors := []model.Vector14{
+		{0.1, 0.1, 0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+		{0.2, 0.2, 0.2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+		{0.3, 0.3, 0.3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+		{0.9, 0.9, 0.9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+		{0.95, 0.95, 0.95, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+	}
+	labels := []bool{true, true, true, false, false}
+
+	bf := NewBruteForce()
+	bf.Build(vectors, labels)
+
 	tests := []struct {
-		name         string
-		references   []Reference
-		query        []float64
-		wantApproved bool
+		name    string
+		query   model.Vector14
+		k       int
+		wantMin float64
+		wantMax float64
 	}{
 		{
-			name: "all fraud neighbors",
-			references: []Reference{
-				{Vector: vectorizer.Vector{Dimensions: []float64{0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1}}, IsFraud: true},
-				{Vector: vectorizer.Vector{Dimensions: []float64{0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2}}, IsFraud: true},
-				{Vector: vectorizer.Vector{Dimensions: []float64{0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3}}, IsFraud: true},
-				{Vector: vectorizer.Vector{Dimensions: []float64{0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4}}, IsFraud: true},
-				{Vector: vectorizer.Vector{Dimensions: []float64{0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5}}, IsFraud: true},
-				{Vector: vectorizer.Vector{Dimensions: []float64{0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6}}, IsFraud: false},
-			},
-			query:        []float64{0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15},
-			wantApproved: false,
+			name:    "close to fraud vectors",
+			query:   model.Vector14{0.1, 0.1, 0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+			k:       3,
+			wantMin: 0.66,
+			wantMax: 1.0,
 		},
 		{
-			name: "all legit neighbors",
-			references: []Reference{
-				{Vector: vectorizer.Vector{Dimensions: []float64{0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9}}, IsFraud: false},
-				{Vector: vectorizer.Vector{Dimensions: []float64{0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8}}, IsFraud: false},
-				{Vector: vectorizer.Vector{Dimensions: []float64{0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7}}, IsFraud: false},
-				{Vector: vectorizer.Vector{Dimensions: []float64{0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6}}, IsFraud: false},
-				{Vector: vectorizer.Vector{Dimensions: []float64{0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5}}, IsFraud: false},
-				{Vector: vectorizer.Vector{Dimensions: []float64{0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1}}, IsFraud: true},
-			},
-			query:        []float64{0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.85},
-			wantApproved: true,
+			name:    "close to legit vectors",
+			query:   model.Vector14{0.9, 0.9, 0.9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+			k:       3,
+			wantMin: 0.0,
+			wantMax: 0.34,
 		},
 		{
-			name: "threshold 0.6 borderline - approved",
-			references: []Reference{
-				{Vector: vectorizer.Vector{Dimensions: []float64{0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1}}, IsFraud: false},
-				{Vector: vectorizer.Vector{Dimensions: []float64{0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2}}, IsFraud: false},
-				{Vector: vectorizer.Vector{Dimensions: []float64{0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3}}, IsFraud: false},
-				{Vector: vectorizer.Vector{Dimensions: []float64{0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4}}, IsFraud: false},
-				{Vector: vectorizer.Vector{Dimensions: []float64{0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5}}, IsFraud: false},
-				{Vector: vectorizer.Vector{Dimensions: []float64{0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6}}, IsFraud: true},
-			},
-			query:        []float64{0.15, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1},
-			wantApproved: true,
-		},
-		{
-			name: "threshold 0.6 borderline - denied",
-			references: []Reference{
-				{Vector: vectorizer.Vector{Dimensions: []float64{0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1}}, IsFraud: true},
-				{Vector: vectorizer.Vector{Dimensions: []float64{0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2}}, IsFraud: true},
-				{Vector: vectorizer.Vector{Dimensions: []float64{0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3}}, IsFraud: true},
-				{Vector: vectorizer.Vector{Dimensions: []float64{0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4}}, IsFraud: true},
-				{Vector: vectorizer.Vector{Dimensions: []float64{0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5}}, IsFraud: false},
-				{Vector: vectorizer.Vector{Dimensions: []float64{0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6}}, IsFraud: false},
-			},
-			query:        []float64{0.15, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1},
-			wantApproved: false,
+			name:    "empty predictor",
+			query:   model.Vector14{0.5, 0.5, 0.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+			k:       5,
+			wantMin: 0.0,
+			wantMax: 1.0,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dataset := NewDataset(tt.references, 1)
-			_, approved := dataset.Predict(tt.query)
+			if tt.name == "empty predictor" {
+				empty := NewBruteForce()
+				got := empty.Predict(tt.query, tt.k)
+				if got != 0.0 {
+					t.Errorf("Predict() = %v, want 0.0", got)
+				}
+				return
+			}
 
-			if approved != tt.wantApproved {
-				t.Errorf("Predict() approved = %v, want %v", approved, tt.wantApproved)
+			got := bf.Predict(tt.query, tt.k)
+			if got < tt.wantMin || got > tt.wantMax {
+				t.Errorf("Predict() = %v, want in [%v, %v]", got, tt.wantMin, tt.wantMax)
 			}
 		})
 	}
 }
 
-// TestEuclideanDistanceSquared Tests Euclidean distance calculation for various vector pairs.
-func TestEuclideanDistanceSquared(t *testing.T) {
-	tests := []struct {
-		name     string
-		a        []float64
-		b        []float64
-		wantDist float64
-	}{
-		{
-			name:     "identical vectors",
-			a:        []float64{1, 2, 3, 4},
-			b:        []float64{1, 2, 3, 4},
-			wantDist: 0,
-		},
-		{
-			name:     "simple difference",
-			a:        []float64{0, 0},
-			b:        []float64{3, 4},
-			wantDist: 25,
-		},
-		{
-			name:     "one dimension only",
-			a:        []float64{0},
-			b:        []float64{3},
-			wantDist: 9,
-		},
+func TestBruteForce_Count(t *testing.T) {
+	vectors := []model.Vector14{
+		{0.1, 0.1, 0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+		{0.2, 0.2, 0.2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 	}
+	labels := []bool{true, false}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := euclideanDistanceSquared(tt.a, tt.b)
-			if got != tt.wantDist {
-				t.Errorf("euclideanDistanceSquared() = %v, want %v", got, tt.wantDist)
-			}
-		})
+	bf := NewBruteForce()
+	bf.Build(vectors, labels)
+
+	if got := bf.Count(); got != 2 {
+		t.Errorf("Count() = %v, want 2", got)
 	}
 }
 
-// TestNewDataset Verifies that dataset initialization correctly populates internal data structures.
-func TestNewDataset(t *testing.T) {
-	references := []Reference{
-		{Vector: vectorizer.Vector{Dimensions: []float64{0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1}}, IsFraud: true},
-		{Vector: vectorizer.Vector{Dimensions: []float64{0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9}}, IsFraud: false},
+func BenchmarkBruteForce_Predict_10k(b *testing.B) {
+	vectors := make([]model.Vector14, 10000)
+	labels := make([]bool, 10000)
+	for i := range vectors {
+		for j := 0; j < 14; j++ {
+			vectors[i][j] = float32(i%100) / 100.0
+		}
+		labels[i] = i%3 == 0
 	}
 
-	dataset := NewDataset(references, 1)
+	bf := NewBruteForce()
+	bf.Build(vectors, labels)
 
-	if len(dataset.vectors) != 2 {
-		t.Errorf("NewDataset() vectors len = %d, want 2", len(dataset.vectors))
+	query := model.Vector14{0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = bf.Predict(query, 5)
+	}
+}
+
+func BenchmarkBruteForce_Predict_100k(b *testing.B) {
+	vectors := make([]model.Vector14, 100000)
+	labels := make([]bool, 100000)
+	for i := range vectors {
+		for j := 0; j < 14; j++ {
+			vectors[i][j] = float32(i%100) / 100.0
+		}
+		labels[i] = i%3 == 0
 	}
 
-	if len(dataset.fraudFlags) != 2 {
-		t.Errorf("NewDataset() fraudFlags len = %d, want 2", len(dataset.fraudFlags))
+	bf := NewBruteForce()
+	bf.Build(vectors, labels)
+
+	query := model.Vector14{0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = bf.Predict(query, 5)
 	}
+}
+
+func BenchmarkBruteForce_Predict_Parallel(b *testing.B) {
+	vectors := make([]model.Vector14, 100000)
+	labels := make([]bool, 100000)
+	for i := range vectors {
+		for j := 0; j < 14; j++ {
+			vectors[i][j] = float32(i%100) / 100.0
+		}
+		labels[i] = i%3 == 0
+	}
+
+	bf := NewBruteForce()
+	bf.Build(vectors, labels)
+
+	query := model.Vector14{0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5}
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_ = bf.Predict(query, 5)
+		}
+	})
 }
