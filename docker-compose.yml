@@ -99,6 +99,7 @@ volumes:
     driver_opts:
       type: tmpfs
       device: tmpfs
+      o: "uid=65532,gid=65532"
 
 # Resource allocation summary:
 #   nginx:    0.10 CPU,  30 MB
