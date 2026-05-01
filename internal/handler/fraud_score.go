@@ -25,10 +25,16 @@ type KNNPredictor interface {
 
 var staticResponses = [knn.K + 1][]byte{
 	[]byte(`{"approved":true,"fraud_score":0}`),
-	[]byte(`{"approved":true,"fraud_score":0.2}`),
-	[]byte(`{"approved":true,"fraud_score":0.4}`),
-	[]byte(`{"approved":false,"fraud_score":0.6}`),
-	[]byte(`{"approved":false,"fraud_score":0.8}`),
+	[]byte(`{"approved":true,"fraud_score":0.09}`),
+	[]byte(`{"approved":true,"fraud_score":0.18}`),
+	[]byte(`{"approved":true,"fraud_score":0.27}`),
+	[]byte(`{"approved":true,"fraud_score":0.36}`),
+	[]byte(`{"approved":true,"fraud_score":0.45}`),
+	[]byte(`{"approved":false,"fraud_score":0.55}`),
+	[]byte(`{"approved":false,"fraud_score":0.64}`),
+	[]byte(`{"approved":false,"fraud_score":0.73}`),
+	[]byte(`{"approved":false,"fraud_score":0.82}`),
+	[]byte(`{"approved":false,"fraud_score":0.91}`),
 	[]byte(`{"approved":false,"fraud_score":1}`),
 }
 
