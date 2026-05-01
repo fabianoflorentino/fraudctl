@@ -22,10 +22,10 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build -ldflags="-s -w" -o build-index ./cmd/build-index
 
 # Pre-build the IVF index (runs k-means on the 3M reference vectors).
-# nlist=600: ~5k vectors per cluster; nprobe=3 (adaptive to 6) scans ~15-30k vectors.
+# nlist=1200: ~2.5k vectors per cluster; nprobe=4 (adaptive to 8) scans ~10-20k vectors.
 # Format v2: int16 quantization (scale=10000) halves arena from 163MB to 87MB.
-# With 16 CPUs at build time this takes ~50s.
-RUN ./build-index -resources ./resources -nlist 600 -iterations 15
+# With 16 CPUs at build time this takes ~60s.
+RUN ./build-index -resources ./resources -nlist 1200 -iterations 15
 
 # ── Production stage ──────────────────────────────────────────────────────────
 FROM gcr.io/distroless/static AS production
