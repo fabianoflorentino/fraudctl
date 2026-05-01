@@ -154,8 +154,8 @@ func TestLoader_LoadReferences(t *testing.T) {
 			path:    "../../resources/references.json.gz",
 			wantErr: false,
 			check: func(t *testing.T, got int) {
-				if got != 100000 {
-					t.Errorf("LoadReferences() count = %v, want 100000", got)
+				if got != 3000000 {
+					t.Errorf("LoadReferences() count = %v, want 3000000", got)
 				}
 			},
 		},
@@ -202,8 +202,8 @@ func TestLoader_LoadAll(t *testing.T) {
 			path:    "../../resources",
 			wantErr: false,
 			check: func(t *testing.T, ds *Dataset) {
-				if ds.Count() != 100000 {
-					t.Errorf("Dataset.Count() = %v, want 100000", ds.Count())
+				if ds.Count() != 3000000 {
+					t.Errorf("Dataset.Count() = %v, want 3000000", ds.Count())
 				}
 				if ds.FraudCount() == 0 {
 					t.Error("Dataset.FraudCount() should be > 0")
