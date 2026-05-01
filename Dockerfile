@@ -32,7 +32,8 @@ FROM gcr.io/distroless/static:nonroot AS production
 COPY --from=builder /build/fraudctl /fraudctl
 COPY --from=builder /build/resources /resources
 
-ENV RESOURCES=/resources
+# Resources are read via the -resources flag (default: /resources).
+# To override at runtime: docker run ... /fraudctl -resources /other/path
 EXPOSE 9999
 
 ENTRYPOINT ["/fraudctl"]

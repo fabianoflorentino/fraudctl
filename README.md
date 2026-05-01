@@ -94,7 +94,7 @@ HTTP Request (JSON)
     ↓
 [IVFIndex.Predict] → find nearest centroid → scan ~10k cluster vectors
     ↓
-[Voting] fraud neighbors / K  →  fraud_score  →  approved = score < 0.5
+[Voting] fraud neighbors / K  →  fraud_score  →  approved = score < 0.6
     ↓
 HTTP Response { approved, fraud_score }
 ```
@@ -118,8 +118,8 @@ At startup, `dataset.LoadDefault` memory-maps `ivf.bin` in ~148ms.
 | 2 | amount vs avg | [0, 1] |
 | 3 | hour of day | [0, 1] |
 | 4 | day of week | [0, 1] |
-| 5 | minutes since last tx | [-1, 1] |
-| 6 | km from last tx | [-1, 1] |
+| 5 | minutes since last tx | {-1} ∪ [0, 1] |
+| 6 | km from last tx       | {-1} ∪ [0, 1] |
 | 7 | km from home | [0, 1] |
 | 8 | tx count 24h | [0, 1] |
 | 9 | is online | {0, 1} |
@@ -152,7 +152,7 @@ fraudctl/
 │   ├── handler/        # HTTP handler (stream decode + manual JSON encode)
 │   ├── knn/            # IVFIndex + BruteIndex (tests/fallback)
 │   ├── vectorizer/     # 14D float32 vectorization
-│   ├── dataset/        # LoadDefault (ivf.bin → BruteIndex fallback)
+│   ├── dataset/        # LoadDefault (ivf.bin fast path → BruteIndex fallback)
 │   └── model/          # Vector14, FraudScoreRequest/Response, NormalizationConstants
 ├── resources/          # references.json.gz (3M vectors); ivf.bin (gitignored, built by Docker)
 ├── config/             # nginx.conf

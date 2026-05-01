@@ -82,16 +82,3 @@ final_score = score_p99 + score_det
 3. **HTTP 500 has a double impact.** It enters `E` with weight 5 (against 1 for an FP) and also counts in `failure_rate`. Returning a fallback response (`approved: true`, `fraud_score: 0.0`) avoids the HTTP error at the cost of potentially raising FP or FN.
 
 4. **The reference files do not change during the test.** You can pre-process freely at startup or during the container build — the more processing you move outside of the test, the better your p99 tends to be.
-
-## Performance Targets
-
-Based on the current implementation:
-
-| Metric | Current | Target | Score Impact |
-| -------- | ------- | ------ | -------------- |
-| p99 latency | ~1.2ms | ≤1ms | +3000 (ceiling) |
-| Accuracy | 100% | 100% | +3000 (ceiling) |
-| HTTP Errors | 0% | 0% | +3000 (ceiling) |
-| **Final Score** | **~14,300** | **+6000** | Max possible |
-
-> Note: The max score in Rinha 2026 is +6000. The higher score shown here is from an earlier scoring formula that used a maximum achievable accuracy of ~14300 based on the evaluation dataset.

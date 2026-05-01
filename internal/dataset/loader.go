@@ -3,7 +3,7 @@
 // This package handles loading of the reference data files required for the fraud
 // detection KNN algorithm:
 //
-//   - references.json.gz: 100k labeled reference vectors
+//   - references.json.gz: 3M labeled reference vectors
 //   - mcc_risk.json: MCC code to risk score mapping
 //   - normalization.json: Constants for feature normalization
 //

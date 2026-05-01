@@ -8,7 +8,7 @@ sequenceDiagram
     participant N as nginx
     participant H as Handler
     participant V as Vectorizer
-    participant K as IVFIndex
+    participant K as KNNPredictor
 
     C->>N: POST /fraud-score
     N->>H: round-robin to API-1 or API-2
@@ -18,6 +18,10 @@ sequenceDiagram
     H->>K: Predict(vector, k=5)
     K-->>H: fraud_score
     H->>C: 200 OK {approved, fraud_score}
+
+    alt decode error
+        H->>C: 200 OK {approved:true, fraud_score:0.0}
+    end
 ```
 
 ## IVF KNN Algorithm
@@ -25,7 +29,7 @@ sequenceDiagram
 ```mermaid
 flowchart LR
     Q[Query float32-14] --> C[Find nearest centroid\nEuclidean over K=300]
-    C --> CL[Load cluster\n~10k vectors]
+    C --> CL[Select cluster\n~10k vectors]
     CL --> S[Scan cluster\nmin-heap k=5]
     S --> V[Count fraud neighbors]
     V --> R[fraud_score = fraud / 5]
@@ -40,7 +44,7 @@ flowchart LR
 ```mermaid
 flowchart LR
     G[references.json.gz\n3M vectors] --> KM[k-means\nK=300, 15 iters\nparallel workers]
-    KM --> B[ivf.bin\n164MB\nbaked into image]
+    KM --> B[ivf.bin\n~164MB\nbaked into image]
     B --> L[LoadDefault\nstartup ~148ms]
     L --> I[IVFIndex\nin memory]
 
@@ -49,6 +53,9 @@ flowchart LR
     style I fill:#e8f5e8,color:#000000
 ```
 
+> K=300 and 15 iterations are the values passed by the Dockerfile (`-nlist 300 -iterations 15`).
+> The `build-index` binary defaults are K=500 / 20 iterations if run without flags.
+
 ## Resource Allocation
 
 | Component | CPU | Memory |
@@ -56,7 +63,7 @@ flowchart LR
 | nginx | 0.10 | 30MB |
 | api-1 | 0.45 | 150MB |
 | api-2 | 0.45 | 150MB |
-| **Total** | **1.00** | **330MB** |
+| **Total** | **1.00** | **330MB** (budget: 350MB) |
 
 Key env vars per API instance: `GOMAXPROCS=1`, `GOGC=500`, `GOMEMLIMIT=140MiB`
 
