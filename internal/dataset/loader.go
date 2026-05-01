@@ -172,27 +172,8 @@ func (l *Loader) LoadReferences(path string) ([]model.Reference, error) {
 	return references, nil
 }
 
-// LoadAll loads all reference data files and returns a Dataset.
-// This is a convenience function that calls LoadNormalization, LoadMCCRisk,
-// and LoadReferences in sequence.
+// LoadAll is kept for test compatibility. In production, use dataset.LoadDefault
+// which streams directly from gzip without intermediate allocations.
 func (l *Loader) LoadAll() (*Dataset, error) {
-	norm, err := l.LoadNormalization("")
-	if err != nil {
-		return nil, err
-	}
-
-	mccRisk, err := l.LoadMCCRisk("")
-	if err != nil {
-		return nil, err
-	}
-
-	references, err := l.LoadReferences("")
-	if err != nil {
-		return nil, err
-	}
-
-	ds := NewDataset(references)
-	ds.SetConfig(norm, mccRisk)
-
-	return ds, nil
+	return LoadDefault(l.basePath)
 }

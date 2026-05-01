@@ -1,96 +1,112 @@
 // Package dataset provides functionality for loading and managing the reference dataset.
-//
-// This package handles loading of the reference data files required for the fraud
-// detection KNN algorithm, and provides a Dataset type that can be used to create
-// vectorizers and KNN predictors.
 package dataset
 
 import (
+	"os"
+	"path/filepath"
+	"runtime"
+
 	"github.com/fabianoflorentino/fraudctl/internal/knn"
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 	"github.com/fabianoflorentino/fraudctl/internal/vectorizer"
 )
 
-// Dataset holds the reference data in memory for fraud detection.
+// Dataset holds config and the KNN index needed to serve requests.
 type Dataset struct {
-	references []model.Reference
-
-	vectors []model.Vector14
-	labels  []bool
-
 	norm    model.NormalizationConstants
 	mccRisk model.MCCRisk
+	index   KNNIndex
 }
 
-// NewDataset creates a new Dataset from a slice of Reference vectors.
-func NewDataset(references []model.Reference) *Dataset {
-	count := len(references)
-
-	vectors := make([]model.Vector14, count)
-	labels := make([]bool, count)
-
-	for i, ref := range references {
-		vectors[i] = ref.Vector
-		labels[i] = ref.Label == "fraud"
-	}
-
-	return &Dataset{
-		references: references,
-		vectors:    vectors,
-		labels:     labels,
-	}
+// KNNIndex is implemented by both BruteIndex and IVFIndex.
+type KNNIndex interface {
+	Predict(query model.Vector14, k int) float64
+	Count() int
+	FraudCount() int
 }
 
-// Vectorizer creates a new Vectorizer configured with the dataset's
-// normalization constants and MCC risk scores.
-func (d *Dataset) Vectorizer() *vectorizer.Vectorizer {
-	return vectorizer.New(d.norm, d.mccRisk)
-}
-
-// KNN creates a new HNSW-based KNN predictor using hnswlib (C++).
-// Build time is ~10s for 3M vectors with parallel insertion.
-func (d *Dataset) KNN() *knn.HNSWIndex {
-	index := knn.NewHNSWIndex()
-	index.Build(d.vectors, d.labels)
-	return index
-}
-
-// Count returns the total number of reference vectors in the dataset.
-func (d *Dataset) Count() int {
-	return len(d.vectors)
-}
-
-// FraudCount returns the number of fraudulent transactions in the reference dataset.
-func (d *Dataset) FraudCount() int {
-	count := 0
-	for _, label := range d.labels {
-		if label {
-			count++
+// NewDataset creates a Dataset with an empty BruteIndex (for testing).
+func NewDataset(refs []model.Reference) *Dataset {
+	idx := knn.NewBruteIndex()
+	if len(refs) > 0 {
+		vectors := make([]model.Vector14, len(refs))
+		labels := make([]bool, len(refs))
+		for i, r := range refs {
+			vectors[i] = r.Vector
+			labels[i] = r.Label == "fraud"
 		}
+		idx.Build(vectors, labels)
 	}
-	return count
+	return &Dataset{index: idx}
 }
 
-// LegitCount returns the number of legitimate transactions in the reference dataset.
-func (d *Dataset) LegitCount() int {
-	count := 0
-	for _, label := range d.labels {
-		if !label {
-			count++
-		}
-	}
-	return count
-}
-
-// SetConfig sets the normalization constants and MCC risk scores for the dataset.
+// SetConfig sets normalization constants and MCC risk scores.
 func (d *Dataset) SetConfig(norm model.NormalizationConstants, mccRisk model.MCCRisk) {
 	d.norm = norm
 	d.mccRisk = mccRisk
 }
 
-// LoadDefault is a convenience function that loads the default dataset
-// from the specified path. It creates a Loader and calls LoadAll.
+// Vectorizer returns a Vectorizer configured with the dataset's constants.
+func (d *Dataset) Vectorizer() *vectorizer.Vectorizer {
+	return vectorizer.New(d.norm, d.mccRisk)
+}
+
+// Index returns the KNN index.
+func (d *Dataset) Index() KNNIndex { return d.index }
+
+// KNN returns the KNN index (backward-compat alias).
+func (d *Dataset) KNN() KNNIndex { return d.index }
+
+// Count returns total reference vectors.
+func (d *Dataset) Count() int { return d.index.Count() }
+
+// FraudCount returns fraud reference count.
+func (d *Dataset) FraudCount() int { return d.index.FraudCount() }
+
+// LegitCount returns legit reference count.
+func (d *Dataset) LegitCount() int { return d.index.Count() - d.index.FraudCount() }
+
+// LoadDefault loads the dataset from path.
+// If ivf.bin exists, loads the pre-built IVF index (fast, low memory).
+// Otherwise, streams references.json.gz into a BruteIndex (slower queries).
 func LoadDefault(path string) (*Dataset, error) {
 	loader := NewLoader(path)
-	return loader.LoadAll()
+
+	norm, err := loader.LoadNormalization("")
+	if err != nil {
+		return nil, err
+	}
+
+	mccRisk, err := loader.LoadMCCRisk("")
+	if err != nil {
+		return nil, err
+	}
+
+	var idx KNNIndex
+
+	ivfPath := filepath.Join(path, "ivf.bin")
+	if _, err := os.Stat(ivfPath); err == nil {
+		// Fast path: load pre-built IVF index.
+		ivf, err := knn.LoadIVF(ivfPath)
+		if err != nil {
+			return nil, err
+		}
+		idx = ivf
+	} else {
+		// Fallback: stream gzip directly into BruteIndex.
+		brute := knn.NewBruteIndex()
+		gzPath := filepath.Join(path, "references.json.gz")
+		if err := brute.BuildFromGzip(gzPath, 3_000_000); err != nil {
+			return nil, err
+		}
+		idx = brute
+	}
+
+	runtime.GC()
+
+	return &Dataset{
+		norm:    norm,
+		mccRisk: mccRisk,
+		index:   idx,
+	}, nil
 }

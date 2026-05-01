@@ -48,8 +48,8 @@ func main() {
 	log.Printf("Dataset loaded: %d references (%d fraud, %d legit)",
 		ds.Count(), ds.FraudCount(), ds.LegitCount())
 
-	knnIndex := ds.KNN()
-	log.Printf("KNN predictor ready: %d vectors", knnIndex.Count())
+	knnIndex := ds.Index()
+	log.Printf("KNN index ready: %d vectors", knnIndex.Count())
 
 	router := handler.NewRouter()
 	router.Handle("/ready", handler.Ready)

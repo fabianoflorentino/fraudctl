@@ -2,15 +2,11 @@
 # =============================================================================
 # fraudctl - Fraud Detection API
 # =============================================================================
-# Multi-stage build with CGO for HNSW (hnswlib C++ library)
+# Pure Go, no CGO.
+# IVF index is pre-built at image build time so startup is fast and lean.
 # =============================================================================
 
-# Build stage — requires g++ for CGO/hnswlib
 FROM golang:1.26-bookworm AS builder
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    g++ make \
-    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
 
@@ -19,15 +15,18 @@ RUN go mod download
 
 COPY . .
 
-# Build hnswlib static library in the module directory
-RUN cd $(go list -m -f '{{.Dir}}' github.com/sunhailin-Leo/hnswlib-to-go) && \
-    make portable
+# Compile the API and the index-builder.
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -ldflags="-s -w" -o fraudctl ./cmd/api && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -ldflags="-s -w" -o build-index ./cmd/build-index
 
-# Build the application with CGO enabled
-RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
-    go build -ldflags="-s -w" -o fraudctl ./cmd/api
+# Pre-build the IVF index (runs k-means on the 3M reference vectors).
+# nlist=300: ~10k vectors per cluster; nprobe=1 (at query time) scans ~10k vectors (~70us/query).
+# With 16 CPUs at build time this takes ~27s.
+RUN ./build-index -resources ./resources -nlist 300 -iterations 15
 
-# ── Production stage ─────────────────────────────────────────────────────────────
+# ── Production stage ──────────────────────────────────────────────────────────
 FROM gcr.io/distroless/static:nonroot AS production
 
 COPY --from=builder /build/fraudctl /fraudctl
