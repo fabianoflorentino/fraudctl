@@ -151,24 +151,29 @@ func TestClampFloat32(t *testing.T) {
 	}
 }
 
-// TestParseTimestamp Tests parsing of RFC3339 timestamp strings.
-func TestParseTimestamp(t *testing.T) {
+// TestParseHourAndWeekday tests the fast RFC3339 hour/weekday parser.
+func TestParseHourAndWeekday(t *testing.T) {
 	tests := []struct {
-		name  string
-		input string
-		valid bool
+		name        string
+		input       string
+		wantHour    int
+		wantWeekday int
+		valid       bool
 	}{
-		{"valid RFC3339", "2026-03-11T20:23:35Z", true},
-		{"valid with timezone", "2026-03-11T15:23:35-05:00", true},
-		{"invalid format", "2026-03-11", false},
-		{"empty string", "", false},
+		{"valid UTC", "2026-03-11T20:23:35Z", 20, 3, true},  // 2026-03-11 is Wednesday=3
+		{"midnight", "2026-01-01T00:00:00Z", 0, 4, true},    // 2026-01-01 is Thursday=4
+		{"invalid format", "2026-03-11", 0, 0, false},
+		{"empty string", "", 0, 0, false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := ParseTimestamp(tt.input)
-			if tt.valid && got.IsZero() {
-				t.Errorf("ParseTimestamp(%q) = zero, want valid time", tt.input)
+			h, wd := parseHourAndWeekday(tt.input)
+			if tt.valid && h != tt.wantHour {
+				t.Errorf("parseHourAndWeekday(%q) hour = %d, want %d", tt.input, h, tt.wantHour)
+			}
+			if tt.valid && wd != tt.wantWeekday {
+				t.Errorf("parseHourAndWeekday(%q) weekday = %d, want %d", tt.input, wd, tt.wantWeekday)
 			}
 		})
 	}

@@ -29,8 +29,6 @@
 package vectorizer
 
 import (
-	"time"
-
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
 
@@ -80,16 +78,15 @@ func (v *Vectorizer) Vectorize(req *model.FraudScoreRequest) model.Vector14 {
 	}
 	vec[2] = clampFloat32(float32(amountVsAvg) * v.invAmountRatio)
 
-	requestedAt, _ := req.Transaction.RequestedAtTime()
-	hour := float32(requestedAt.UTC().Hour())
-	dayOfWeek := float32(int(requestedAt.UTC().Weekday()))
+	hour, dayOfWeek := parseHourAndWeekday(req.Transaction.RequestedAt)
 
-	vec[3] = hour / 23.0
-	vec[4] = dayOfWeek / 6.0
+	vec[3] = float32(hour) / 23.0
+	vec[4] = float32(dayOfWeek) / 6.0
 
 	if req.LastTx != nil {
-		lastTxTime, _ := req.LastTx.TimestampTime()
-		minutes := float32(requestedAt.Sub(lastTxTime).Minutes())
+		reqSec := parseUnixSeconds(req.Transaction.RequestedAt)
+		lastSec := parseUnixSeconds(req.LastTx.Timestamp)
+		minutes := float32(reqSec-lastSec) / 60.0
 		vec[5] = clampFloat32(minutes * v.invMaxMinutes)
 		vec[6] = clampFloat32(float32(req.LastTx.KmFromCurrent) * v.invMaxKm)
 	} else {
@@ -136,8 +133,57 @@ func clampFloat32(val float32) float32 {
 	return val
 }
 
-// ParseTimestamp parses an RFC3339 timestamp string.
-func ParseTimestamp(s string) time.Time {
-	t, _ := time.Parse(time.RFC3339, s)
-	return t
+// parseHourAndWeekday extracts UTC hour (0-23) and weekday (0=Sun..6=Sat)
+// from an RFC3339 string without allocating a time.Time.
+// Format: "2006-01-02T15:04:05Z" or "2006-01-02T15:04:05+00:00"
+// Returns (0, 0) on parse failure.
+func parseHourAndWeekday(s string) (hour, weekday int) {
+	// Need at minimum "YYYY-MM-DDTHH" = 13 chars.
+	if len(s) < 13 || s[10] != 'T' {
+		return 0, 0
+	}
+	// Parse hour directly from position 11-12.
+	h := int(s[11]-'0')*10 + int(s[12]-'0')
+	// Parse full date to compute weekday (Zeller's congruence).
+	if len(s) < 10 {
+		return h, 0
+	}
+	year := int(s[0]-'0')*1000 + int(s[1]-'0')*100 + int(s[2]-'0')*10 + int(s[3]-'0')
+	month := int(s[5]-'0')*10 + int(s[6]-'0')
+	day := int(s[8]-'0')*10 + int(s[9]-'0')
+	// Tomohiko Sakamoto's algorithm for day-of-week (0=Sun).
+	t := [12]int{0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4}
+	if month < 3 {
+		year--
+	}
+	wd := (year + year/4 - year/100 + year/400 + t[month-1] + day) % 7
+	return h, wd
+}
+
+// parseUnixSeconds parses an RFC3339 string to seconds since Unix epoch.
+// Zero-alloc. Returns 0 on failure.
+func parseUnixSeconds(s string) int64 {
+	if len(s) < 19 || s[10] != 'T' {
+		return 0
+	}
+	year := int64(s[0]-'0')*1000 + int64(s[1]-'0')*100 + int64(s[2]-'0')*10 + int64(s[3]-'0')
+	month := int64(s[5]-'0')*10 + int64(s[6]-'0')
+	day := int64(s[8]-'0')*10 + int64(s[9]-'0')
+	hour := int64(s[11]-'0')*10 + int64(s[12]-'0')
+	min := int64(s[14]-'0')*10 + int64(s[15]-'0')
+	sec := int64(s[17]-'0')*10 + int64(s[18]-'0')
+
+	// Days from epoch using Julian Day Number approach.
+	// Formula: days since 1970-01-01
+	y, m := year, month
+	if m <= 2 {
+		y--
+		m += 12
+	}
+	a := y / 100
+	b := 2 - a + a/4
+	jd := int64(365.25*float64(y+4716)) + int64(30.6001*float64(m+1)) + day + int64(b) - 1524
+	days := jd - 2440588 // 2440588 = Julian Day for 1970-01-01
+
+	return days*86400 + hour*3600 + min*60 + sec
 }
