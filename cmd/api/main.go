@@ -1,12 +1,16 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
+	"time"
 
 	"github.com/fabianoflorentino/fraudctl/internal/dataset"
 	"github.com/fabianoflorentino/fraudctl/internal/handler"
@@ -41,29 +45,47 @@ func main() {
 		log.Fatalf("Failed to load dataset: %v", err)
 	}
 
-	log.Printf("Loading cached answers from test-data.json")
-	testDataPath := *resourcesPath + "/test-data.json"
-	if err := ds.LoadCachedAnswers(testDataPath); err != nil {
-		log.Fatalf("Failed to load cached answers: %v", err)
-	}
+	log.Printf("Dataset loaded: %d references (%d fraud, %d legit)",
+		ds.Count(), ds.FraudCount(), ds.LegitCount())
 
-	var cachedCount int
-	if cc := ds.CachedAnswers(); cc > 0 {
-		cachedCount = cc
-	}
-	log.Printf("Dataset loaded: %d references (%d fraud, %d legit), %d cached answers",
-		ds.Count(), ds.FraudCount(), ds.LegitCount(), cachedCount)
+	knnIndex := ds.KNN()
+	log.Printf("KNN predictor ready: %d vectors", knnIndex.Count())
 
 	router := handler.NewRouter()
 	router.Handle("/ready", handler.Ready)
 
-	fraudHandler := handler.NewFraudScoreHandler(ds, ds.Vectorizer(), ds.KNN(1))
+	fraudHandler := handler.NewFraudScoreHandler(ds.Vectorizer(), knnIndex)
 	router.Handle("/fraud-score", fraudHandler.Handle)
 
-	log.Printf("Server starting on port %d", port)
-	if err := http.ListenAndServe(fmt.Sprintf(":%d", port), router); err != nil {
-		log.Fatalf("Server failed: %v", err)
+	srv := &http.Server{
+		Addr:         fmt.Sprintf(":%d", port),
+		Handler:      router,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  30 * time.Second,
 	}
+
+	go func() {
+		log.Printf("Server starting on port %d", port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server failed: %v", err)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("Shutting down server...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatalf("Server forced to shutdown: %v", err)
+	}
+
+	log.Println("Server exited properly")
 }
 
 func checkHealth() error {
