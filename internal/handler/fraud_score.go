@@ -10,34 +10,32 @@ import (
 	"time"
 
 	"github.com/fabianoflorentino/fraudctl/internal/model"
-	"github.com/fabianoflorentino/fraudctl/internal/vectorizer"
 )
 
+// Vectorizer interface for converting requests to vectors.
 type Vectorizer interface {
-	Vectorize(req *model.FraudScoreRequest) vectorizer.Vector
+	Vectorize(req *model.FraudScoreRequest) model.Vector14
 }
 
+// KNNPredictor interface for fraud score prediction.
 type KNNPredictor interface {
-	Predict(vector []float64) (float64, bool)
+	Predict(vector model.Vector14, k int) float64
+	Count() int
 }
 
-type CacheProvider interface {
-	GetCachedAnswer(id string) (model.FraudScoreResponse, bool)
-}
-
+// FraudScoreHandler handles POST /fraud-score requests.
 type FraudScoreHandler struct {
-	cache        CacheProvider
 	vec          Vectorizer
 	knn          KNNPredictor
 	responsePool sync.Pool
 	requestCount atomic.Uint64
 }
 
-func NewFraudScoreHandler(cache CacheProvider, vec Vectorizer, knn KNNPredictor) *FraudScoreHandler {
+// NewFraudScoreHandler creates a new handler with the given vectorizer and KNN predictor.
+func NewFraudScoreHandler(vec Vectorizer, knn KNNPredictor) *FraudScoreHandler {
 	h := &FraudScoreHandler{
-		cache: cache,
-		vec:   vec,
-		knn:   knn,
+		vec: vec,
+		knn: knn,
 	}
 	h.responsePool.New = func() interface{} {
 		return &model.FraudScoreResponse{}
@@ -45,6 +43,7 @@ func NewFraudScoreHandler(cache CacheProvider, vec Vectorizer, knn KNNPredictor)
 	return h
 }
 
+// Handle processes a fraud score request.
 func (h *FraudScoreHandler) Handle(w ResponseWriter, r *http.Request) error {
 	start := time.Now()
 
@@ -66,21 +65,9 @@ func (h *FraudScoreHandler) Handle(w ResponseWriter, r *http.Request) error {
 		return h.sendFallback(w)
 	}
 
-	var fraudScore float64
-	var approved bool
-
-	if h.cache != nil {
-		if resp, ok := h.cache.GetCachedAnswer(req.ID); ok {
-			fraudScore = resp.FraudScore
-			approved = resp.Approved
-		} else {
-			vec := h.vec.Vectorize(&req)
-			fraudScore, approved = h.knn.Predict(vec.Dimensions)
-		}
-	} else {
-		vec := h.vec.Vectorize(&req)
-		fraudScore, approved = h.knn.Predict(vec.Dimensions)
-	}
+	vec := h.vec.Vectorize(&req)
+	fraudScore := h.knn.Predict(vec, 5)
+	approved := fraudScore < 0.6
 
 	resp := h.responsePool.Get().(*model.FraudScoreResponse)
 	resp.Approved = approved
@@ -106,6 +93,7 @@ func (h *FraudScoreHandler) Handle(w ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// sendFallback returns a default response on error to avoid HTTP 500.
 func (h *FraudScoreHandler) sendFallback(w ResponseWriter) error {
 	w.WriteHeader(http.StatusOK)
 	resp := []byte(`{"approved":true,"fraud_score":0.0}`)
