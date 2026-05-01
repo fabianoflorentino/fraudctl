@@ -30,7 +30,7 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"errors"
-	"io"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -75,11 +75,11 @@ func (l *Loader) LoadNormalization(path string) (model.NormalizationConstants, e
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return norm, errors.New(ErrReadFile.Error() + ": " + path)
+		return norm, fmt.Errorf("%w: %s", ErrReadFile, path)
 	}
 
 	if err := json.Unmarshal(data, &norm); err != nil {
-		return norm, errors.New(ErrDecodeJSON.Error() + ": normalization")
+		return norm, fmt.Errorf("%w: normalization", ErrDecodeJSON)
 	}
 
 	return norm, nil
@@ -99,11 +99,11 @@ func (l *Loader) LoadMCCRisk(path string) (model.MCCRisk, error) {
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return risk, errors.New(ErrReadFile.Error() + ": " + path)
+		return risk, fmt.Errorf("%w: %s", ErrReadFile, path)
 	}
 
 	if err := json.Unmarshal(data, &risk); err != nil {
-		return risk, errors.New(ErrDecodeJSON.Error() + ": mcc_risk")
+		return risk, fmt.Errorf("%w: mcc_risk", ErrDecodeJSON)
 	}
 
 	return risk, nil
@@ -129,24 +129,44 @@ func (l *Loader) LoadReferences(path string) ([]model.Reference, error) {
 
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, errors.New(ErrOpenGzip.Error() + ": " + path)
+		return nil, fmt.Errorf("%w: %s", ErrOpenGzip, path)
 	}
 	defer file.Close()
 
 	gz, err := gzip.NewReader(file)
 	if err != nil {
-		return nil, errors.New(ErrOpenGzip.Error() + ": create reader")
+		return nil, fmt.Errorf("%w: create reader", ErrOpenGzip)
 	}
 	defer gz.Close()
 
-	data, err := io.ReadAll(gz)
+	// Use streaming JSON decoder to avoid loading entire file into memory
+	dec := json.NewDecoder(gz)
+
+	// Read opening bracket
+	_, err = dec.Token()
 	if err != nil {
-		return nil, errors.New(ErrReadFile.Error() + ": gzip content")
+		return nil, fmt.Errorf("%w: references", ErrDecodeJSON)
 	}
 
 	var references []model.Reference
-	if err := json.Unmarshal(data, &references); err != nil {
-		return nil, errors.New(ErrDecodeJSON.Error() + ": references")
+	for dec.More() {
+		var rawRef struct {
+			Vector []float64 `json:"vector"`
+			Label  string    `json:"label"`
+		}
+		if err := dec.Decode(&rawRef); err != nil {
+			return nil, fmt.Errorf("%w: reference entry", ErrDecodeJSON)
+		}
+
+		ref := model.Reference{
+			Label: rawRef.Label,
+		}
+		for i, v := range rawRef.Vector {
+			if i < 14 {
+				ref.Vector[i] = float32(v)
+			}
+		}
+		references = append(references, ref)
 	}
 
 	return references, nil
