@@ -9,12 +9,12 @@ import (
 func BenchmarkNewDataset(b *testing.B) {
 	references := make([]model.Reference, 100000)
 	for i := range references {
-		refs := make([]float64, 14)
-		for j := range refs {
-			refs[j] = float64(i%100) / 100.0
+		var vec model.Vector14
+		for j := range vec {
+			vec[j] = float32(i%100) / 100.0
 		}
 		references[i] = model.Reference{
-			Vector: refs,
+			Vector: vec,
 			Label:  "fraud",
 		}
 	}
@@ -28,12 +28,12 @@ func BenchmarkNewDataset(b *testing.B) {
 func BenchmarkDataset_KNN(b *testing.B) {
 	references := make([]model.Reference, 10000)
 	for i := range references {
-		refs := make([]float64, 14)
-		for j := range refs {
-			refs[j] = float64(i%100) / 100.0
+		var vec model.Vector14
+		for j := range vec {
+			vec[j] = float32(i%100) / 100.0
 		}
 		references[i] = model.Reference{
-			Vector: refs,
+			Vector: vec,
 			Label:  "fraud",
 		}
 	}
@@ -42,19 +42,19 @@ func BenchmarkDataset_KNN(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = ds.KNN(1)
+		_ = ds.KNN()
 	}
 }
 
 func BenchmarkDataset_Count(b *testing.B) {
 	references := make([]model.Reference, 100000)
 	for i := range references {
-		refs := make([]float64, 14)
-		for j := range refs {
-			refs[j] = float64(i%100) / 100.0
+		var vec model.Vector14
+		for j := range vec {
+			vec[j] = float32(i%100) / 100.0
 		}
 		references[i] = model.Reference{
-			Vector: refs,
+			Vector: vec,
 			Label:  "fraud",
 		}
 	}
@@ -70,16 +70,16 @@ func BenchmarkDataset_Count(b *testing.B) {
 func BenchmarkDataset_FraudCount(b *testing.B) {
 	references := make([]model.Reference, 100000)
 	for i := range references {
-		refs := make([]float64, 14)
+		var vec model.Vector14
 		label := "legit"
 		if i%3 == 0 {
 			label = "fraud"
 		}
-		for j := range refs {
-			refs[j] = float64(i%100) / 100.0
+		for j := range vec {
+			vec[j] = float32(i%100) / 100.0
 		}
 		references[i] = model.Reference{
-			Vector: refs,
+			Vector: vec,
 			Label:  label,
 		}
 	}

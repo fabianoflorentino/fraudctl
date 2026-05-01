@@ -7,8 +7,6 @@
 //
 // # Vector Dimensions
 //
-// The 14 dimensions are:
-//
 //	 0: amount (normalized by max_amount)
 //	 1: installments (normalized by max_installments)
 //	 2: amount vs customer average (normalized by ratio)
@@ -38,65 +36,73 @@ import (
 
 // Vectorizer normalizes transaction data into a 14-dimensional vector.
 type Vectorizer struct {
-	norm    model.NormalizationConstants
-	mccRisk model.MCCRisk
+	norm              model.NormalizationConstants
+	mccRisk           model.MCCRisk
+	invMaxAmount      float32
+	invMaxInstall     float32
+	invAmountRatio    float32
+	invMaxMinutes     float32
+	invMaxKm          float32
+	invMaxTxCount     float32
+	invMaxMerchantAvg float32
 }
 
 // New creates a new Vectorizer with the given normalization constants
-// and MCC risk mappings.
+// and MCC risk mappings. Pre-computes inverse constants for faster division.
 func New(norm model.NormalizationConstants, mccRisk model.MCCRisk) *Vectorizer {
 	return &Vectorizer{
-		norm:    norm,
-		mccRisk: mccRisk,
+		norm:              norm,
+		mccRisk:           mccRisk,
+		invMaxAmount:      float32(1.0 / norm.MaxAmount),
+		invMaxInstall:     float32(1.0 / norm.MaxInstallments),
+		invAmountRatio:    float32(1.0 / norm.AmountVsAvgRatio),
+		invMaxMinutes:     float32(1.0 / norm.MaxMinutes),
+		invMaxKm:          float32(1.0 / norm.MaxKm),
+		invMaxTxCount:     float32(1.0 / norm.MaxTxCount24h),
+		invMaxMerchantAvg: float32(1.0 / norm.MaxMerchantAvgAmount),
 	}
 }
 
 // Vectorize converts a FraudScoreRequest into a 14-dimensional normalized vector.
-// Uses sync.Pool for memory efficiency.
 //
 // The returned vector contains normalized values in the range [0.0, 1.0],
 // except for dimensions 5 and 6 (minutes_since_last_tx, km_from_last_tx)
 // which use -1 as a sentinel value when LastTx is nil.
-func (v *Vectorizer) Vectorize(req *model.FraudScoreRequest) Vector {
-	vec := GetVector()
-	defer PutVector(vec)
+func (v *Vectorizer) Vectorize(req *model.FraudScoreRequest) model.Vector14 {
+	var vec model.Vector14
 
-	vec[0] = clamp(float64(req.Transaction.Amount) / v.norm.MaxAmount)
-	vec[1] = clamp(float64(req.Transaction.Installments) / v.norm.MaxInstallments)
+	vec[0] = clampFloat32(float32(req.Transaction.Amount) * v.invMaxAmount)
+	vec[1] = clampFloat32(float32(req.Transaction.Installments) * v.invMaxInstall)
 
 	amountVsAvg := req.Transaction.Amount / req.Customer.AvgAmount
-	vec[2] = clamp(amountVsAvg / v.norm.AmountVsAvgRatio)
+	vec[2] = clampFloat32(float32(amountVsAvg) * v.invAmountRatio)
 
 	requestedAt, _ := req.Transaction.RequestedAtTime()
-	hour := float64(requestedAt.UTC().Hour())
-	dayOfWeek := float64(int(requestedAt.UTC().Weekday()))
+	hour := float32(requestedAt.UTC().Hour())
+	dayOfWeek := float32(int(requestedAt.UTC().Weekday()))
 
 	vec[3] = hour / 23.0
 	vec[4] = dayOfWeek / 6.0
 
 	if req.LastTx != nil {
 		lastTxTime, _ := req.LastTx.TimestampTime()
-		minutes := requestedAt.Sub(lastTxTime).Minutes()
-		vec[5] = clamp(minutes / v.norm.MaxMinutes)
-		vec[6] = clamp(req.LastTx.KmFromCurrent / v.norm.MaxKm)
+		minutes := float32(requestedAt.Sub(lastTxTime).Minutes())
+		vec[5] = clampFloat32(minutes * v.invMaxMinutes)
+		vec[6] = clampFloat32(float32(req.LastTx.KmFromCurrent) * v.invMaxKm)
 	} else {
 		vec[5] = -1
 		vec[6] = -1
 	}
 
-	vec[7] = clamp(req.Terminal.KmFromHome / v.norm.MaxKm)
-	vec[8] = clamp(float64(req.Customer.TxCount24h) / v.norm.MaxTxCount24h)
+	vec[7] = clampFloat32(float32(req.Terminal.KmFromHome) * v.invMaxKm)
+	vec[8] = clampFloat32(float32(req.Customer.TxCount24h) * v.invMaxTxCount)
 
 	if req.Terminal.IsOnline {
 		vec[9] = 1
-	} else {
-		vec[9] = 0
 	}
 
 	if req.Terminal.CardPresent {
 		vec[10] = 1
-	} else {
-		vec[10] = 0
 	}
 
 	knownMerchant := false
@@ -106,44 +112,14 @@ func (v *Vectorizer) Vectorize(req *model.FraudScoreRequest) Vector {
 			break
 		}
 	}
-	if knownMerchant {
-		vec[11] = 0
-	} else {
+	if !knownMerchant {
 		vec[11] = 1
 	}
 
-	vec[12] = v.mccRisk.Get(req.Merchant.MCC)
-	vec[13] = clamp(req.Merchant.AvgAmount / v.norm.MaxMerchantAvgAmount)
+	vec[12] = float32(v.mccRisk.Get(req.Merchant.MCC))
+	vec[13] = clampFloat32(float32(req.Merchant.AvgAmount) * v.invMaxMerchantAvg)
 
-	result := Vector{
-		Dimensions: make([]float64, VectorSize),
-	}
-	copy(result.Dimensions, vec)
-
-	return result
-}
-
-// Vector represents a 14-dimensional feature vector for fraud detection.
-type Vector struct {
-	Dimensions []float64
-}
-
-// Clone creates an independent copy of the vector.
-func (v Vector) Clone() Vector {
-	return Vector{
-		Dimensions: append([]float64(nil), v.Dimensions...),
-	}
-}
-
-// clamp restricts a value to the range [0.0, 1.0].
-func clamp(val float64) float64 {
-	if val < 0 {
-		return 0
-	}
-	if val > 1 {
-		return 1
-	}
-	return val
+	return vec
 }
 
 // clampFloat32 restricts a value to the range [0.0, 1.0] for float32.

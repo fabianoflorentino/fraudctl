@@ -100,12 +100,3 @@ func BenchmarkVectorizeParallel(b *testing.B) {
 		}
 	})
 }
-
-func BenchmarkGetVector(b *testing.B) {
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			vec := GetVector()
-			PutVector(vec)
-		}
-	})
-}

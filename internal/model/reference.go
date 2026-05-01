@@ -4,6 +4,10 @@
 // endpoint, along with reference data structures for the KNN algorithm.
 package model
 
+// Vector14 is a fixed-size 14-dimensional vector using float32.
+// Uses 56 bytes per vector vs 112 bytes for []float64.
+type Vector14 [14]float32
+
 // Reference represents a labeled reference vector from the training dataset.
 // Each reference has a 14-dimensional normalized vector and a label.
 //
@@ -11,8 +15,8 @@ package model
 //   - "fraud" - fraudulent transaction
 //   - "legit" - legitimate transaction
 type Reference struct {
-	Vector []float64 `json:"vector"`
-	Label  string    `json:"label"`
+	Vector Vector14 `json:"vector"`
+	Label  string   `json:"label"`
 }
 
 // ReferenceSlice is a slice of Reference for sorting operations.
