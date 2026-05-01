@@ -48,116 +48,123 @@ score_det:
 
 ---
 
-## Current Status (Updated)
+## Competitive Gap Analysis
 
-### Completed
+| Metric | Budget | Brute-force | Target |
+|--------|--------|-------------|--------|
+| Req/s per instance | 450 | 450 | 450 |
+| CPU per instance | 0.45 core | 0.45 core | 0.45 core |
+| Time per request | ~1ms | ~5.6ms | ~50μs |
+| KNN 3M vectors | N/A | ~5600μs | ~50μs |
 
-| Task | Status | Details |
-|------|--------|---------|
-| Remove cache (prohibited) | ✅ Done | Removed `CacheProvider`, `LoadCachedAnswers`, `GetCachedAnswer` |
-| Migrate to `model.Vector14` (`[14]float32`) | ✅ Done | 50% memory reduction vs `[]float64` |
-| Pre-computed normalization inverses | ✅ Done | Multiplication instead of division |
-| Streaming JSON loader | ✅ Done | Low memory for 3M vectors |
-| Fallback on errors | ✅ Done | Returns `{"approved":true,"fraud_score":0.0}` |
-| HNSW interface | ✅ Done | `internal/knn/hnsw.go` with hann library |
-| Dockerfile with `GOARCH=amd64` | ✅ Done | Compatible with test environment |
-| docker-compose.yml | ✅ Done | 2 API + nginx, within 350MB |
-
-### Blocked
-
-| Task | Issue | Impact |
-|------|-------|--------|
-| HNSW index build | Pure Go libraries too slow (>5min for 3M) | Can't pass healthcheck |
-| Load testing | Need working API first | Can't measure p99 |
-
-### HNSW Library Evaluation
-
-| Library | Build Time (3M) | Search Time | Notes |
-|---------|-----------------|-------------|-------|
-| `coder/hnsw` (pure Go) | >5min | ~0.5ms | Too slow build |
-| `habedi/hann` (pure Go) | >5min | ~0.3ms | Too slow build |
-| `go-hnswlib` (CGO) | ~10s | ~0.1ms | Requires C++ compiler |
-| Brute-force | N/A | ~1.2ms | Too slow at 900 req/s |
+**Problem:** Brute-force KNN on 3M vectors takes ~5.6ms, which is 5.6x the 1ms budget per request at 900 req/s.
 
 ---
 
-## Recommended Solution: CGO with hnswlib
+## 5 Competitive Optimizations
 
-### Why CGO?
+### 1. HNSW with CGO (100-500x search speedup) — **CRITICAL**
 
-The C++ `hnswlib` library is **10-50x faster** than pure Go implementations for building large indexes. The trade-off is requiring a C++ compiler during build, but this is acceptable since:
-1. Docker build stage includes gcc
-2. Final distroless image doesn't need gcc
-3. Build time is a one-time cost
+**Library:** `github.com/sunhailin-Leo/hnswlib-to-go` (CGO bindings for nmslib/hnswlib)
 
-### Implementation Steps
+| Metric | Brute-force | HNSW (CGO) |
+|--------|------------|------------|
+| Build time (3M) | N/A (instant) | ~10s |
+| Search time | ~5600μs | ~10-50μs |
+| Memory | 168MB | ~250MB |
+| Accuracy | Exact | ~99% (configurable) |
 
-1. **Add go-hnswlib dependency:**
-   ```bash
-   go get github.com/viktordanov/go-hnswlib@latest
-   ```
+**Trade-off:** Requires `gcc`/`g++` in build stage. Acceptable because:
+- Docker build is one-time
+- Final distroless image doesn't need compiler
+- 10s build at startup is within healthcheck timeout (30s)
 
-2. **Update Dockerfile to include gcc in build stage:**
-   ```dockerfile
-   FROM golang:1.26-bullseye AS builder
-   RUN apt-get update && apt-get install -y g++ && rm -rf /var/lib/apt/lists/*
-   WORKDIR /build
-   COPY . .
-   RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o fraudctl ./cmd/api
-   ```
+**Implementation:**
+```go
+index := hnsw.New(14, 16, 200, 42, 3000000, "l2")
+// Build: index.AddBatchPoints(vectors, labels, 4)
+// Search: labels, dists := index.SearchKNN(query, 5)
+```
 
-3. **Update HNSW implementation to use go-hnswlib:**
-   ```go
-   import hnsw "github.com/viktordanov/go-hnswlib"
+### 2. JSON Streaming in Handler (~10-20μs savings)
 
-   func NewHNSWIndex() *HNSWIndex {
-       index := hnsw.NewL2(14, 3000000, 16, 200, 42)
-       return &HNSWIndex{index: index}
-   }
-   ```
+**Current:** `io.ReadAll` + `json.Unmarshal` (2 copies, extra allocation)
+**Target:** `json.NewDecoder(r.Body).Decode(&req)` (single pass, zero copy)
 
-4. **Expected results:**
-   - Build time: ~10s for 3M vectors
-   - Search time: ~0.1ms per query
-   - p99 at 900 req/s: < 10ms
-   - Memory: ~250MB for HNSW graph
+```go
+// Before
+body, _ := io.ReadAll(r.Body)
+var req model.FraudScoreRequest
+json.Unmarshal(body, &req)
+
+// After
+var req model.FraudScoreRequest
+json.NewDecoder(r.Body).Decode(&req)
+```
+
+### 3. Pre-encoded Response (~15-30μs savings)
+
+**Current:** `json.Marshal(resp)` allocates and encodes every request
+**Target:** Manual byte construction — fraud score is always a float, approved is bool
+
+```go
+// Before: json.Marshal → ~30μs, 1 alloc
+// After:  manual encode → ~2μs, 0 allocs
+buf := make([]byte, 0, 64)
+buf = strconv.AppendFloat(buf, fraudScore, 'f', 1, 64)
+// write: {"approved":true,"fraud_score":0.X}
+```
+
+### 4. GC Tuning (reduce p99 spikes)
+
+**Settings:**
+- `GOGC=500` — less frequent GC, higher memory tolerance
+- `GOMEMLIMIT=140MiB` — hard limit per instance (2 × 140 = 280, leaves 70MB for nginx)
+- `GODEBUG=gcstoptheworld=0` — ensure no forced STW
+
+**Impact:** Reduces GC-induced latency spikes that blow p99. At 150MB limit, GC triggers ~every 100MB allocated, which at 900 req/s × 100 bytes = 90KB/s means very infrequent GC.
+
+### 5. nginx Optimization
+
+**Current:** `least_conn` with `keepalive 64`
+**Target:** Tuned for low-latency with minimal overhead
+
+```nginx
+upstream api_backend {
+    server api-1:9999;
+    server api-2:9999;
+    keepalive 16;              # Reduced (2 instances only)
+    keepalive_timeout 10s;     # Match handler timeout
+}
+
+# Handler: disable buffering for faster response
+proxy_buffering off;
+proxy_http_version 1.1;
+```
 
 ---
 
-## Alternative: Pre-build Index During Docker Build
+## Implementation Order
 
-If CGO is not viable, pre-build the HNSW index during Docker build:
-
-1. **Create build tool (`cmd/build-index/main.go`):**
-   ```go
-   func main() {
-       refs := loadReferences("resources/references.json.gz")
-       index := knn.NewHNSWIndex()
-       index.Build(refs)
-       index.Save("resources/hnsw-index.bin")
-   }
-   ```
-
-2. **Update Dockerfile:**
-   ```dockerfile
-   RUN go run cmd/build-index/main.go
-   ```
-
-3. **Update API to load pre-built index:**
-   ```go
-   index := knn.LoadHNSWIndex("resources/hnsw-index.bin")
-   ```
-
-**Drawback:** Pure Go build still takes 5+ minutes during Docker build.
+| # | Optimization | Est. Impact | Effort |
+|---|-------------|-------------|--------|
+| 1 | HNSW with CGO | 100-500x | High |
+| 2 | JSON streaming | 1.2x | Low |
+| 3 | Pre-encoded response | 1.5x | Low |
+| 4 | GC tuning | p99 stability | Low |
+| 5 | nginx optimization | 1.1x | Low |
 
 ---
 
-## Priority Actions
+## Expected Results
 
-1. **Implement CGO with go-hnswlib** — fastest solution, ~10s build
-2. **Test with k6** — validate p99 < 10ms at 900 req/s
-3. **Tune HNSW parameters** — optimize M, efConstruction, efSearch
-4. **Update submission branch** — copy final files
+| Metric | Brute-force | With all optimizations |
+|--------|------------|----------------------|
+| KNN search | ~5600μs | ~50μs |
+| Handler latency | ~5800μs | ~100μs |
+| p99 at 900 req/s | > 2000ms (cut) | < 10ms |
+| score_p99 | -3000 | > 2000 |
+| Memory | 168MB | ~250MB (within 350MB) |
 
 ---
 
@@ -165,8 +172,9 @@ If CGO is not viable, pre-build the HNSW index during Docker build:
 
 | Metric | Target | Current |
 |--------|--------|---------|
-| HNSW build time | < 30s | > 5min (pure Go) |
+| HNSW build time | < 30s | ~10s (estimated) |
+| Search time | < 100μs | ~50μs (estimated) |
 | p99 | < 10ms | N/A |
 | score_p99 | > 2000 | N/A |
 | failure_rate | < 15% | N/A |
-| Memory usage | < 300MB | ~168MB (vectors only) |
+| Memory usage | < 300MB | ~168MB |
