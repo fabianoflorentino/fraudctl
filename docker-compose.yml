@@ -6,68 +6,57 @@
 # Unix Domain Sockets (tmpfs) replace TCP loopback — saves ~40-60µs/request.
 # =============================================================================
 
+x-api-build: &api-build
+  context: .
+  dockerfile: Dockerfile
+
+x-api-env: &api-env
+  PORT: 9999
+  RESOURCES: /resources
+  GOMAXPROCS: 1
+  GOGC: 500
+  GOMEMLIMIT: 140MiB
+
+x-api-healthcheck: &api-healthcheck
+  test: ["CMD", "/fraudctl", "-healthcheck"]
+  interval: 5s
+  timeout: 5s
+  retries: 20
+  start_period: 30s
+
+x-api-resources: &api-resources
+  resources:
+    limits:
+      cpus: "0.45"
+      memory: 150M
+    reservations:
+      cpus: "0.1"
+      memory: 150M
+
+x-api-defaults: &api-defaults
+  build: *api-build
+  volumes:
+    - sockets:/sockets
+  healthcheck: *api-healthcheck
+  deploy: *api-resources
+  restart: unless-stopped
+
 services:
   api-1:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    <<: *api-defaults
     container_name: fraudctl-api-1
     hostname: api-1
     environment:
-      - PORT=9999
-      - RESOURCES=/resources
-      - UNIX_SOCKET=/sockets/api-1.sock
-      - GOMAXPROCS=1
-      - GOGC=500
-      - GOMEMLIMIT=140MiB
-    volumes:
-      - sockets:/sockets
-    healthcheck:
-      test: ["CMD", "/fraudctl", "-healthcheck"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-      start_period: 30s
-    deploy:
-      resources:
-        limits:
-          cpus: '0.45'
-          memory: 150M
-        reservations:
-          cpus: '0.1'
-          memory: 150M
-    restart: unless-stopped
+      <<: *api-env
+      UNIX_SOCKET: /sockets/api-1.sock
 
   api-2:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    <<: *api-defaults
     container_name: fraudctl-api-2
     hostname: api-2
     environment:
-      - PORT=9999
-      - RESOURCES=/resources
-      - UNIX_SOCKET=/sockets/api-2.sock
-      - GOMAXPROCS=1
-      - GOGC=500
-      - GOMEMLIMIT=140MiB
-    volumes:
-      - sockets:/sockets
-    healthcheck:
-      test: ["CMD", "/fraudctl", "-healthcheck"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-      start_period: 30s
-    deploy:
-      resources:
-        limits:
-          cpus: '0.45'
-          memory: 150M
-        reservations:
-          cpus: '0.1'
-          memory: 150M
-    restart: unless-stopped
+      <<: *api-env
+      UNIX_SOCKET: /sockets/api-2.sock
 
   nginx:
     image: nginx:alpine
@@ -86,10 +75,10 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.10'
+          cpus: "0.10"
           memory: 30M
         reservations:
-          cpus: '0.05'
+          cpus: "0.05"
           memory: 10M
     restart: unless-stopped
 
@@ -100,14 +89,6 @@ volumes:
       type: tmpfs
       device: tmpfs
       o: "uid=65532,gid=65532"
-
-# Resource allocation summary:
-#   nginx:    0.10 CPU,  30 MB
-#   api-1:    0.45 CPU, 150 MB
-#   api-2:    0.45 CPU, 150 MB
-#   Total:    1.00 CPU, 330 MB (within 350 MB limit)
-#
-# Port 9999 is exposed by nginx load balancer
 
 networks:
   default:
