@@ -1,13 +1,13 @@
 package handler
 
 import (
-	"bufio"
-	"encoding/json"
 	"log"
 	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	gojson "github.com/goccy/go-json"
 
 	"github.com/fabianoflorentino/fraudctl/internal/knn"
 	"github.com/fabianoflorentino/fraudctl/internal/model"
@@ -48,7 +48,7 @@ var staticResponses = [knn.K + 1][]byte{
 type FraudScoreHandler struct {
 	vec          Vectorizer
 	knn          KNNPredictor
-	readerPool   sync.Pool
+	bufPool      sync.Pool
 	requestCount atomic.Uint64
 }
 
@@ -58,8 +58,9 @@ func NewFraudScoreHandler(vec Vectorizer, knn KNNPredictor) *FraudScoreHandler {
 		vec: vec,
 		knn: knn,
 	}
-	h.readerPool.New = func() interface{} {
-		return bufio.NewReaderSize(nil, 4096)
+	h.bufPool.New = func() interface{} {
+		b := make([]byte, 0, 4096)
+		return &b
 	}
 	return h
 }
@@ -73,11 +74,25 @@ func (h *FraudScoreHandler) Handle(w ResponseWriter, r *http.Request) error {
 		return nil
 	}
 
+	bufp := h.bufPool.Get().(*[]byte)
+	*bufp = (*bufp)[:0]
+
+	var n int
+	var readErr error
+	for {
+		if len(*bufp) == cap(*bufp) {
+			*bufp = append(*bufp, 0)[:len(*bufp)]
+		}
+		n, readErr = r.Body.Read((*bufp)[len(*bufp):cap(*bufp)])
+		*bufp = (*bufp)[:len(*bufp)+n]
+		if readErr != nil {
+			break
+		}
+	}
+
 	var req model.FraudScoreRequest
-	br := h.readerPool.Get().(*bufio.Reader)
-	br.Reset(r.Body)
-	err := json.NewDecoder(br).Decode(&req)
-	h.readerPool.Put(br)
+	err := gojson.Unmarshal(*bufp, &req)
+	h.bufPool.Put(bufp)
 	if err != nil {
 		return h.sendFallback(w)
 	}
