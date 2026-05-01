@@ -5,3 +5,5 @@ bin
 test*
 **/*.test
 **/*.prof
+api
+fraudctl-api
