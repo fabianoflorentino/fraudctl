@@ -263,13 +263,22 @@ func LoadIVF(path string) (*IVFIndex, error) {
 	}, nil
 }
 
-// Predict searches nprobe nearest clusters and returns fraud probability.
+// Predict searches the top-nprobe nearest clusters and returns fraud probability.
+// cdists is a fixed-size scratch array on the stack — zero alloc.
 func (idx *IVFIndex) Predict(query model.Vector14, k int) float64 {
-	// Find nearest centroid.
-	bestCI := 0
-	bestDist := float32(math.MaxFloat32)
-	c := idx.centroids
+	// Compute distance to every centroid, track top-nprobe via a small max-heap
+	// stored on the stack (nprobe ≤ 32 assumed).
+	nprobe := idx.nprobe
+	if nprobe > idx.nlist {
+		nprobe = idx.nlist
+	}
 
+	// probes holds the nprobe nearest centroid indices (unsorted scratch).
+	var probesBuf [32]cdist
+	probes := probesBuf[:0]
+	worstDist := float32(math.MaxFloat32) // max dist among current probes
+
+	c := idx.centroids
 	for ci := 0; ci < idx.nlist; ci++ {
 		base := ci * 14
 		d0 := query[0] - c[base+0]
@@ -288,46 +297,81 @@ func (idx *IVFIndex) Predict(query model.Vector14, k int) float64 {
 		d13 := query[13] - c[base+13]
 		d := d0*d0 + d1*d1 + d2*d2 + d3*d3 + d4*d4 + d5*d5 + d6*d6 +
 			d7*d7 + d8*d8 + d9*d9 + d10*d10 + d11*d11 + d12*d12 + d13*d13
-		if d < bestDist {
-			bestDist = d
-			bestCI = ci
+
+		if len(probes) < nprobe {
+			probes = append(probes, cdist{d, ci})
+			if len(probes) == nprobe {
+				// Bubble worst to index 0 for O(1) replacement.
+				worstIdx := 0
+				for j := 1; j < nprobe; j++ {
+					if probes[j].dist > probes[worstIdx].dist {
+						worstIdx = j
+					}
+				}
+				probes[0], probes[worstIdx] = probes[worstIdx], probes[0]
+				worstDist = probes[0].dist
+			}
+		} else if d < worstDist {
+			probes[0] = cdist{d, ci}
+			// Re-find worst.
+			worstIdx := 0
+			for j := 1; j < nprobe; j++ {
+				if probes[j].dist > probes[worstIdx].dist {
+					worstIdx = j
+				}
+			}
+			probes[0], probes[worstIdx] = probes[worstIdx], probes[0]
+			worstDist = probes[0].dist
 		}
 	}
 
-	// Brute-force search in the nearest cluster (float32 arena, zero alloc).
-	desc := idx.descs[bestCI]
-	n := int(desc.n)
-	if n == 0 {
-		return 0
-	}
-	f := unsafe.Slice((*float32)(unsafe.Pointer(&idx.arena[desc.flatOff])), n*14)
-	labels := idx.arena[desc.labelOff : desc.labelOff+desc.n]
-
-	var topK [K]candidate
+	// Brute-force search across all selected clusters.
+	// candidate.idx stores label (0/1) directly to avoid needing cluster context.
+	var topK [K]labeledCandidate
 	count := 0
 
-	for i := 0; i < n; i++ {
-		base := i * 14
-		e0 := query[0] - f[base+0]
-		e1 := query[1] - f[base+1]
-		e2 := query[2] - f[base+2]
-		e3 := query[3] - f[base+3]
-		e4 := query[4] - f[base+4]
-		e5 := query[5] - f[base+5]
-		e6 := query[6] - f[base+6]
-		e7 := query[7] - f[base+7]
-		e8 := query[8] - f[base+8]
-		e9 := query[9] - f[base+9]
-		e10 := query[10] - f[base+10]
-		e11 := query[11] - f[base+11]
-		e12 := query[12] - f[base+12]
-		e13 := query[13] - f[base+13]
-		sum := e0*e0 + e1*e1 + e2*e2 + e3*e3 + e4*e4 + e5*e5 + e6*e6 +
-			e7*e7 + e8*e8 + e9*e9 + e10*e10 + e11*e11 + e12*e12 + e13*e13
-		if count < K {
-			topK[count] = candidate{sum, i}
-			count++
-			if count == K {
+	for pi := range probes {
+		desc := idx.descs[probes[pi].ci]
+		n := int(desc.n)
+		if n == 0 {
+			continue
+		}
+		f := unsafe.Slice((*float32)(unsafe.Pointer(&idx.arena[desc.flatOff])), n*14)
+		labels := idx.arena[desc.labelOff : desc.labelOff+desc.n]
+
+		for i := 0; i < n; i++ {
+			base := i * 14
+			e0 := query[0] - f[base+0]
+			e1 := query[1] - f[base+1]
+			e2 := query[2] - f[base+2]
+			e3 := query[3] - f[base+3]
+			e4 := query[4] - f[base+4]
+			e5 := query[5] - f[base+5]
+			e6 := query[6] - f[base+6]
+			e7 := query[7] - f[base+7]
+			e8 := query[8] - f[base+8]
+			e9 := query[9] - f[base+9]
+			e10 := query[10] - f[base+10]
+			e11 := query[11] - f[base+11]
+			e12 := query[12] - f[base+12]
+			e13 := query[13] - f[base+13]
+			sum := e0*e0 + e1*e1 + e2*e2 + e3*e3 + e4*e4 + e5*e5 + e6*e6 +
+				e7*e7 + e8*e8 + e9*e9 + e10*e10 + e11*e11 + e12*e12 + e13*e13
+
+			lb := labels[i]
+			if count < K {
+				topK[count] = labeledCandidate{sum, lb}
+				count++
+				if count == K {
+					maxI := 0
+					if topK[1].dist > topK[maxI].dist { maxI = 1 }
+					if topK[2].dist > topK[maxI].dist { maxI = 2 }
+					if topK[3].dist > topK[maxI].dist { maxI = 3 }
+					if topK[4].dist > topK[maxI].dist { maxI = 4 }
+					topK[0], topK[maxI] = topK[maxI], topK[0]
+				}
+			} else if sum < topK[0].dist {
+				topK[0] = labeledCandidate{sum, lb}
 				maxI := 0
 				if topK[1].dist > topK[maxI].dist { maxI = 1 }
 				if topK[2].dist > topK[maxI].dist { maxI = 2 }
@@ -335,27 +379,19 @@ func (idx *IVFIndex) Predict(query model.Vector14, k int) float64 {
 				if topK[4].dist > topK[maxI].dist { maxI = 4 }
 				topK[0], topK[maxI] = topK[maxI], topK[0]
 			}
-		} else if sum < topK[0].dist {
-			topK[0] = candidate{sum, i}
-			maxI := 0
-			if topK[1].dist > topK[maxI].dist { maxI = 1 }
-			if topK[2].dist > topK[maxI].dist { maxI = 2 }
-			if topK[3].dist > topK[maxI].dist { maxI = 3 }
-			if topK[4].dist > topK[maxI].dist { maxI = 4 }
-			topK[0], topK[maxI] = topK[maxI], topK[0]
-		}
-	}
-
-	// Count fraud in top-K.
-	fraudCount := 0
-	for j := 0; j < count; j++ {
-		if labels[topK[j].idx] == 1 {
-			fraudCount++
 		}
 	}
 
 	if count == 0 {
 		return 0
+	}
+
+	// Count fraud in top-K.
+	fraudCount := 0
+	for j := 0; j < count; j++ {
+		if topK[j].label == 1 {
+			fraudCount++
+		}
 	}
 	return float64(fraudCount) / float64(count)
 }
@@ -619,6 +655,13 @@ func kmeansUpdate(flat []float32, n int, centroids []float32, k int, assign []in
 type candidate struct {
 	dist float32
 	idx  int
+}
+
+// labeledCandidate stores dist + label directly, avoiding cluster-index bookkeeping
+// when merging results from multiple probe clusters.
+type labeledCandidate struct {
+	dist  float32
+	label byte
 }
 
 type maxHeap []candidate

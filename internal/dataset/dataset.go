@@ -91,7 +91,7 @@ func LoadDefault(path string) (*Dataset, error) {
 		if err != nil {
 			return nil, err
 		}
-		ivf.SetNProbe(1)
+		ivf.SetNProbe(8)
 		idx = ivf
 	} else {
 		// Fallback: stream gzip directly into BruteIndex.
