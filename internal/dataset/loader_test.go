@@ -151,11 +151,11 @@ func TestLoader_LoadReferences(t *testing.T) {
 	}{
 		{
 			name:    "valid gz file",
-			path:    "../../resources/references.json.gz",
+			path:    "testdata/references.json.gz",
 			wantErr: false,
 			check: func(t *testing.T, got int) {
-				if got != 3000000 {
-					t.Errorf("LoadReferences() count = %v, want 3000000", got)
+				if got != 10 {
+					t.Errorf("LoadReferences() count = %v, want 10", got)
 				}
 			},
 		},
@@ -199,11 +199,11 @@ func TestLoader_LoadAll(t *testing.T) {
 	}{
 		{
 			name:    "full load",
-			path:    "../../resources",
+			path:    "testdata",
 			wantErr: false,
 			check: func(t *testing.T, ds *Dataset) {
-				if ds.Count() != 3000000 {
-					t.Errorf("Dataset.Count() = %v, want 3000000", ds.Count())
+				if ds.Count() != 10 {
+					t.Errorf("Dataset.Count() = %v, want 10", ds.Count())
 				}
 				if ds.FraudCount() == 0 {
 					t.Error("Dataset.FraudCount() should be > 0")
