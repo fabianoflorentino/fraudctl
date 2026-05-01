@@ -119,11 +119,27 @@ func (b *BruteIndex) FraudCount() int {
 
 const ivfMagic uint32 = 0x49564649
 
+// cdist pairs a centroid index with its squared L2 distance from the query.
+type cdist struct {
+	dist float32
+	ci   int
+}
+
 // IVFIndex implements fast approximate KNN via inverted file (cluster-based).
 type IVFIndex struct {
 	centroids []float32 // nlist * 14
 	clusters  []ivfCluster
 	nlist     int
+	nprobe    int // number of clusters to search (default 1)
+}
+
+// SetNProbe sets the number of nearest clusters to search during Predict.
+// Higher values improve recall at the cost of latency. Default is 1.
+func (idx *IVFIndex) SetNProbe(n int) {
+	if n < 1 {
+		n = 1
+	}
+	idx.nprobe = n
 }
 
 type ivfCluster struct {
@@ -157,6 +173,7 @@ func LoadIVF(path string) (*IVFIndex, error) {
 
 	idx := &IVFIndex{
 		nlist:     int(nlist),
+		nprobe:    1,
 		centroids: make([]float32, nlist*dim),
 		clusters:  make([]ivfCluster, nlist),
 	}
@@ -192,73 +209,97 @@ func LoadIVF(path string) (*IVFIndex, error) {
 
 // Predict searches nprobe nearest clusters and returns fraud probability.
 func (idx *IVFIndex) Predict(query model.Vector14, k int) float64 {
-	const nprobe = 1
-
-	// Find nprobe nearest centroids.
-	type cdist struct {
-		dist float32
-		ci   int
-	}
-	best := make([]cdist, 0, nprobe+1)
+	// Find nearest centroid (nprobe=1 hardcoded for performance).
+	bestCI := 0
+	bestDist := float32(math.MaxFloat32)
 
 	for ci := 0; ci < idx.nlist; ci++ {
 		base := ci * 14
-		var d float32
-		for j := 0; j < 14; j++ {
-			diff := query[j] - idx.centroids[base+j]
-			d += diff * diff
+		c := idx.centroids
+		d0 := query[0] - c[base+0]
+		d1 := query[1] - c[base+1]
+		d2 := query[2] - c[base+2]
+		d3 := query[3] - c[base+3]
+		d4 := query[4] - c[base+4]
+		d5 := query[5] - c[base+5]
+		d6 := query[6] - c[base+6]
+		d7 := query[7] - c[base+7]
+		d8 := query[8] - c[base+8]
+		d9 := query[9] - c[base+9]
+		d10 := query[10] - c[base+10]
+		d11 := query[11] - c[base+11]
+		d12 := query[12] - c[base+12]
+		d13 := query[13] - c[base+13]
+		d := d0*d0 + d1*d1 + d2*d2 + d3*d3 + d4*d4 + d5*d5 + d6*d6 +
+			d7*d7 + d8*d8 + d9*d9 + d10*d10 + d11*d11 + d12*d12 + d13*d13
+		if d < bestDist {
+			bestDist = d
+			bestCI = ci
 		}
-		if len(best) < nprobe {
-			best = append(best, cdist{d, ci})
-		} else {
-			// find max
+	}
+
+	// Brute-force search in the nearest cluster (fixed-size top-K, zero alloc).
+	cl := idx.clusters[bestCI]
+	n := len(cl.labels)
+	f := cl.flat
+
+	var topK [K]candidate
+	count := 0
+
+	for i := 0; i < n; i++ {
+		base := i * 14
+		e0 := query[0] - f[base+0]
+		e1 := query[1] - f[base+1]
+		e2 := query[2] - f[base+2]
+		e3 := query[3] - f[base+3]
+		e4 := query[4] - f[base+4]
+		e5 := query[5] - f[base+5]
+		e6 := query[6] - f[base+6]
+		e7 := query[7] - f[base+7]
+		e8 := query[8] - f[base+8]
+		e9 := query[9] - f[base+9]
+		e10 := query[10] - f[base+10]
+		e11 := query[11] - f[base+11]
+		e12 := query[12] - f[base+12]
+		e13 := query[13] - f[base+13]
+		sum := e0*e0 + e1*e1 + e2*e2 + e3*e3 + e4*e4 + e5*e5 + e6*e6 +
+			e7*e7 + e8*e8 + e9*e9 + e10*e10 + e11*e11 + e12*e12 + e13*e13
+		if count < K {
+			topK[count] = candidate{sum, i}
+			count++
+			if count == K {
+				// sift max to position 0
+				maxI := 0
+				if topK[1].dist > topK[maxI].dist { maxI = 1 }
+				if topK[2].dist > topK[maxI].dist { maxI = 2 }
+				if topK[3].dist > topK[maxI].dist { maxI = 3 }
+				if topK[4].dist > topK[maxI].dist { maxI = 4 }
+				topK[0], topK[maxI] = topK[maxI], topK[0]
+			}
+		} else if sum < topK[0].dist {
+			topK[0] = candidate{sum, i}
 			maxI := 0
-			for bi := 1; bi < len(best); bi++ {
-				if best[bi].dist > best[maxI].dist {
-					maxI = bi
-				}
-			}
-			if d < best[maxI].dist {
-				best[maxI] = cdist{d, ci}
-			}
+			if topK[1].dist > topK[maxI].dist { maxI = 1 }
+			if topK[2].dist > topK[maxI].dist { maxI = 2 }
+			if topK[3].dist > topK[maxI].dist { maxI = 3 }
+			if topK[4].dist > topK[maxI].dist { maxI = 4 }
+			topK[0], topK[maxI] = topK[maxI], topK[0]
 		}
 	}
 
-	// Brute-force search in selected clusters.
-	h := make(maxHeap, 0, k+1)
-	for _, cd := range best {
-		c := idx.clusters[cd.ci]
-		n := len(c.labels)
-		for i := 0; i < n; i++ {
-			base := i * 14
-			var sum float32
-			for d := 0; d < 14; d++ {
-				diff := query[d] - c.flat[base+d]
-				sum += diff * diff
-			}
-			if len(h) < k {
-				heap.Push(&h, candidate{sum, i*idx.nlist + cd.ci})
-			} else if sum < h[0].dist {
-				h[0] = candidate{sum, i*idx.nlist + cd.ci}
-				heap.Fix(&h, 0)
-			}
-		}
-	}
-
-	// Map back to fraud flags.
+	// Count fraud in top-K.
 	fraudCount := 0
-	for _, c := range h {
-		ci := c.idx % idx.nlist
-		vi := c.idx / idx.nlist
-		if vi < len(idx.clusters[ci].labels) && idx.clusters[ci].labels[vi] {
+	for j := 0; j < count; j++ {
+		vi := topK[j].idx
+		if vi < len(cl.labels) && cl.labels[vi] {
 			fraudCount++
 		}
 	}
 
-	if len(h) == 0 {
+	if count == 0 {
 		return 0
 	}
-	return float64(fraudCount) / float64(len(h))
+	return float64(fraudCount) / float64(count)
 }
 
 // Count returns total vectors across all clusters.

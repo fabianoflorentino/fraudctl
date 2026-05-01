@@ -1,6 +1,7 @@
 package vectorizer
 
 import (
+	"math"
 	"testing"
 
 	"github.com/fabianoflorentino/fraudctl/internal/model"
@@ -81,6 +82,38 @@ func TestVectorizer_Vectorize(t *testing.T) {
 			checkDim: func(t *testing.T, got model.Vector14) {
 				if got[5] != -1 || got[6] != -1 {
 					t.Errorf("Vectorize() null last transaction dims 5,6 = %v,%v, want -1,-1", got[5], got[6])
+				}
+			},
+		},
+		{
+			name: "zero avg_amount does not produce NaN",
+			req: &model.FraudScoreRequest{
+				Transaction: model.TransactionData{
+					Amount:       200,
+					Installments: 1,
+					RequestedAt:  "2026-03-11T20:23:35Z",
+				},
+				Customer: model.CustomerData{
+					AvgAmount:      0, // triggers division by zero without the guard
+					TxCount24h:     1,
+					KnownMerchants: []string{"MERC-001"},
+				},
+				Merchant: model.MerchantData{
+					ID:        "MERC-001",
+					MCC:       "5411",
+					AvgAmount: 100,
+				},
+				Terminal: model.TerminalData{KmFromHome: 5},
+			},
+			norm:    model.NormalizationConstants{MaxAmount: 10000, MaxInstallments: 12, AmountVsAvgRatio: 10, MaxMinutes: 1440, MaxKm: 1000, MaxTxCount24h: 20, MaxMerchantAvgAmount: 10000},
+			mccRisk: model.MCCRisk{},
+			wantLen: 14,
+			checkDim: func(t *testing.T, got model.Vector14) {
+				if math.IsNaN(float64(got[2])) {
+					t.Errorf("Vectorize() dim[2] = NaN when AvgAmount=0, want 0")
+				}
+				if got[2] != 0 {
+					t.Errorf("Vectorize() dim[2] = %v when AvgAmount=0, want 0", got[2])
 				}
 			},
 		},

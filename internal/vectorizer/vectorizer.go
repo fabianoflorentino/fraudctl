@@ -74,7 +74,10 @@ func (v *Vectorizer) Vectorize(req *model.FraudScoreRequest) model.Vector14 {
 	vec[0] = clampFloat32(float32(req.Transaction.Amount) * v.invMaxAmount)
 	vec[1] = clampFloat32(float32(req.Transaction.Installments) * v.invMaxInstall)
 
-	amountVsAvg := req.Transaction.Amount / req.Customer.AvgAmount
+	var amountVsAvg float64
+	if req.Customer.AvgAmount > 0 {
+		amountVsAvg = req.Transaction.Amount / req.Customer.AvgAmount
+	}
 	vec[2] = clampFloat32(float32(amountVsAvg) * v.invAmountRatio)
 
 	requestedAt, _ := req.Transaction.RequestedAtTime()

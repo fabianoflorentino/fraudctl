@@ -9,4 +9,4 @@ bin
 /fraudctl-api
 third_party/**/*.o
 /build-index
-resources/ivf.bin
+**/*.bin

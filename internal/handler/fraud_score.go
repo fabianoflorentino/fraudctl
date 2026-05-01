@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bufio"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/fabianoflorentino/fraudctl/internal/knn"
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
 
@@ -28,6 +30,7 @@ type FraudScoreHandler struct {
 	vec          Vectorizer
 	knn          KNNPredictor
 	bufPool      sync.Pool
+	readerPool   sync.Pool
 	requestCount atomic.Uint64
 }
 
@@ -39,6 +42,9 @@ func NewFraudScoreHandler(vec Vectorizer, knn KNNPredictor) *FraudScoreHandler {
 	}
 	h.bufPool.New = func() interface{} {
 		return make([]byte, 0, 64)
+	}
+	h.readerPool.New = func() interface{} {
+		return bufio.NewReaderSize(nil, 4096)
 	}
 	return h
 }
@@ -53,12 +59,16 @@ func (h *FraudScoreHandler) Handle(w ResponseWriter, r *http.Request) error {
 	}
 
 	var req model.FraudScoreRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	br := h.readerPool.Get().(*bufio.Reader)
+	br.Reset(r.Body)
+	err := json.NewDecoder(br).Decode(&req)
+	h.readerPool.Put(br)
+	if err != nil {
 		return h.sendFallback(w)
 	}
 
 	vec := h.vec.Vectorize(&req)
-	fraudScore := h.knn.Predict(vec, 5)
+	fraudScore := h.knn.Predict(vec, knn.K)
 	approved := fraudScore < 0.6
 
 	// Manual JSON encoding — zero allocation, ~2μs vs ~30μs for json.Marshal
