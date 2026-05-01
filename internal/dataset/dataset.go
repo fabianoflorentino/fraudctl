@@ -47,12 +47,12 @@ func (d *Dataset) Vectorizer() *vectorizer.Vectorizer {
 	return vectorizer.New(d.norm, d.mccRisk)
 }
 
-// KNN creates a new brute-force KNN predictor with optimized parallel search.
-// Build time is instantaneous (no index construction needed).
-func (d *Dataset) KNN() *knn.BruteForce {
-	bf := knn.NewBruteForce()
-	bf.Build(d.vectors, d.labels)
-	return bf
+// KNN creates a new HNSW-based KNN predictor using hnswlib (C++).
+// Build time is ~10s for 3M vectors with parallel insertion.
+func (d *Dataset) KNN() *knn.HNSWIndex {
+	index := knn.NewHNSWIndex()
+	index.Build(d.vectors, d.labels)
+	return index
 }
 
 // Count returns the total number of reference vectors in the dataset.
