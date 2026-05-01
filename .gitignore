@@ -5,8 +5,8 @@ bin
 /test*
 **/*.test
 **/*.prof
-api
-fraudctl-api
+/api
+/fraudctl-api
 third_party/**/*.o
-build-index
+/build-index
 resources/ivf.bin
