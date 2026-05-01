@@ -1,4 +1,4 @@
-// Package knn implements k-nearest-neighbor search over 14-dimensional float32 vectors.
+// Package knn implements k-nearest-neighbor search over 14-dimensional vectors.
 package knn
 
 import (
@@ -20,9 +20,10 @@ import (
 
 const K = 5
 
+const int16Scale = 10000
+
 // ─── Brute-force index (used only in tests / small datasets) ─────────────────
 
-// BruteIndex holds all reference vectors in a flat, cache-friendly layout.
 type BruteIndex struct {
 	flat       []float32
 	fraudFlags []bool
@@ -104,60 +105,38 @@ func (b *BruteIndex) FraudCount() int {
 
 // ─── IVF index (Inverted File — cluster-based ANN) ───────────────────────────
 //
-// IVFIndex stores vectors grouped by cluster. At query time only the nearest
-// nprobe clusters are searched, reducing work from 3M to ~nprobe*clusterSize.
-//
-// Binary file format (little-endian):
+// Binary file format v2 (little-endian):
 //   [4]  magic   uint32 = 0x49564649 ("IVFI")
-//   [4]  version uint32 = 1
-//   [4]  nlist   uint32  (number of clusters)
-//   [4]  dim     uint32  (must be 14)
+//   [4]  version uint32 = 2
+//   [4]  nlist   uint32
+//   [4]  dim     uint32  (=14)
 //   nlist * 14 * 4  centroids float32
 //   for each cluster:
-//     [4]  n      uint32  (vectors in cluster)
-//     n * 14 * 4  vectors float32
-//     n * 1       labels  bool (1 byte each)
+//     [4]  n      uint32
+//     n * 14 * 2  vectors int16 (quantized, scale=10000)
+//     n * 1       labels  uint8
 
 const ivfMagic uint32 = 0x49564649
 
-// cdist pairs a centroid index with its squared L2 distance from the query.
 type cdist struct {
 	dist float32
 	ci   int
 }
 
-// ivfClusterDesc describes a cluster's position inside the arena.
-// No pointer fields — GC does not scan this struct.
 type ivfClusterDesc struct {
-	flatOff  uint32 // byte offset of float32 flat data in arena (n*14*4 bytes)
-	labelOff uint32 // byte offset of label bytes in arena (n bytes)
-	n        uint32 // number of vectors in cluster
+	flatOff  uint32
+	labelOff uint32
+	n        uint32
 }
 
-// IVFIndex implements fast approximate KNN via inverted file (cluster-based).
-//
-// All vector data is stored in a single []byte arena to minimise GC scan cost.
-// Centroids are kept as float32 for query-time precision; cluster vectors are
-// also stored as float32 (full precision) to preserve detection accuracy.
-//
-// Arena layout per cluster i:
-//   [descs[i].flatOff  .. +n*14*4)  float32 vectors (little-endian)
-//   [descs[i].labelOff .. +n)       uint8 labels (1=fraud, 0=legit)
-//
-// GC visibility: arena (1 pointer) + centroids (1 pointer) + descs (1 pointer)
-// = 3 slice headers regardless of nlist or total vector count.
 type IVFIndex struct {
-	// centroids holds nlist*14 float32 values.
 	centroids []float32
-	// descs is a pointer-free slice — GC skips its contents entirely.
-	descs []ivfClusterDesc
-	// arena holds all float32 cluster data followed by label bytes.
-	arena []byte
-	nlist  int
-	nprobe int
+	descs     []ivfClusterDesc
+	arena     []byte
+	nlist     int
+	nprobe    int
 }
 
-// SetNProbe sets the number of nearest clusters to search during Predict.
 func (idx *IVFIndex) SetNProbe(n int) {
 	if n < 1 {
 		n = 1
@@ -165,11 +144,18 @@ func (idx *IVFIndex) SetNProbe(n int) {
 	idx.nprobe = n
 }
 
-// NewIVFIndex creates an empty IVFIndex.
 func NewIVFIndex() *IVFIndex { return &IVFIndex{} }
 
-// LoadIVF loads a pre-built IVF index from a binary file.
-// Cluster vectors (float32) are stored as-is in the arena for full precision.
+func quantizeFloat32(v float32) int16 {
+	if v > 1.0 {
+		return int16Scale
+	}
+	if v < -1.0 {
+		return -int16Scale
+	}
+	return int16(math.Round(float64(v * int16Scale)))
+}
+
 func LoadIVF(path string) (*IVFIndex, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -181,8 +167,8 @@ func LoadIVF(path string) (*IVFIndex, error) {
 	if err := binary.Read(f, binary.LittleEndian, &magic); err != nil || magic != ivfMagic {
 		return nil, fmt.Errorf("invalid ivf magic")
 	}
-	if err := binary.Read(f, binary.LittleEndian, &version); err != nil || version != 1 {
-		return nil, fmt.Errorf("unsupported ivf version %d", version)
+	if err := binary.Read(f, binary.LittleEndian, &version); err != nil || version != 2 {
+		return nil, fmt.Errorf("unsupported ivf version %d (expected 2)", version)
 	}
 	binary.Read(f, binary.LittleEndian, &nlist)
 	binary.Read(f, binary.LittleEndian, &dim)
@@ -190,13 +176,11 @@ func LoadIVF(path string) (*IVFIndex, error) {
 		return nil, fmt.Errorf("expected dim=14, got %d", dim)
 	}
 
-	// Read centroids as float32.
 	centroids := make([]float32, nlist*dim)
 	if err := binary.Read(f, binary.LittleEndian, centroids); err != nil {
 		return nil, fmt.Errorf("read centroids: %w", err)
 	}
 
-	// First pass: read all cluster sizes to compute arena layout.
 	type clusterMeta struct {
 		n          uint32
 		fileOffset int64
@@ -211,15 +195,13 @@ func LoadIVF(path string) (*IVFIndex, error) {
 		off, _ := f.Seek(0, io.SeekCurrent)
 		metas[i] = clusterMeta{n: n, fileOffset: off}
 		totalVecs += uint64(n)
-		// Skip float32 flat + label bytes.
-		skip := int64(n)*int64(dim)*4 + int64(n)
+		skip := int64(n)*int64(dim)*2 + int64(n)
 		if _, err := f.Seek(skip, io.SeekCurrent); err != nil {
 			return nil, fmt.Errorf("seek cluster %d: %w", i, err)
 		}
 	}
 
-	// Allocate arena: for each cluster, n*14*4 (float32) + n (labels).
-	arenaSize := totalVecs*uint64(dim)*4 + totalVecs
+	arenaSize := totalVecs*uint64(dim)*2 + totalVecs
 	arena := make([]byte, arenaSize)
 
 	descs := make([]ivfClusterDesc, nlist)
@@ -227,7 +209,7 @@ func LoadIVF(path string) (*IVFIndex, error) {
 
 	for i := uint32(0); i < nlist; i++ {
 		n := metas[i].n
-		flatBytes := uint64(n) * uint64(dim) * 4
+		flatBytes := uint64(n) * uint64(dim) * 2
 		labelBytes := uint64(n)
 
 		descs[i] = ivfClusterDesc{
@@ -236,17 +218,14 @@ func LoadIVF(path string) (*IVFIndex, error) {
 			n:        n,
 		}
 
-		// Seek to this cluster's float data (past the n uint32 already consumed in pass 1).
 		if _, err := f.Seek(metas[i].fileOffset, io.SeekStart); err != nil {
 			return nil, fmt.Errorf("seek cluster %d data: %w", i, err)
 		}
 
-		// Read float32 vectors directly into arena (no quantization).
 		if _, err := io.ReadFull(f, arena[arenaPos:arenaPos+flatBytes]); err != nil {
 			return nil, fmt.Errorf("read cluster %d vecs: %w", i, err)
 		}
 
-		// Read label bytes into arena.
 		if _, err := io.ReadFull(f, arena[arenaPos+flatBytes:arenaPos+flatBytes+labelBytes]); err != nil {
 			return nil, fmt.Errorf("read cluster %d labels: %w", i, err)
 		}
@@ -263,11 +242,24 @@ func LoadIVF(path string) (*IVFIndex, error) {
 	}, nil
 }
 
-// Predict searches the single nearest cluster and returns fraud probability.
-func (idx *IVFIndex) Predict(query model.Vector14, k int) float64 {
-	// Find nearest centroid.
-	bestCI := 0
-	bestDist := float32(math.MaxFloat32)
+func quantizeQuery(q model.Vector14) [14]int32 {
+	var qi [14]int32
+	for d := 0; d < 14; d++ {
+		if q[d] < -1.0 {
+			qi[d] = -int16Scale
+		} else if q[d] > 1.0 {
+			qi[d] = int16Scale
+		} else {
+			qi[d] = int32(math.Round(float64(q[d] * int16Scale)))
+		}
+	}
+	return qi
+}
+
+// findTopCentroids finds the top-n nearest centroids using a stack-allocated max-heap.
+// Returns the number of probes filled.
+func (idx *IVFIndex) findTopCentroids(query model.Vector14, probes *[32]cdist, nprobe int) int {
+	bestCount := 0
 	c := idx.centroids
 
 	for ci := 0; ci < idx.nlist; ci++ {
@@ -288,69 +280,146 @@ func (idx *IVFIndex) Predict(query model.Vector14, k int) float64 {
 		d13 := query[13] - c[base+13]
 		d := d0*d0 + d1*d1 + d2*d2 + d3*d3 + d4*d4 + d5*d5 + d6*d6 +
 			d7*d7 + d8*d8 + d9*d9 + d10*d10 + d11*d11 + d12*d12 + d13*d13
-		if d < bestDist {
-			bestDist = d
-			bestCI = ci
-		}
-	}
 
-	// Brute-force search in the nearest cluster (float32 arena, zero alloc).
-	desc := idx.descs[bestCI]
-	n := int(desc.n)
-	if n == 0 {
-		return 0
-	}
-	f := unsafe.Slice((*float32)(unsafe.Pointer(&idx.arena[desc.flatOff])), n*14)
-	labels := idx.arena[desc.labelOff : desc.labelOff+desc.n]
-
-	var topK [K]candidate
-	count := 0
-
-	for i := 0; i < n; i++ {
-		base := i * 14
-		e0 := query[0] - f[base+0]
-		e1 := query[1] - f[base+1]
-		e2 := query[2] - f[base+2]
-		e3 := query[3] - f[base+3]
-		e4 := query[4] - f[base+4]
-		e5 := query[5] - f[base+5]
-		e6 := query[6] - f[base+6]
-		e7 := query[7] - f[base+7]
-		e8 := query[8] - f[base+8]
-		e9 := query[9] - f[base+9]
-		e10 := query[10] - f[base+10]
-		e11 := query[11] - f[base+11]
-		e12 := query[12] - f[base+12]
-		e13 := query[13] - f[base+13]
-		sum := e0*e0 + e1*e1 + e2*e2 + e3*e3 + e4*e4 + e5*e5 + e6*e6 +
-			e7*e7 + e8*e8 + e9*e9 + e10*e10 + e11*e11 + e12*e12 + e13*e13
-		if count < K {
-			topK[count] = candidate{sum, i}
-			count++
-			if count == K {
-				maxI := 0
-				if topK[1].dist > topK[maxI].dist { maxI = 1 }
-				if topK[2].dist > topK[maxI].dist { maxI = 2 }
-				if topK[3].dist > topK[maxI].dist { maxI = 3 }
-				if topK[4].dist > topK[maxI].dist { maxI = 4 }
-				topK[0], topK[maxI] = topK[maxI], topK[0]
+		if bestCount < nprobe {
+			probes[bestCount] = cdist{d, ci}
+			bestCount++
+			if bestCount == nprobe {
+				worstIdx := 0
+				for j := 1; j < nprobe; j++ {
+					if probes[j].dist > probes[worstIdx].dist {
+						worstIdx = j
+					}
+				}
+				probes[0], probes[worstIdx] = probes[worstIdx], probes[0]
 			}
-		} else if sum < topK[0].dist {
-			topK[0] = candidate{sum, i}
-			maxI := 0
-			if topK[1].dist > topK[maxI].dist { maxI = 1 }
-			if topK[2].dist > topK[maxI].dist { maxI = 2 }
-			if topK[3].dist > topK[maxI].dist { maxI = 3 }
-			if topK[4].dist > topK[maxI].dist { maxI = 4 }
-			topK[0], topK[maxI] = topK[maxI], topK[0]
+		} else if d < probes[0].dist {
+			probes[0] = cdist{d, ci}
+			worstIdx := 0
+			for j := 1; j < nprobe; j++ {
+				if probes[j].dist > probes[worstIdx].dist {
+					worstIdx = j
+				}
+			}
+			probes[0], probes[worstIdx] = probes[worstIdx], probes[0]
 		}
 	}
+	return bestCount
+}
 
-	// Count fraud in top-K.
-	fraudCount := 0
+type labeledCandidate struct {
+	dist  uint64
+	label byte
+}
+
+func (idx *IVFIndex) searchClusters(probes []cdist, qi [14]int32) ([K]labeledCandidate, int) {
+	var topK [K]labeledCandidate
+	count := 0
+	worstDist := uint64(math.MaxUint64)
+
+	for pi := range probes {
+		desc := idx.descs[probes[pi].ci]
+		n := int(desc.n)
+		if n == 0 {
+			continue
+		}
+		f := unsafe.Slice((*int16)(unsafe.Pointer(&idx.arena[desc.flatOff])), n*14)
+		labels := idx.arena[desc.labelOff : desc.labelOff+desc.n]
+
+		for i := 0; i < n; i++ {
+			base := i * 14
+			v0 := int64(f[base+0]) - int64(qi[0])
+			v1 := int64(f[base+1]) - int64(qi[1])
+			v2 := int64(f[base+2]) - int64(qi[2])
+			v3 := int64(f[base+3]) - int64(qi[3])
+			v4 := int64(f[base+4]) - int64(qi[4])
+			v5 := int64(f[base+5]) - int64(qi[5])
+			v6 := int64(f[base+6]) - int64(qi[6])
+			v7 := int64(f[base+7]) - int64(qi[7])
+			dist := uint64(v0*v0) + uint64(v1*v1) + uint64(v2*v2) + uint64(v3*v3) +
+				uint64(v4*v4) + uint64(v5*v5) + uint64(v6*v6) + uint64(v7*v7)
+
+			if dist >= worstDist {
+				continue
+			}
+
+			v8 := int64(f[base+8]) - int64(qi[8])
+			v9 := int64(f[base+9]) - int64(qi[9])
+			v10 := int64(f[base+10]) - int64(qi[10])
+			v11 := int64(f[base+11]) - int64(qi[11])
+			v12 := int64(f[base+12]) - int64(qi[12])
+			v13 := int64(f[base+13]) - int64(qi[13])
+			dist += uint64(v8*v8) + uint64(v9*v9) + uint64(v10*v10) +
+				uint64(v11*v11) + uint64(v12*v12) + uint64(v13*v13)
+
+			if dist >= worstDist {
+				continue
+			}
+
+			lb := labels[i]
+			if count < K {
+				topK[count] = labeledCandidate{dist, lb}
+				count++
+				if count == K {
+					maxI := 0
+					for j := 1; j < K; j++ {
+						if topK[j].dist > topK[maxI].dist {
+							maxI = j
+						}
+					}
+					topK[0], topK[maxI] = topK[maxI], topK[0]
+					worstDist = topK[0].dist
+				}
+			} else {
+				topK[0] = labeledCandidate{dist, lb}
+				maxI := 0
+				for j := 1; j < K; j++ {
+					if topK[j].dist > topK[maxI].dist {
+						maxI = j
+					}
+				}
+				topK[0], topK[maxI] = topK[maxI], topK[0]
+				worstDist = topK[0].dist
+			}
+		}
+	}
+	return topK, count
+}
+
+func countFraud(topK [K]labeledCandidate, count int) int {
+	n := 0
 	for j := 0; j < count; j++ {
-		if labels[topK[j].idx] == 1 {
-			fraudCount++
+		if topK[j].label == 1 {
+			n++
+		}
+	}
+	return n
+}
+
+// Predict searches the nprobe nearest clusters and returns fraud probability.
+// Uses adaptive nprobe: doubles when fraud_count is ambiguous (2 or 3).
+func (idx *IVFIndex) Predict(query model.Vector14, k int) float64 {
+	baseNprobe := idx.nprobe
+	if baseNprobe > idx.nlist {
+		baseNprobe = idx.nlist
+	}
+
+	qi := quantizeQuery(query)
+
+	var probes [32]cdist
+	bestCount := idx.findTopCentroids(query, &probes, baseNprobe)
+
+	topK, count := idx.searchClusters(probes[:bestCount], qi)
+	fraudCount := countFraud(topK, count)
+
+	// Adaptive: if ambiguous (2 or 3 out of 5), double the nprobe.
+	expanded := baseNprobe * 2
+	if (fraudCount == 2 || fraudCount == 3) && expanded <= 32 && expanded <= idx.nlist {
+		expCount := idx.findTopCentroids(query, &probes, expanded)
+		topK2, count2 := idx.searchClusters(probes[:expCount], qi)
+		fraudCount2 := countFraud(topK2, count2)
+		if count2 > 0 {
+			return float64(fraudCount2) / float64(count2)
 		}
 	}
 
@@ -360,7 +429,6 @@ func (idx *IVFIndex) Predict(query model.Vector14, k int) float64 {
 	return float64(fraudCount) / float64(count)
 }
 
-// Count returns total vectors across all clusters.
 func (idx *IVFIndex) Count() int {
 	n := 0
 	for _, d := range idx.descs {
@@ -369,7 +437,6 @@ func (idx *IVFIndex) Count() int {
 	return n
 }
 
-// FraudCount returns fraud vectors across all clusters.
 func (idx *IVFIndex) FraudCount() int {
 	n := 0
 	for _, d := range idx.descs {
@@ -385,12 +452,9 @@ func (idx *IVFIndex) FraudCount() int {
 
 // ─── IVF build (k-means) — runs at docker build time ─────────────────────────
 
-// BuildIVF runs k-means on the references.json.gz and writes an IVF index file.
-// nlist: number of clusters (e.g. 500). iterations: k-means iterations (e.g. 20).
 func BuildIVF(refsGz, outPath string, nlist, iterations int) error {
 	fmt.Printf("BuildIVF: loading %s ...\n", refsGz)
 
-	// Load all vectors.
 	f, err := os.Open(refsGz)
 	if err != nil {
 		return err
@@ -430,10 +494,8 @@ func BuildIVF(refsGz, outPath string, nlist, iterations int) error {
 	n := len(fraudFlags)
 	fmt.Printf("BuildIVF: loaded %d vectors\n", n)
 
-	// K-means initialization (random — k-means++ is O(N*K²) and too slow for 3M vectors).
 	centroids := kmeansInit(flat, n, nlist)
 
-	// K-means iterations.
 	assign := make([]int, n)
 	for iter := 0; iter < iterations; iter++ {
 		changed := kmeansAssign(flat, n, centroids, nlist, assign)
@@ -444,19 +506,20 @@ func BuildIVF(refsGz, outPath string, nlist, iterations int) error {
 		}
 	}
 
-	// Group vectors by cluster.
 	clusterSizes := make([]int, nlist)
 	for _, ci := range assign {
 		clusterSizes[ci]++
 	}
-	clusterFlat := make([][]float32, nlist)
+	clusterFlat := make([][]int16, nlist)
 	clusterLabels := make([][]byte, nlist)
 	for ci := range clusterFlat {
-		clusterFlat[ci] = make([]float32, 0, clusterSizes[ci]*14)
+		clusterFlat[ci] = make([]int16, 0, clusterSizes[ci]*14)
 		clusterLabels[ci] = make([]byte, 0, clusterSizes[ci])
 	}
 	for i, ci := range assign {
-		clusterFlat[ci] = append(clusterFlat[ci], flat[i*14:i*14+14]...)
+		for d := 0; d < 14; d++ {
+			clusterFlat[ci] = append(clusterFlat[ci], quantizeFloat32(flat[i*14+d]))
+		}
 		lb := byte(0)
 		if fraudFlags[i] {
 			lb = 1
@@ -464,8 +527,7 @@ func BuildIVF(refsGz, outPath string, nlist, iterations int) error {
 		clusterLabels[ci] = append(clusterLabels[ci], lb)
 	}
 
-	// Write binary file.
-	fmt.Printf("BuildIVF: writing %s ...\n", outPath)
+	fmt.Printf("BuildIVF: writing %s (v2, int16) ...\n", outPath)
 	out, err := os.Create(outPath)
 	if err != nil {
 		return err
@@ -474,7 +536,7 @@ func BuildIVF(refsGz, outPath string, nlist, iterations int) error {
 
 	write32 := func(v uint32) { binary.Write(out, binary.LittleEndian, v) }
 	write32(ivfMagic)
-	write32(1) // version
+	write32(2) // version 2: int16 vectors
 	write32(uint32(nlist))
 	write32(14)
 
@@ -554,7 +616,6 @@ func kmeansUpdate(flat []float32, n int, centroids []float32, k int, assign []in
 	workers := runtime.GOMAXPROCS(0)
 	chunkSize := (n + workers - 1) / workers
 
-	// Each worker accumulates into its own sums/counts to avoid contention.
 	type accumulator struct {
 		sums   []float64
 		counts []int
@@ -591,7 +652,6 @@ func kmeansUpdate(flat []float32, n int, centroids []float32, k int, assign []in
 	}
 	wg.Wait()
 
-	// Merge accumulators.
 	sums := accs[0].sums
 	counts := accs[0].counts
 	for w := 1; w < workers; w++ {
