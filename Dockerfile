@@ -27,7 +27,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
 RUN ./build-index -resources ./resources -nlist 600 -iterations 15
 
 # ── Production stage ──────────────────────────────────────────────────────────
-FROM gcr.io/distroless/static:nonroot AS production
+FROM gcr.io/distroless/static AS production
 
 COPY --from=builder /build/fraudctl /fraudctl
 COPY --from=builder /build/resources /resources
