@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -38,6 +39,7 @@ func main() {
 			port = parsed
 		}
 	}
+	socketPath := os.Getenv("UNIX_SOCKET")
 
 	log.Printf("Loading dataset from %s", *resourcesPath)
 	ds, err := dataset.LoadDefault(*resourcesPath)
@@ -58,7 +60,6 @@ func main() {
 	router.Handle("/fraud-score", fraudHandler.Handle)
 
 	srv := &http.Server{
-		Addr:              fmt.Sprintf(":%d", port),
 		Handler:           router,
 		ReadHeaderTimeout: 2 * time.Second,
 		ReadTimeout:       5 * time.Second,
@@ -66,12 +67,32 @@ func main() {
 		IdleTimeout:       30 * time.Second,
 	}
 
-	go func() {
-		log.Printf("Server starting on port %d", port)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server failed: %v", err)
+	if socketPath != "" {
+		// Remove stale socket if it exists.
+		_ = os.Remove(socketPath)
+		ln, err := net.Listen("unix", socketPath)
+		if err != nil {
+			log.Fatalf("Failed to listen on unix socket %s: %v", socketPath, err)
 		}
-	}()
+		// Allow nginx (other users) to connect.
+		if err := os.Chmod(socketPath, 0666); err != nil {
+			log.Fatalf("Failed to chmod socket: %v", err)
+		}
+		log.Printf("Server starting on unix socket %s", socketPath)
+		go func() {
+			if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+				log.Fatalf("Server failed: %v", err)
+			}
+		}()
+	} else {
+		srv.Addr = fmt.Sprintf(":%d", port)
+		go func() {
+			log.Printf("Server starting on port %d", port)
+			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Fatalf("Server failed: %v", err)
+			}
+		}()
+	}
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -90,7 +111,22 @@ func main() {
 }
 
 func checkHealth() error {
-	resp, err := http.Get("http://localhost:9999/ready")
+	socketPath := os.Getenv("UNIX_SOCKET")
+
+	var client *http.Client
+	if socketPath != "" {
+		client = &http.Client{
+			Transport: &http.Transport{
+				DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+					return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
+				},
+			},
+		}
+	} else {
+		client = http.DefaultClient
+	}
+
+	resp, err := client.Get("http://localhost/ready")
 	if err != nil {
 		return err
 	}

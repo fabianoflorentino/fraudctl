@@ -3,6 +3,7 @@
 # =============================================================================
 # nginx (round-robin) + 2 API instances
 # Total resources: ~1 CPU, 350 MB RAM
+# Unix Domain Sockets (tmpfs) replace TCP loopback — saves ~40-60µs/request.
 # =============================================================================
 
 services:
@@ -15,9 +16,12 @@ services:
     environment:
       - PORT=9999
       - RESOURCES=/resources
+      - UNIX_SOCKET=/sockets/api-1.sock
       - GOMAXPROCS=1
       - GOGC=500
       - GOMEMLIMIT=140MiB
+    volumes:
+      - sockets:/sockets
     healthcheck:
       test: ["CMD", "/fraudctl", "-healthcheck"]
       interval: 2s
@@ -43,9 +47,12 @@ services:
     environment:
       - PORT=9999
       - RESOURCES=/resources
+      - UNIX_SOCKET=/sockets/api-2.sock
       - GOMAXPROCS=1
       - GOGC=500
       - GOMEMLIMIT=140MiB
+    volumes:
+      - sockets:/sockets
     healthcheck:
       test: ["CMD", "/fraudctl", "-healthcheck"]
       interval: 2s
@@ -70,6 +77,7 @@ services:
       - "9999:9999"
     volumes:
       - ./config/nginx.conf:/etc/nginx/nginx.conf:ro
+      - sockets:/sockets
     depends_on:
       api-1:
         condition: service_healthy
@@ -84,6 +92,13 @@ services:
           cpus: '0.05'
           memory: 10M
     restart: unless-stopped
+
+volumes:
+  sockets:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
 
 # Resource allocation summary:
 #   nginx:    0.10 CPU,  30 MB

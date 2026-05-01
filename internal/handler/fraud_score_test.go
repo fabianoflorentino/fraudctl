@@ -84,7 +84,7 @@ func TestFraudScoreHandler_Handle_InvalidJSON(t *testing.T) {
 	if err != nil {
 		t.Errorf("expected nil error, got %v", err)
 	}
-	if w.Body.String() != `{"approved":true,"fraud_score":0.0}` {
+	if w.Body.String() != `{"approved":true,"fraud_score":0}` {
 		t.Errorf("unexpected fallback response: %s", w.Body.String())
 	}
 }
@@ -102,7 +102,7 @@ func TestFraudScoreHandler_sendFallback(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Errorf("expected status 200, got %d", w.Code)
 	}
-	if w.Body.String() != `{"approved":true,"fraud_score":0.0}` {
+	if w.Body.String() != `{"approved":true,"fraud_score":0}` {
 		t.Errorf("unexpected body: %s", w.Body.String())
 	}
 }
