@@ -102,20 +102,15 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile
-          push: false
-          load: true
-          tags: ${{ github.repository }}:${{ needs.version.outputs.next_version }}
-          cache-from: type=registry,ref=${{ github.repository }}:buildcache
-          cache-to: type=registry,ref=${{ github.repository }}:buildcache,mode=max
-        env:
-          IMAGE_REF: ${{ github.repository }}:${{ needs.version.outputs.next_version }}
-
-      - name: Export IMAGE_REF
-        run: echo "IMAGE_REF=${{ github.repository }}:${{ needs.version.outputs.next_version }}" >> $GITHUB_ENV
+        run: |
+          IMAGE_REF="${{ github.repository }}:${{ needs.version.outputs.next_version }}"
+          echo "IMAGE_REF=${IMAGE_REF}" >> $GITHUB_ENV
+          docker buildx build \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max \
+            --load \
+            -t "${IMAGE_REF}" \
+            -f ./Dockerfile .
 
       - name: Smoke test — verify binary entrypoint
         run: |
