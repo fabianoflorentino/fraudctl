@@ -13,9 +13,11 @@ import (
 )
 
 const K = 10
+const DIM = 14
 const int16Scale = 10000
 const int16Pad = math.MaxInt16
 const ivfMagic uint32 = 0x49564649
+const bruteMagic uint32 = 0x42525554
 
 func quantizeFloat32(v float32) int16 {
 	if v > 1.0 {
@@ -288,4 +290,77 @@ func kmeansUpdate(flat []float32, n int, centroids []float32, k int, assign []in
 			centroids[cb+d] = float32(sums[cb+d] / float64(counts[ci]))
 		}
 	}
+}
+
+func BuildBrute(refsGz, outPath string) error {
+	fmt.Printf("BuildBrute: loading %s ...\n", refsGz)
+
+	f, err := os.Open(refsGz)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		return err
+	}
+	defer gz.Close()
+
+	var vectors []float32
+	var fraudFlags []bool
+
+	dec := json.NewDecoder(gz)
+	if _, err := dec.Token(); err != nil {
+		return err
+	}
+	var entry struct {
+		Vector []float64 `json:"vector"`
+		Label  string    `json:"label"`
+	}
+	for dec.More() {
+		entry.Vector = entry.Vector[:0]
+		if err := dec.Decode(&entry); err != nil {
+			break
+		}
+		for i := 0; i < 14; i++ {
+			if i < len(entry.Vector) {
+				vectors = append(vectors, float32(entry.Vector[i]))
+			} else {
+				vectors = append(vectors, 0)
+			}
+		}
+		fraudFlags = append(fraudFlags, entry.Label == "fraud")
+	}
+	N := len(fraudFlags)
+	fmt.Printf("BuildBrute: loaded %d vectors\n", N)
+
+	soa := make([]int16, N*DIM)
+	labels := make([]byte, N)
+
+	for i := 0; i < N; i++ {
+		for d := 0; d < DIM; d++ {
+			soa[d*N+i] = quantizeFloat32(vectors[i*DIM+d])
+		}
+		if fraudFlags[i] {
+			labels[i] = 1
+		}
+	}
+
+	fmt.Printf("BuildBrute: writing %s ...\n", outPath)
+	out, err := os.Create(outPath)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	write32 := func(v uint32) { binary.Write(out, binary.LittleEndian, v) }
+	write32(bruteMagic)
+	write32(1)
+	write32(uint32(N))
+	write32(DIM)
+	binary.Write(out, binary.LittleEndian, soa)
+	out.Write(labels)
+
+	fmt.Printf("BuildBrute: done. N=%d\n", N)
+	return nil
 }

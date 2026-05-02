@@ -17,7 +17,7 @@ type Dataset struct {
 	index   KNNIndex
 }
 
-// KNNIndex is implemented by BruteIndex and IVFIndex.
+// KNNIndex is implemented by IVFIndex, BruteIndex and BruteAVX2Index.
 type KNNIndex interface {
 	Predict(query model.Vector14, k int) float64
 	Count() int
@@ -66,7 +66,7 @@ func (d *Dataset) FraudCount() int { return d.index.FraudCount() }
 func (d *Dataset) LegitCount() int { return d.index.Count() - d.index.FraudCount() }
 
 // LoadDefault loads the dataset from path.
-// Priority: ivf.bin (IVF index) > references.json.gz (brute force).
+// Priority: brute.bin (exact brute-force KNN) > ivf.bin (IVF approx) > references.json.gz (fallback).
 func LoadDefault(path string) (*Dataset, error) {
 	loader := NewLoader(path)
 
@@ -82,15 +82,31 @@ func LoadDefault(path string) (*Dataset, error) {
 
 	var idx KNNIndex
 
-	ivfPath := filepath.Join(path, "ivf.bin")
-	if _, err := os.Stat(ivfPath); err == nil {
-		ivf, err := knn.LoadIVF(ivfPath)
+	// Priority 1: Brute-force AVX2 index (exact KNN, zero approximation error)
+	brutePath := filepath.Join(path, "brute.bin")
+	if knn.ExistsBrute(brutePath) {
+		brute, err := knn.LoadBruteAVX2(brutePath)
 		if err != nil {
 			return nil, err
 		}
-		ivf.SetNProbe(24)
-		idx = ivf
-	} else {
+		idx = brute
+	}
+
+	// Priority 2: IVF index
+	if idx == nil {
+		ivfPath := filepath.Join(path, "ivf.bin")
+		if _, err := os.Stat(ivfPath); err == nil {
+			ivf, err := knn.LoadIVF(ivfPath)
+			if err != nil {
+				return nil, err
+			}
+			ivf.SetNProbe(24)
+			idx = ivf
+		}
+	}
+
+	// Priority 3: Brute force from gzip
+	if idx == nil {
 		brute := knn.NewBruteIndex()
 		gzPath := filepath.Join(path, "references.json.gz")
 		if err := brute.BuildFromGzip(gzPath, 3_000_000); err != nil {
