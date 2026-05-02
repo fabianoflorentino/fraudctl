@@ -83,25 +83,25 @@ func LoadDefault(path string) (*Dataset, error) {
 	var idx KNNIndex
 
 	// Priority 1: Brute-force AVX2 index (exact KNN, zero approximation error)
+	// NOTE: Disabled - brute force O(N) is too slow at 3M vectors (causes timeouts).
+	// Use IVF (Priority 2) as the primary index.
 	brutePath := filepath.Join(path, "brute.bin")
-	if knn.ExistsBrute(brutePath) {
+	if false && knn.ExistsBrute(brutePath) {
 		brute, err := knn.LoadBruteAVX2(brutePath)
-		if err != nil {
-			return nil, err
+		if err == nil {
+			idx = brute
 		}
-		idx = brute
 	}
 
-	// Priority 2: IVF index
+	// Priority 2: IVF index (primary - fast and accurate)
 	if idx == nil {
 		ivfPath := filepath.Join(path, "ivf.bin")
 		if _, err := os.Stat(ivfPath); err == nil {
 			ivf, err := knn.LoadIVF(ivfPath)
-			if err != nil {
-				return nil, err
+			if err == nil {
+				ivf.SetNProbe(24)
+				idx = ivf
 			}
-			ivf.SetNProbe(24)
-			idx = ivf
 		}
 	}
 

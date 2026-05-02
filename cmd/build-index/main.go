@@ -27,12 +27,4 @@ func main() {
 		log.Fatalf("BuildIVF failed: %v", err)
 	}
 	log.Printf("IVF index written to %s", ivfPath)
-
-	// Build brute-force index
-	brutePath := filepath.Join(*resources, "brute.bin")
-	log.Printf("Building brute-force index...")
-	if err := knn.BuildBrute(refsGz, brutePath); err != nil {
-		log.Fatalf("BuildBrute failed: %v", err)
-	}
-	log.Printf("Brute index written to %s", brutePath)
 }
