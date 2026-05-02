@@ -174,16 +174,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Ensure GITHUB_TOKEN env
-        run: |
-          if [ -n "${{ secrets.GIT_HUB_TOKEN }}" ]; then
-            echo "Using secrets.GIT_HUB_TOKEN as GITHUB_TOKEN"
-            echo "GITHUB_TOKEN=${{ secrets.GIT_HUB_TOKEN }}" >> $GITHUB_ENV
-          else
-            echo "Using runner-provided GITHUB_TOKEN"
-            echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> $GITHUB_ENV
-          fi
-
       - name: Create and push tag
         id: create_tag
         run: |
@@ -197,7 +187,7 @@ jobs:
 
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
         env:
-          GITHUB_TOKEN: ${{ env.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_HUB_TOKEN || secrets.GITHUB_TOKEN }}
 
     outputs:
       tag_name: ${{ steps.create_tag.outputs.tag_name }}
