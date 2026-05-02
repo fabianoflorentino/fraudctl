@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"syscall"
 	"time"
@@ -23,6 +24,9 @@ var (
 )
 
 func main() {
+	runtime.GOMAXPROCS(1)
+	runtime.LockOSThread()
+
 	flag.Parse()
 
 	if *healthCheck {
@@ -86,12 +90,16 @@ func main() {
 	}
 
 	srv := &fasthttp.Server{
-		Handler:            requestHandler,
-		ReadTimeout:        2 * time.Second,
-		WriteTimeout:       5 * time.Second,
-		IdleTimeout:        30 * time.Second,
-		MaxRequestBodySize: 4096,
+		Handler:               requestHandler,
+		ReadTimeout:           2 * time.Second,
+		WriteTimeout:          5 * time.Second,
+		IdleTimeout:           30 * time.Second,
+		MaxRequestBodySize:    4096,
 		NoDefaultServerHeader: true,
+		NoDefaultContentType:  true,
+		ReadBufferSize:        4096,
+		WriteBufferSize:       4096,
+		Concurrency:           256,
 	}
 
 	go func() {
