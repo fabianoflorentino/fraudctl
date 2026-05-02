@@ -204,30 +204,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Create GitHub Release
-        id: create_release
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ needs.tag.outputs.tag_name }}
-          name: ${{ needs.tag.outputs.tag_name }}
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GIT_HUB_TOKEN }}
-
       - name: Download binary build artifact
         uses: actions/download-artifact@v4
         with:
           name: fraudctl-linux-amd64
           path: .
-        continue-on-error: true
 
-      - name: Upload binary asset to Release
-        uses: actions/upload-release-asset@v1
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./fraudctl
-          asset_name: fraudctl-linux-amd64
-          asset_content_type: application/octet-stream
+          tag_name: ${{ needs.tag.outputs.tag_name }}
+          name: ${{ needs.tag.outputs.tag_name }}
+          generate_release_notes: true
+          files: ./fraudctl
         env:
           GITHUB_TOKEN: ${{ secrets.GIT_HUB_TOKEN }}
 
