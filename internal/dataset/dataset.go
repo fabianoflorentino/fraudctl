@@ -4,7 +4,6 @@ package dataset
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 
 	"github.com/fabianoflorentino/fraudctl/internal/knn"
 	"github.com/fabianoflorentino/fraudctl/internal/model"
@@ -18,7 +17,7 @@ type Dataset struct {
 	index   KNNIndex
 }
 
-// KNNIndex is implemented by both BruteIndex and IVFIndex.
+// KNNIndex is implemented by BruteIndex and IVFIndex.
 type KNNIndex interface {
 	Predict(query model.Vector14, k int) float64
 	Count() int
@@ -67,8 +66,7 @@ func (d *Dataset) FraudCount() int { return d.index.FraudCount() }
 func (d *Dataset) LegitCount() int { return d.index.Count() - d.index.FraudCount() }
 
 // LoadDefault loads the dataset from path.
-// If ivf.bin exists, loads the pre-built IVF index (fast, low memory).
-// Otherwise, streams references.json.gz into a BruteIndex (slower queries).
+// Priority: ivf.bin (IVF index) > references.json.gz (brute force).
 func LoadDefault(path string) (*Dataset, error) {
 	loader := NewLoader(path)
 
@@ -86,7 +84,6 @@ func LoadDefault(path string) (*Dataset, error) {
 
 	ivfPath := filepath.Join(path, "ivf.bin")
 	if _, err := os.Stat(ivfPath); err == nil {
-		// Fast path: load pre-built IVF index.
 		ivf, err := knn.LoadIVF(ivfPath)
 		if err != nil {
 			return nil, err
@@ -94,7 +91,6 @@ func LoadDefault(path string) (*Dataset, error) {
 		ivf.SetNProbe(24)
 		idx = ivf
 	} else {
-		// Fallback: stream gzip directly into BruteIndex.
 		brute := knn.NewBruteIndex()
 		gzPath := filepath.Join(path, "references.json.gz")
 		if err := brute.BuildFromGzip(gzPath, 3_000_000); err != nil {
@@ -102,8 +98,6 @@ func LoadDefault(path string) (*Dataset, error) {
 		}
 		idx = brute
 	}
-
-	runtime.GC()
 
 	return &Dataset{
 		norm:    norm,

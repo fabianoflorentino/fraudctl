@@ -4,6 +4,7 @@ package knn
 // #cgo CFLAGS: -march=x86-64-v3 -O3 -flto
 // #cgo LDFLAGS: -lm
 // #include "simd_knn.h"
+// #include <stdlib.h>
 import "C"
 import (
 	"encoding/binary"
@@ -17,12 +18,13 @@ import (
 )
 
 type IVFIndex struct {
-	centroids []float32
-	blocks    []int16
-	labels    []byte
+	centroids *C.float
+	blocks    *C.int16_t
+	labels    *C.uchar
 	offsets   []uint32
 	nlist     int
 	nprobe    int
+	nvec      int
 }
 
 func (idx *IVFIndex) SetNProbe(n int) {
@@ -86,8 +88,20 @@ func LoadIVF(path string) (*IVFIndex, error) {
 
 	totalVecBytes := totalBlocks * uint64(dim) * 8 * 2
 	totalLabelBytes := totalBlocks * 8
-	allVecBytes := make([]byte, totalVecBytes)
-	allLabels := make([]byte, totalLabelBytes)
+
+	// Allocate off-heap memory to avoid GC scanning
+	cBlocks := (*C.int16_t)(C.malloc(C.size_t(totalVecBytes)))
+	if cBlocks == nil {
+		return nil, fmt.Errorf("malloc blocks failed")
+	}
+	cLabels := (*C.uchar)(C.malloc(C.size_t(totalLabelBytes)))
+	if cLabels == nil {
+		C.free(unsafe.Pointer(cBlocks))
+		return nil, fmt.Errorf("malloc labels failed")
+	}
+
+	bufBlocks := unsafe.Slice((*byte)(unsafe.Pointer(cBlocks)), totalVecBytes)
+	bufLabels := unsafe.Slice((*byte)(unsafe.Pointer(cLabels)), totalLabelBytes)
 
 	for i := uint32(0); i < nlist; i++ {
 		nb := uint64(metas[i].nBlocks)
@@ -97,35 +111,51 @@ func LoadIVF(path string) (*IVFIndex, error) {
 		if _, err := f.Seek(metas[i].fileOffset, io.SeekStart); err != nil {
 			return nil, fmt.Errorf("seek cluster %d data: %w", i, err)
 		}
-		if _, err := io.ReadFull(f, allVecBytes[blockPos*uint64(dim)*8*2:blockPos*uint64(dim)*8*2+vecBytes]); err != nil {
+		if _, err := io.ReadFull(f, bufBlocks[blockPos*uint64(dim)*8*2:blockPos*uint64(dim)*8*2+vecBytes]); err != nil {
 			return nil, fmt.Errorf("read cluster %d vecs: %w", i, err)
 		}
-		if _, err := io.ReadFull(f, allLabels[blockPos*8:blockPos*8+labelBytes]); err != nil {
+		if _, err := io.ReadFull(f, bufLabels[blockPos*8:blockPos*8+labelBytes]); err != nil {
 			return nil, fmt.Errorf("read cluster %d labels: %w", i, err)
 		}
 
 		offsets[i] = uint32(blockPos)
-
 		blockPos += nb
 	}
 	offsets[nlist] = uint32(blockPos)
 
-	blocks := unsafe.Slice((*int16)(unsafe.Pointer(&allVecBytes[0])), len(allVecBytes)/2)
+	// Pre-touch: read all pages to avoid page faults during queries
+	for i := 0; i < int(totalVecBytes); i += 4096 {
+		_ = bufBlocks[i]
+	}
+	for i := 0; i < int(totalLabelBytes); i += 4096 {
+		_ = bufLabels[i]
+	}
+
+	// Copy centroids to off-heap
+	centBytes := uintptr(nlist*dim) * 4
+	cCentroids := (*C.float)(C.malloc(C.size_t(centBytes)))
+	if cCentroids == nil {
+		C.free(unsafe.Pointer(cBlocks))
+		C.free(unsafe.Pointer(cLabels))
+		return nil, fmt.Errorf("malloc centroids failed")
+	}
+	copy(unsafe.Slice((*float32)(unsafe.Pointer(cCentroids)), nlist*dim), centroids)
 
 	idx := &IVFIndex{
 		nlist:     int(nlist),
-		nprobe:    1,
-		centroids: centroids,
-		blocks:    blocks,
-		labels:    allLabels,
+		nprobe:    24,
+		centroids: cCentroids,
+		blocks:    cBlocks,
+		labels:    cLabels,
 		offsets:   offsets,
+		nvec:      int(blockPos) * 8,
 	}
 
 	return idx, nil
 }
 
 func (idx *IVFIndex) Predict(query model.Vector14, k int) float64 {
-	if len(idx.blocks) == 0 {
+	if idx.blocks == nil {
 		return 0
 	}
 
@@ -147,10 +177,10 @@ func (idx *IVFIndex) Predict(query model.Vector14, k int) float64 {
 	}
 
 	C.knn_fraud_count_avx2(
-		(*C.int16_t)(unsafe.Pointer(&idx.blocks[0])),
-		(*C.uint8_t)(unsafe.Pointer(&idx.labels[0])),
+		idx.blocks,
+		idx.labels,
 		(*C.uint32_t)(unsafe.Pointer(&idx.offsets[0])),
-		(*C.float)(unsafe.Pointer(&idx.centroids[0])),
+		idx.centroids,
 		C.int(idx.nlist),
 		C.int(idx.nprobe),
 		(*C.int16_t)(unsafe.Pointer(&qiC[0])),
@@ -163,32 +193,31 @@ func (idx *IVFIndex) Predict(query model.Vector14, k int) float64 {
 	return float64(fraudCount) / float64(k)
 }
 
-func (idx *IVFIndex) Count() int {
-	return int(idx.offsets[idx.nlist]) * 8
-}
+func (idx *IVFIndex) Count() int { return idx.nvec }
 
 func (idx *IVFIndex) FraudCount() int {
+	if idx.labels == nil {
+		return 0
+	}
 	n := 0
-	for _, lb := range idx.labels {
-		if lb == 1 {
-			n++
-		}
+	labels := unsafe.Slice((*byte)(unsafe.Pointer(idx.labels)), idx.nvec)
+	for i := 0; i < idx.nvec; i++ {
+		n += int(labels[i])
 	}
 	return n
 }
 
-func (idx *IVFIndex) DebugBlocks() []int16 {
-	return idx.blocks
-}
-
-func (idx *IVFIndex) DebugNList() int {
-	return idx.nlist
-}
-
-func (idx *IVFIndex) DebugOffsets() []uint32 {
-	return idx.offsets
-}
-
-func (idx *IVFIndex) DebugCentroids() []float32 {
-	return idx.centroids
+func (idx *IVFIndex) Close() {
+	if idx.blocks != nil {
+		C.free(unsafe.Pointer(idx.blocks))
+		idx.blocks = nil
+	}
+	if idx.labels != nil {
+		C.free(unsafe.Pointer(idx.labels))
+		idx.labels = nil
+	}
+	if idx.centroids != nil {
+		C.free(unsafe.Pointer(idx.centroids))
+		idx.centroids = nil
+	}
 }
