@@ -22,6 +22,34 @@ const K = 21
 
 const int16Scale = 10000
 
+// DimWeights weights for each of the 14 dimensions.
+// Higher weights emphasize more fraud-predictive features.
+// 0:amount 1:installments 2:amount_vs_avg 3:hour 4:day
+// 5:min_since 6:km_last 7:km_home 8:tx_count 9:online
+// 10:card_present 11:unknown_merchant 12:mcc_risk 13:merchant_avg
+var DimWeights = [14]float32{
+	1.0,  // amount
+	0.5,  // installments (weak)
+	2.0,  // amount_vs_avg (strong fraud signal)
+	0.5,  // hour (weak)
+	0.5,  // day of week (weak)
+	1.0,  // minutes since last
+	1.0,  // km from last
+	1.5,  // km from home
+	1.5,  // tx_count_24h
+	1.0,  // is_online
+	1.0,  // card_present
+	2.0,  // unknown merchant (strong)
+	2.0,  // MCC risk (strong)
+	1.0,  // merchant avg amount
+}
+
+func applyWeights(v *[14]float32) {
+	for i := 0; i < 14; i++ {
+		v[i] *= DimWeights[i]
+	}
+}
+
 // ─── Brute-force index (used only in tests / small datasets) ─────────────────
 
 type BruteIndex struct {
@@ -245,12 +273,13 @@ func LoadIVF(path string) (*IVFIndex, error) {
 func quantizeQuery(q model.Vector14) [14]int32 {
 	var qi [14]int32
 	for d := 0; d < 14; d++ {
-		if q[d] < -1.0 {
+		v := q[d] * DimWeights[d]
+		if v < -1.0 {
 			qi[d] = -int16Scale
-		} else if q[d] > 1.0 {
+		} else if v > 1.0 {
 			qi[d] = int16Scale
 		} else {
-			qi[d] = int32(math.Round(float64(q[d] * int16Scale)))
+			qi[d] = int32(math.Round(float64(v * int16Scale)))
 		}
 	}
 	return qi
@@ -264,20 +293,20 @@ func (idx *IVFIndex) findTopCentroids(query model.Vector14, probes *[32]cdist, n
 
 	for ci := 0; ci < idx.nlist; ci++ {
 		base := ci * 14
-		d0 := query[0] - c[base+0]
-		d1 := query[1] - c[base+1]
-		d2 := query[2] - c[base+2]
-		d3 := query[3] - c[base+3]
-		d4 := query[4] - c[base+4]
-		d5 := query[5] - c[base+5]
-		d6 := query[6] - c[base+6]
-		d7 := query[7] - c[base+7]
-		d8 := query[8] - c[base+8]
-		d9 := query[9] - c[base+9]
-		d10 := query[10] - c[base+10]
-		d11 := query[11] - c[base+11]
-		d12 := query[12] - c[base+12]
-		d13 := query[13] - c[base+13]
+		d0 := (query[0]*DimWeights[0]) - c[base+0]
+		d1 := (query[1]*DimWeights[1]) - c[base+1]
+		d2 := (query[2]*DimWeights[2]) - c[base+2]
+		d3 := (query[3]*DimWeights[3]) - c[base+3]
+		d4 := (query[4]*DimWeights[4]) - c[base+4]
+		d5 := (query[5]*DimWeights[5]) - c[base+5]
+		d6 := (query[6]*DimWeights[6]) - c[base+6]
+		d7 := (query[7]*DimWeights[7]) - c[base+7]
+		d8 := (query[8]*DimWeights[8]) - c[base+8]
+		d9 := (query[9]*DimWeights[9]) - c[base+9]
+		d10 := (query[10]*DimWeights[10]) - c[base+10]
+		d11 := (query[11]*DimWeights[11]) - c[base+11]
+		d12 := (query[12]*DimWeights[12]) - c[base+12]
+		d13 := (query[13]*DimWeights[13]) - c[base+13]
 		d := d0*d0 + d1*d1 + d2*d2 + d3*d3 + d4*d4 + d5*d5 + d6*d6 +
 			d7*d7 + d8*d8 + d9*d9 + d10*d10 + d11*d11 + d12*d12 + d13*d13
 
@@ -493,6 +522,13 @@ func BuildIVF(refsGz, outPath string, nlist, iterations int) error {
 	}
 	n := len(fraudFlags)
 	fmt.Printf("BuildIVF: loaded %d vectors\n", n)
+
+	// Apply dimension weights for better fraud detection
+	for i := 0; i < n; i++ {
+		for d := 0; d < 14; d++ {
+			flat[i*14+d] *= DimWeights[d]
+		}
+	}
 
 	centroids := kmeansInit(flat, n, nlist)
 
