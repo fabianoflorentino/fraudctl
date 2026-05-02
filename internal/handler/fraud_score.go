@@ -28,7 +28,7 @@ type KNNPredictor interface {
 // approvalThreshold defines the fraud score cutoff for approval.
 // Set below 0.5 because false negatives (missed fraud) cost 3× more than
 // false positives, shifting the Bayes-optimal boundary toward 1/(1+3)=0.25.
-const approvalThreshold = 0.4
+const approvalThreshold = 0.5
 
 var staticResponses [knn.K + 1][]byte
 
