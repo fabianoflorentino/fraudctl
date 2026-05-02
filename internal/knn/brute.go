@@ -18,7 +18,7 @@ import (
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
 
-const K = 15
+const K = 21
 
 const int16Scale = 10000
 
@@ -412,9 +412,9 @@ func (idx *IVFIndex) Predict(query model.Vector14, k int) float64 {
 	topK, count := idx.searchClusters(probes[:bestCount], qi)
 	fraudCount := countFraud(topK, count)
 
-	// Adaptive: if ambiguous (6-9 out of 15), double the nprobe.
+	// Adaptive: if ambiguous (9-12 out of 21), double the nprobe.
 	expanded := baseNprobe * 2
-	if fraudCount >= 6 && fraudCount <= 9 && expanded <= 32 && expanded <= idx.nlist {
+	if fraudCount >= 9 && fraudCount <= 12 && expanded <= 32 && expanded <= idx.nlist {
 		expCount := idx.findTopCentroids(query, &probes, expanded)
 		topK2, count2 := idx.searchClusters(probes[:expCount], qi)
 		fraudCount2 := countFraud(topK2, count2)
