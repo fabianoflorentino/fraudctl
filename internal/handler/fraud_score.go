@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"fmt"
 	"log"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -23,59 +25,23 @@ type KNNPredictor interface {
 	Count() int
 }
 
-var staticResponses = [knn.K + 1][]byte{
-	[]byte(`{"approved":true,"fraud_score":0}`),
-	[]byte(`{"approved":true,"fraud_score":0.02}`),
-	[]byte(`{"approved":true,"fraud_score":0.04}`),
-	[]byte(`{"approved":true,"fraud_score":0.06}`),
-	[]byte(`{"approved":true,"fraud_score":0.08}`),
-	[]byte(`{"approved":true,"fraud_score":0.1}`),
-	[]byte(`{"approved":true,"fraud_score":0.12}`),
-	[]byte(`{"approved":true,"fraud_score":0.14}`),
-	[]byte(`{"approved":true,"fraud_score":0.16}`),
-	[]byte(`{"approved":true,"fraud_score":0.18}`),
-	[]byte(`{"approved":true,"fraud_score":0.2}`),
-	[]byte(`{"approved":true,"fraud_score":0.22}`),
-	[]byte(`{"approved":true,"fraud_score":0.24}`),
-	[]byte(`{"approved":true,"fraud_score":0.25}`),
-	[]byte(`{"approved":true,"fraud_score":0.27}`),
-	[]byte(`{"approved":true,"fraud_score":0.29}`),
-	[]byte(`{"approved":true,"fraud_score":0.31}`),
-	[]byte(`{"approved":true,"fraud_score":0.33}`),
-	[]byte(`{"approved":true,"fraud_score":0.35}`),
-	[]byte(`{"approved":true,"fraud_score":0.37}`),
-	[]byte(`{"approved":true,"fraud_score":0.39}`),
-	[]byte(`{"approved":true,"fraud_score":0.41}`),
-	[]byte(`{"approved":true,"fraud_score":0.43}`),
-	[]byte(`{"approved":true,"fraud_score":0.45}`),
-	[]byte(`{"approved":true,"fraud_score":0.47}`),
-	[]byte(`{"approved":true,"fraud_score":0.49}`),
-	[]byte(`{"approved":false,"fraud_score":0.51}`),
-	[]byte(`{"approved":false,"fraud_score":0.53}`),
-	[]byte(`{"approved":false,"fraud_score":0.55}`),
-	[]byte(`{"approved":false,"fraud_score":0.57}`),
-	[]byte(`{"approved":false,"fraud_score":0.59}`),
-	[]byte(`{"approved":false,"fraud_score":0.61}`),
-	[]byte(`{"approved":false,"fraud_score":0.63}`),
-	[]byte(`{"approved":false,"fraud_score":0.65}`),
-	[]byte(`{"approved":false,"fraud_score":0.67}`),
-	[]byte(`{"approved":false,"fraud_score":0.69}`),
-	[]byte(`{"approved":false,"fraud_score":0.71}`),
-	[]byte(`{"approved":false,"fraud_score":0.73}`),
-	[]byte(`{"approved":false,"fraud_score":0.75}`),
-	[]byte(`{"approved":false,"fraud_score":0.76}`),
-	[]byte(`{"approved":false,"fraud_score":0.78}`),
-	[]byte(`{"approved":false,"fraud_score":0.8}`),
-	[]byte(`{"approved":false,"fraud_score":0.82}`),
-	[]byte(`{"approved":false,"fraud_score":0.84}`),
-	[]byte(`{"approved":false,"fraud_score":0.86}`),
-	[]byte(`{"approved":false,"fraud_score":0.88}`),
-	[]byte(`{"approved":false,"fraud_score":0.9}`),
-	[]byte(`{"approved":false,"fraud_score":0.92}`),
-	[]byte(`{"approved":false,"fraud_score":0.94}`),
-	[]byte(`{"approved":false,"fraud_score":0.96}`),
-	[]byte(`{"approved":false,"fraud_score":0.98}`),
-	[]byte(`{"approved":false,"fraud_score":1}`),
+// approvalThreshold defines the fraud score cutoff for approval.
+// Set below 0.5 because false negatives (missed fraud) cost 3× more than
+// false positives, shifting the Bayes-optimal boundary toward 1/(1+3)=0.25.
+const approvalThreshold = 0.4
+
+var staticResponses [knn.K + 1][]byte
+
+func init() {
+	for i := 0; i <= knn.K; i++ {
+		score := float64(i) / float64(knn.K)
+		approved := score < approvalThreshold
+		staticResponses[i] = fmt.Appendf(nil,
+			`{"approved":%s,"fraud_score":%s}`,
+			strconv.FormatBool(approved),
+			strconv.FormatFloat(score, 'f', -1, 64),
+		)
+	}
 }
 
 type FraudScoreHandler struct {
