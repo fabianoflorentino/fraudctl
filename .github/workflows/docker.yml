@@ -212,9 +212,9 @@ jobs:
           name: ${{ needs.tag.outputs.tag_name }}
           generate_release_notes: true
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_HUB_TOKEN }}
 
-      - name: Download standard build artifact
+      - name: Download binary build artifact
         uses: actions/download-artifact@v4
         with:
           name: fraudctl-linux-amd64
@@ -229,7 +229,7 @@ jobs:
           asset_name: fraudctl-linux-amd64
           asset_content_type: application/octet-stream
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_HUB_TOKEN }}
 
   # ── Trigger pkg.go.dev to index the new version ──────────────────────────────
   go_proxy:
