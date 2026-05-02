@@ -386,18 +386,28 @@ func (idx *IVFIndex) searchClusters(probes []cdist, qi [14]int32) ([K]labeledCan
 	return topK, count
 }
 
-func countFraud(topK [K]labeledCandidate, count int) int {
-	n := 0
+// weightedFraudScore returns distance-weighted fraud probability.
+// Closer neighbors have more influence: weight = 1 / (sqrt(dist) + 1).
+func weightedFraudScore(topK [K]labeledCandidate, count int) float64 {
+	if count == 0 {
+		return 0
+	}
+	var wFraud, wTotal float64
 	for j := 0; j < count; j++ {
+		w := 1.0 / (math.Sqrt(float64(topK[j].dist)) + 1.0)
+		wTotal += w
 		if topK[j].label == 1 {
-			n++
+			wFraud += w
 		}
 	}
-	return n
+	if wTotal == 0 {
+		return 0
+	}
+	return wFraud / wTotal
 }
 
 // Predict searches the nprobe nearest clusters and returns fraud probability.
-// Uses adaptive nprobe: doubles when fraud_count is ambiguous (2 or 3).
+// Uses adaptive nprobe: doubles when fraud_count is ambiguous (16-36 out of 51).
 func (idx *IVFIndex) Predict(query model.Vector14, k int) float64 {
 	baseNprobe := idx.nprobe
 	if baseNprobe > idx.nlist {
@@ -410,23 +420,25 @@ func (idx *IVFIndex) Predict(query model.Vector14, k int) float64 {
 	bestCount := idx.findTopCentroids(query, &probes, baseNprobe)
 
 	topK, count := idx.searchClusters(probes[:bestCount], qi)
-	fraudCount := countFraud(topK, count)
+	fraudScore := weightedFraudScore(topK, count)
 
-	// Adaptive: if ambiguous (16-36 out of 51), double the nprobe.
-	expanded := baseNprobe * 2
-	if fraudCount >= 16 && fraudCount <= 36 && expanded <= 32 && expanded <= idx.nlist {
-		expCount := idx.findTopCentroids(query, &probes, expanded)
-		topK2, count2 := idx.searchClusters(probes[:expCount], qi)
-		fraudCount2 := countFraud(topK2, count2)
-		if count2 > 0 {
-			return float64(fraudCount2) / float64(count2)
+	// Adaptive: if ambiguous (score 0.31-0.71), double the nprobe.
+	if fraudScore > 0.31 && fraudScore < 0.71 {
+		expanded := baseNprobe * 2
+		if expanded <= 32 && expanded <= idx.nlist {
+			expCount := idx.findTopCentroids(query, &probes, expanded)
+			topK2, count2 := idx.searchClusters(probes[:expCount], qi)
+			fraudScore2 := weightedFraudScore(topK2, count2)
+			if count2 > 0 {
+				return fraudScore2
+			}
 		}
 	}
 
 	if count == 0 {
 		return 0
 	}
-	return float64(fraudCount) / float64(count)
+	return fraudScore
 }
 
 func (idx *IVFIndex) Count() int {
