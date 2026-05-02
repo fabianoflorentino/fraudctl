@@ -43,15 +43,39 @@ const payloads = [
     terminal: { is_online: true, card_present: false, km_from_home: 2 },
     last_transaction: { timestamp: "2026-03-10T10:00:00Z", km_from_current: 5 }
   },
+  {
+    id: "tx-006",
+    transaction: { amount: 10000, installments: 1, requested_at: "2026-03-11T03:00:00Z" },
+    customer: { avg_amount: 100, tx_count_24h: 20, known_merchants: [] },
+    merchant: { id: "m200", mcc: "7995", avg_amount: 500 },
+    terminal: { is_online: true, card_present: false, km_from_home: 500 },
+    last_transaction: { timestamp: "2026-03-11T02:50:00Z", km_from_current: 300 }
+  },
+  {
+    id: "tx-007",
+    transaction: { amount: 25, installments: 1, requested_at: "2026-03-11T14:00:00Z" },
+    customer: { avg_amount: 50, tx_count_24h: 1, known_merchants: ["m1"] },
+    merchant: { id: "m1", mcc: "5411", avg_amount: 40 },
+    terminal: { is_online: false, card_present: true, km_from_home: 0.5 },
+    last_transaction: { timestamp: "2026-03-11T13:00:00Z", km_from_current: 1 }
+  },
+  {
+    id: "tx-008",
+    transaction: { amount: 7500, installments: 18, requested_at: "2026-03-11T01:00:00Z" },
+    customer: { avg_amount: 300, tx_count_24h: 10, known_merchants: ["m1"] },
+    merchant: { id: "m300", mcc: "5944", avg_amount: 6000 },
+    terminal: { is_online: true, card_present: false, km_from_home: 1000 },
+    last_transaction: { timestamp: "2026-03-10T12:00:00Z", km_from_current: 800 }
+  },
 ];
 
 export const options = {
   stages: [
-    { duration: '10s', target: 10 },
-    { duration: '30s', target: 50 },
+    { duration: '15s', target: 50 },
     { duration: '30s', target: 100 },
-    { duration: '30s', target: 150 },
-    { duration: '10s', target: 0 },
+    { duration: '30s', target: 200 },
+    { duration: '30s', target: 250 },
+    { duration: '15s', target: 0 },
   ],
   thresholds: {
     http_req_duration: ['p(99)<500'],
@@ -68,7 +92,7 @@ export default function () {
 
   check(res, {
     'status 200': (r) => r.status === 200,
-    'valid json': (r) => r.json()?.fraud_score !== undefined,
+    'valid json': (r) => { const j = r.json(); return j && j.fraud_score !== undefined; },
     'fast response': (r) => r.timings.duration < 500,
   });
 }
