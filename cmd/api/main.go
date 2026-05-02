@@ -7,8 +7,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"runtime"
-	"runtime/debug"
 	"strconv"
 	"syscall"
 	"time"
@@ -18,12 +16,6 @@ import (
 	"github.com/fabianoflorentino/fraudctl/internal/dataset"
 	"github.com/fabianoflorentino/fraudctl/internal/handler"
 )
-
-func init() {
-	runtime.GOMAXPROCS(1)
-	debug.SetMemoryLimit(140 * 1024 * 1024)
-	log.SetOutput(os.Stderr)
-}
 
 var (
 	resourcesPath = flag.String("resources", "/resources", "Path to resources directory")
@@ -61,10 +53,6 @@ func main() {
 	knnIndex := ds.Index()
 	log.Printf("KNN index ready: %d vectors", knnIndex.Count())
 
-	runtime.GC()
-	debug.FreeOSMemory()
-	debug.SetGCPercent(-1) // disable GC to eliminate latency spikes
-
 	fraudHandler := handler.NewFraudScoreHandler(ds.Vectorizer(), knnIndex)
 
 	requestHandler := func(ctx *fasthttp.RequestCtx) {
@@ -98,16 +86,12 @@ func main() {
 	}
 
 	srv := &fasthttp.Server{
-		Handler:               requestHandler,
-		ReadTimeout:           2 * time.Second,
-		WriteTimeout:          5 * time.Second,
-		IdleTimeout:           30 * time.Second,
-		MaxRequestBodySize:    4096,
+		Handler:            requestHandler,
+		ReadTimeout:        2 * time.Second,
+		WriteTimeout:       5 * time.Second,
+		IdleTimeout:        30 * time.Second,
+		MaxRequestBodySize: 4096,
 		NoDefaultServerHeader: true,
-		NoDefaultContentType:  true,
-		ReadBufferSize:        4096,
-		WriteBufferSize:       4096,
-		Concurrency:           256,
 	}
 
 	go func() {
@@ -152,4 +136,8 @@ func checkHealth() error {
 		return fmt.Errorf("unexpected status: %d", status)
 	}
 	return nil
+}
+
+func init() {
+	log.SetOutput(os.Stderr)
 }

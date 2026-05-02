@@ -2,9 +2,11 @@ package handler
 
 import (
 	"fmt"
+	"log"
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/valyala/fasthttp"
 
@@ -62,6 +64,8 @@ func NewFraudScoreHandler(vec Vectorizer, knn KNNPredictor) *FraudScoreHandler {
 }
 
 func (h *FraudScoreHandler) Handle(ctx *fasthttp.RequestCtx) {
+	start := time.Now()
+
 	if !ctx.IsPost() {
 		ctx.SetStatusCode(fasthttp.StatusMethodNotAllowed)
 		return
@@ -102,5 +106,8 @@ func (h *FraudScoreHandler) Handle(ctx *fasthttp.RequestCtx) {
 	ctx.SetContentType("application/json")
 	ctx.Write(resp)
 
-	h.requestCount.Add(1)
+	count := h.requestCount.Add(1)
+	if count%1000 == 0 {
+		log.Printf("requests=%d latency=%s fraud_score=%.2f", count, time.Since(start), fraudScore)
+	}
 }
