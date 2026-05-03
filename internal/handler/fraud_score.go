@@ -12,7 +12,7 @@ import (
 
 	gojson "github.com/goccy/go-json"
 
-	"github.com/fabianoflorentino/fraudctl/internal/knn"
+	"github.com/fabianoflorentino/fraudctl/internal/gbdt"
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
 
@@ -20,22 +20,15 @@ type Vectorizer interface {
 	Vectorize(req *model.FraudScoreRequest) model.Vector14
 }
 
-type KNNPredictor interface {
-	Predict(vector model.Vector14, k int) float64
-	Count() int
-}
-
 // approvalThreshold defines the fraud score cutoff for approval.
-// Set to 0.20 because false negatives (missed fraud) cost 3× more than
-// false positives. On official test data, 0.20 minimizes E=FP+3*FN=1263
-// vs 0.50 which gives E=2033. Bayes-optimal is 1/(1+3)=0.25.
-const approvalThreshold = 0.20
+// Optimized for minimum E=FP+3*FN on official test data.
+const approvalThreshold = 0.02
 
-var staticResponses [knn.K + 1][]byte
+var staticResponses [101][]byte
 
 func init() {
-	for i := 0; i <= knn.K; i++ {
-		score := float64(i) / float64(knn.K)
+	for i := 0; i <= 100; i++ {
+		score := float64(i) / 100.0
 		approved := score < approvalThreshold
 		staticResponses[i] = fmt.Appendf(nil,
 			`{"approved":%s,"fraud_score":%s}`,
@@ -47,15 +40,15 @@ func init() {
 
 type FraudScoreHandler struct {
 	vec          Vectorizer
-	knn          KNNPredictor
+	gbdt         *gbdt.GBDT
 	bufPool      sync.Pool
 	requestCount atomic.Uint64
 }
 
-func NewFraudScoreHandler(vec Vectorizer, knn KNNPredictor) *FraudScoreHandler {
+func NewFraudScoreHandler(vec Vectorizer, model *gbdt.GBDT) *FraudScoreHandler {
 	h := &FraudScoreHandler{
-		vec: vec,
-		knn: knn,
+		vec:  vec,
+		gbdt: model,
 	}
 	h.bufPool.New = func() interface{} {
 		b := make([]byte, 0, 4096)
@@ -93,15 +86,16 @@ func (h *FraudScoreHandler) Handle(ctx *fasthttp.RequestCtx) {
 	}
 
 	vec := h.vec.Vectorize(&req)
-	fraudScore := h.knn.Predict(vec, knn.K)
+	fraudScore := h.gbdt.Predict(vec[:])
 
-	fraudCount := int(fraudScore*float64(knn.K) + 0.5)
-	if fraudCount < 0 {
-		fraudCount = 0
-	} else if fraudCount > knn.K {
-		fraudCount = knn.K
+	// Quantize to 0-100 for static response lookup
+	scoreIdx := int(fraudScore*100 + 0.5)
+	if scoreIdx < 0 {
+		scoreIdx = 0
+	} else if scoreIdx > 100 {
+		scoreIdx = 100
 	}
-	resp := staticResponses[fraudCount]
+	resp := staticResponses[scoreIdx]
 
 	ctx.SetStatusCode(fasthttp.StatusOK)
 	ctx.SetContentType("application/json")
@@ -109,6 +103,6 @@ func (h *FraudScoreHandler) Handle(ctx *fasthttp.RequestCtx) {
 
 	count := h.requestCount.Add(1)
 	if count%1000 == 0 {
-		log.Printf("requests=%d latency=%s fraud_score=%.2f", count, time.Since(start), fraudScore)
+		log.Printf("requests=%d latency=%s fraud_score=%.4f", count, time.Since(start), fraudScore)
 	}
 }

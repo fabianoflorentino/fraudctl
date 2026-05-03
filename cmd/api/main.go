@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"syscall"
@@ -15,6 +16,7 @@ import (
 	"github.com/valyala/fasthttp"
 
 	"github.com/fabianoflorentino/fraudctl/internal/dataset"
+	"github.com/fabianoflorentino/fraudctl/internal/gbdt"
 	"github.com/fabianoflorentino/fraudctl/internal/handler"
 )
 
@@ -45,19 +47,21 @@ func main() {
 	}
 	socketPath := os.Getenv("UNIX_SOCKET")
 
-	log.Printf("Loading dataset from %s", *resourcesPath)
+	log.Printf("Loading dataset config from %s", *resourcesPath)
 	ds, err := dataset.LoadDefault(*resourcesPath)
 	if err != nil {
-		log.Fatalf("Failed to load dataset: %v", err)
+		log.Fatalf("Failed to load dataset config: %v", err)
 	}
 
-	log.Printf("Dataset loaded: %d references (%d fraud, %d legit)",
-		ds.Count(), ds.FraudCount(), ds.LegitCount())
+	log.Printf("Loading GBDT model...")
+	modelPath := filepath.Join(*resourcesPath, "gbdt.bin")
+	model, err := gbdt.Load(modelPath)
+	if err != nil {
+		log.Fatalf("Failed to load GBDT model: %v", err)
+	}
+	log.Printf("GBDT model loaded: %d trees", model.NumTrees)
 
-	knnIndex := ds.Index()
-	log.Printf("KNN index ready: %d vectors", knnIndex.Count())
-
-	fraudHandler := handler.NewFraudScoreHandler(ds.Vectorizer(), knnIndex)
+	fraudHandler := handler.NewFraudScoreHandler(ds.Vectorizer(), model)
 
 	requestHandler := func(ctx *fasthttp.RequestCtx) {
 		switch string(ctx.Path()) {
