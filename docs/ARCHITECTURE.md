@@ -76,4 +76,10 @@ Key env vars per API instance: `GOMAXPROCS=1`, `GOGC=500`, `GOMEMLIMIT=140MiB`
 | Scan cluster (~10k vectors) | ~62μs |
 | KNN total | ~67μs |
 | HTTP handler p50 | ~50μs |
-| p99 (250 VUs, k6) | 170ms |
+| p99 (250 VUs, k6) | 112.72ms |
+
+Latest official run (commit `c6c61ee`, image `fabianoflorentino/fraudctl:v1.0.45`):
+
+- p99 score: `948`
+- detection score: `702.64`
+- final score: `1650.64`

@@ -13,7 +13,7 @@ fraudctl is a pure-Go API that scores credit card transactions for fraud using a
 - **Pure Go**: `CGO_ENABLED=0`, `distroless/static:nonroot` image
 - **Resource budget**: 2× API (150MB, 0.45 CPU) + nginx (30MB, 0.10 CPU) = 1 CPU / 330MB total
 - **No caching**: prohibited by contest rules; every request goes through KNN
-- **p99 = 170ms** (k6 official test, 250 VUs)
+- **p99 = 112.72ms** (latest official k6 run, 250 VUs)
 
 ## API Endpoints
 
@@ -136,10 +136,35 @@ At startup, `dataset.LoadDefault` memory-maps `ivf.bin` in ~148ms.
 | Index load time | ~148ms |
 | KNN predict (IVF, 3M) | ~67μs |
 | HTTP handler p50 | ~50μs |
-| p99 latency (250 VUs) | 170ms |
+| p99 latency (250 VUs) | 112.72ms |
 | HTTP errors | 0% |
 | F1 score | ~97.5% |
 | Memory per instance | ~147MB |
+
+### Latest Official Result
+
+Run metadata:
+
+- Commit: `c6c61ee`
+- Image: `fabianoflorentino/fraudctl:v1.0.45`
+- Final score: `1650.64`
+- p99 score: `948`
+- Detection score: `702.64`
+
+Detection breakdown:
+
+- TP: `24019`
+- TN: `28790`
+- FP: `1229`
+- FN: `10`
+- HTTP errors: `0`
+
+Runtime constraints validated:
+
+- nginx: `0.10 CPU`, `30MB`
+- api-1: `0.45 CPU`, `150MB`
+- api-2: `0.45 CPU`, `150MB`
+- Total: `1.00 CPU`, `330MB`
 
 ## Project Structure
 

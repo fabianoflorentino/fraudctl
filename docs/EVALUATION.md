@@ -73,6 +73,43 @@ final_score = score_p99 + score_det
 | 200ms | 500 | 250 | 0 | 15.00% | 698.97 | −327.12 | **371.85** |
 | 10ms | 500 | 300 | 0 | 16.00% | 2000.00 | −3000.00 | **−1000.00** |
 
+## Latest Official Result (commit `c6c61ee`)
+
+Run summary:
+
+- Image: `fabianoflorentino/fraudctl:v1.0.45`
+- p99: `112.72ms`
+- p99 score: `948` (cutoff not triggered)
+- detection score: `702.64` (cutoff not triggered)
+- final score: `1650.64`
+
+Expected dataset composition:
+
+- Total requests (`N`): `54100`
+- Fraud: `24058` (`44.47%`)
+- Legitimate: `30042` (`55.53%`)
+- Edge cases: `797` (`1.47%`)
+
+Detection breakdown:
+
+- TP: `24019`
+- TN: `28790`
+- FP: `1229`
+- FN: `10`
+- HTTP errors: `0`
+
+Derived scoring terms:
+
+- Weighted errors (`E = FP + 3*FN + 5*Err`): `1259`
+- Weighted rate (`epsilon = E / N`): `0.023294`
+- Failure rate (`(FP+FN+Err)/N`): `2.29%`
+
+Resource/runtime validation:
+
+- Total budget usage: `1 CPU`, `330MB`
+- Instance count check: `ok`
+- Unlimited services: `none`
+
 ## Key Insights
 
 1. **The log favors low p99, down to 1ms.** Reducing latency from 10ms to 1ms earns another 1000 points in `p99_score`. Below 1ms, the score saturates at 3000.
