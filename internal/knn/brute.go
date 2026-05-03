@@ -114,7 +114,7 @@ func LoadIVF(path string) (*IVFIndex, error) {
 
 	idx := &IVFIndex{
 		nlist:     int(nlist),
-		nprobe:    24,
+		nprobe:    4,
 		centroids: centroids,
 		blocks:    blocks,
 		labels:    allLabels,
