@@ -5,10 +5,6 @@
 # Total resources: ~1 CPU, 350 MB RAM
 # Unix Domain Sockets (tmpfs) replace TCP loopback — saves ~40-60µs/request.
 # =============================================================================
-
-x-api-image: &api-image
-  image: fabianoflorentino/fraudctl:v1.0.46
-
 x-api-env: &api-env
   PORT: 9999
   RESOURCES: /resources
@@ -64,7 +60,7 @@ services:
     ports:
       - "9999:9999"
     volumes:
-      - ./config/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - sockets:/sockets
     depends_on:
       api-1:
