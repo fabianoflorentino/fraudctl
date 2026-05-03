@@ -6,9 +6,8 @@
 # Unix Domain Sockets (tmpfs) replace TCP loopback — saves ~40-60µs/request.
 # =============================================================================
 
-x-api-build: &api-build
-  context: .
-  dockerfile: Dockerfile
+x-api-image: &api-image
+  image: fabianoflorentino/fraudctl:v1.0.46
 
 x-api-env: &api-env
   PORT: 9999
@@ -34,7 +33,7 @@ x-api-resources: &api-resources
       memory: 150M
 
 x-api-defaults: &api-defaults
-  build: *api-build
+  image: fabianoflorentino/fraudctl:v1.0.46
   volumes:
     - sockets:/sockets
   healthcheck: *api-healthcheck
