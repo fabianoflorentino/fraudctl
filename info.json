@@ -1,6 +1,6 @@
 {
     "participants": ["Fabiano Santos Florentino"],
     "source-code-repo": "https://github.com/fabianoflorentino/fraudctl",
-    "stack": ["golang", "nginx"],
+    "stack": ["go", "nginx"],
     "open_to_work": false
 }
