@@ -12,29 +12,20 @@ import (
 type mockVec struct{}
 
 func (m *mockVec) Vectorize(req *model.FraudScoreRequest) model.Vector14 {
-	return model.Vector14{0.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	return model.Vector14{0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 }
 
-type mockKNN struct{}
+type mockVecHigh struct{}
 
-func (m *mockKNN) Predict(vec model.Vector14, k int) float64 {
-	if vec[0] > 0.8 {
-		return 0.8
-	}
-	return 0.2
-}
-
-func (m *mockKNN) Count() int {
-	return 100
+func (m *mockVecHigh) Vectorize(req *model.FraudScoreRequest) model.Vector14 {
+	return model.Vector14{0.9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 }
 
 func TestFraudScoreHandler_MethodNotAllowed(t *testing.T) {
-	h := NewFraudScoreHandler(&mockVec{}, &mockKNN{})
-
 	ctx := &fasthttp.RequestCtx{}
 	ctx.Request.SetRequestURI("/fraud-score")
 	ctx.Request.Header.SetMethod("GET")
-	h.Handle(ctx)
+	HandleFraudScore(ctx, &mockVec{})
 
 	if ctx.Response.StatusCode() != fasthttp.StatusMethodNotAllowed {
 		t.Errorf("expected 405, got %d", ctx.Response.StatusCode())
@@ -42,13 +33,11 @@ func TestFraudScoreHandler_MethodNotAllowed(t *testing.T) {
 }
 
 func TestFraudScoreHandler_InvalidJSON(t *testing.T) {
-	h := NewFraudScoreHandler(&mockVec{}, &mockKNN{})
-
 	ctx := &fasthttp.RequestCtx{}
 	ctx.Request.SetRequestURI("/fraud-score")
 	ctx.Request.Header.SetMethod("POST")
 	ctx.Request.SetBody([]byte("invalid json"))
-	h.Handle(ctx)
+	HandleFraudScore(ctx, &mockVec{})
 
 	if ctx.Response.StatusCode() != fasthttp.StatusOK {
 		t.Errorf("expected 200, got %d", ctx.Response.StatusCode())
@@ -60,8 +49,6 @@ func TestFraudScoreHandler_InvalidJSON(t *testing.T) {
 }
 
 func TestFraudScoreHandler_Success(t *testing.T) {
-	h := NewFraudScoreHandler(&mockVec{}, &mockKNN{})
-
 	payload := `{
 		"id": "tx-123",
 		"transaction": {"amount": 100, "installments": 1, "requested_at": "2026-03-11T10:00:00Z"},
@@ -74,7 +61,7 @@ func TestFraudScoreHandler_Success(t *testing.T) {
 	ctx.Request.SetRequestURI("/fraud-score")
 	ctx.Request.Header.SetMethod("POST")
 	ctx.Request.SetBodyString(payload)
-	h.Handle(ctx)
+	HandleFraudScore(ctx, &mockVec{})
 
 	if ctx.Response.StatusCode() != fasthttp.StatusOK {
 		t.Errorf("expected 200, got %d", ctx.Response.StatusCode())
@@ -86,9 +73,6 @@ func TestFraudScoreHandler_Success(t *testing.T) {
 }
 
 func TestFraudScoreHandler_HighFraud(t *testing.T) {
-	highVec := &mockVecHigh{}
-	h := NewFraudScoreHandler(highVec, &mockKNN{})
-
 	payload := `{
 		"id": "tx-456",
 		"transaction": {"amount": 100, "installments": 1, "requested_at": "2026-03-11T10:00:00Z"},
@@ -101,7 +85,7 @@ func TestFraudScoreHandler_HighFraud(t *testing.T) {
 	ctx.Request.SetRequestURI("/fraud-score")
 	ctx.Request.Header.SetMethod("POST")
 	ctx.Request.SetBodyString(payload)
-	h.Handle(ctx)
+	HandleFraudScore(ctx, &mockVecHigh{})
 
 	if ctx.Response.StatusCode() != fasthttp.StatusOK {
 		t.Errorf("expected 200, got %d", ctx.Response.StatusCode())
@@ -110,10 +94,4 @@ func TestFraudScoreHandler_HighFraud(t *testing.T) {
 	if !strings.Contains(body, `"approved":false`) {
 		t.Errorf("expected approved=false, got %s", body)
 	}
-}
-
-type mockVecHigh struct{}
-
-func (m *mockVecHigh) Vectorize(req *model.FraudScoreRequest) model.Vector14 {
-	return model.Vector14{0.9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 }
