@@ -20,7 +20,10 @@ static inline void sort_topK(int32_t top_d[K_NEIGHBORS], uint8_t top_l[K_NEIGHBO
     *worst_idx = wi;
 }
 
-/* Find top-NPROBE nearest centroids using scalar (centroids are float32) */
+/* Find top-NPROBE nearest centroids using AVX2 (centroids are float32).
+ * Processes 8 centroids per AVX2 iteration across all 14 dimensions.
+ * centroid layout: [c0d0, c0d1, ..., c0d13, c1d0, ...] (AoS, DIM=14)
+ */
 static void find_top_centroids(
     const float *centroids,
     int nlist,
@@ -31,20 +34,50 @@ static void find_top_centroids(
     if (nprobe > nlist) nprobe = nlist;
     if (nprobe < 1) nprobe = 1;
 
-    float dists[2048]; /* max nlist supported */
-    memset(dists, 0, nlist * sizeof(float));
-
+    /* Convert query to float once */
     float qf[DIM];
     for (int d = 0; d < DIM; d++) {
         qf[d] = (float)query[d] / 10000.0f;
     }
 
-    for (int d = 0; d < DIM; d++) {
-        float qd = qf[d];
-        for (int ci = 0; ci < nlist; ci++) {
-            float diff = centroids[ci * DIM + d] - qd;
-            dists[ci] += diff * diff;
+    float dists[2048];
+    int ci = 0;
+
+    /* AVX2 path: 8 centroids at a time.
+     * Centroid layout is AoS (ci*DIM+d), so for 8 consecutive centroids
+     * we load 8 floats at stride DIM using gather or sequential loads.
+     * We transpose on the fly: for each dimension d, load 8 centroid values
+     * using _mm256_set_ps (scalar gather). Then accumulate squared diffs. */
+    int nlist8 = nlist & ~7;
+    for (; ci < nlist8; ci += 8) {
+        __m256 acc = _mm256_setzero_ps();
+        for (int d = 0; d < DIM; d++) {
+            /* Load centroid[ci..ci+7] dim d: stride DIM apart */
+            __m256 cv = _mm256_set_ps(
+                centroids[(ci+7)*DIM+d],
+                centroids[(ci+6)*DIM+d],
+                centroids[(ci+5)*DIM+d],
+                centroids[(ci+4)*DIM+d],
+                centroids[(ci+3)*DIM+d],
+                centroids[(ci+2)*DIM+d],
+                centroids[(ci+1)*DIM+d],
+                centroids[(ci+0)*DIM+d]
+            );
+            __m256 qv = _mm256_set1_ps(qf[d]);
+            __m256 diff = _mm256_sub_ps(cv, qv);
+            acc = _mm256_fmadd_ps(diff, diff, acc);
         }
+        _mm256_storeu_ps(&dists[ci], acc);
+    }
+
+    /* Scalar tail */
+    for (; ci < nlist; ci++) {
+        float s = 0.0f;
+        for (int d = 0; d < DIM; d++) {
+            float diff = centroids[ci*DIM+d] - qf[d];
+            s += diff * diff;
+        }
+        dists[ci] = s;
     }
 
     /* Select top-nprobe using a fixed-size heap (nprobe <= 2048) */
@@ -56,10 +89,10 @@ static void find_top_centroids(
         if (probe_dist[i] > probe_dist[worst]) worst = i;
     }
 
-    for (int ci = nprobe; ci < nlist; ci++) {
-        if (dists[ci] < probe_dist[worst]) {
-            out_probes[worst] = ci;
-            probe_dist[worst] = dists[ci];
+    for (int ci2 = nprobe; ci2 < nlist; ci2++) {
+        if (dists[ci2] < probe_dist[worst]) {
+            out_probes[worst] = ci2;
+            probe_dist[worst] = dists[ci2];
             worst = 0;
             for (int j = 1; j < nprobe; j++) {
                 if (probe_dist[j] > probe_dist[worst]) worst = j;

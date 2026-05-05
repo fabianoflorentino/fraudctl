@@ -4,14 +4,15 @@
 # Fraud detection API using KNN vector search
 # ============================================================================
 
-.PHONY: help build run test test-short test-race coverage fmt vet lint tidy clean bench bench-knn bench-vectorizer all docker-build docker-push docker-run docker-lint docker-clean docker-size docker-up docker-down submit submission-update submission-test submission-result
+.PHONY: help build run test test-short test-race coverage fmt vet lint tidy clean bench bench-knn bench-vectorizer all docker-build docker-push docker-run docker-lint docker-clean docker-size docker-up docker-down submit submission-update submission-test submission-result k6-smoke k6-full k6-results
 
 # ============================================================================
 # Variables
 # ============================================================================
 
-RINHA_REPO    := zanfranceschi/rinha-de-backend-2026
+RINHA_REPO        := zanfranceschi/rinha-de-backend-2026
 SUBMISSION_BRANCH := submission
+RINHA_DIR         ?= $(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))/../rinha-de-backend-2026
 MODULE        := github.com/fabianoflorentino/fraudctl
 VERSION      ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS       := -s -w -X main.version=$(VERSION)
@@ -45,7 +46,7 @@ help: ## Show this help message
 	@echo -e "$(BLUE)║            fraudctl — Available Commands                     ║$(NC)"
 	@echo -e "$(BLUE)╚══════════════════════════════════════════════════════════════╝$(NC)"
 	@echo ""
-	@awk 'BEGIN {FS = ":.*##"; printf ""} /^[a-zA-Z_-]+:.*?##/ { printf "  $(GREEN)%-18s$(NC) %s\n", $$1, $$2 } /^##@/ { printf "\n$(YELLOW)%s$(NC)\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*##"; printf ""} /^[a-zA-Z0-9_-]+:.*?##/ { printf "  $(GREEN)%-18s$(NC) %s\n", $$1, $$2 } /^##@/ { printf "\n$(YELLOW)%s$(NC)\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 	@echo ""
 
 ##@ Build & Run
@@ -233,3 +234,34 @@ submission-result: ## Poll the Rinha issue until closed, then print the result
 
 submit: submission-update submission-test ## Full submission flow: update image + open test issue
 	@echo -e "$(GREEN)✓ Submission complete. Run 'make submission-result' to watch for results.$(NC)"
+
+##@ Load Testing (k6)
+
+k6-smoke: ## Quick smoke test (5 iterations, sanity) - needs stack on :9999
+	@echo -e "$(BLUE)🔥 Running k6 smoke test (sanity, 5 requests)...$(NC)"
+	@if [ ! -d "$(RINHA_DIR)" ]; then \
+		echo -e "$(RED)✗ Rinha repo not found at $(RINHA_DIR)$(NC)"; \
+		echo -e "$(YELLOW)  Set RINHA_DIR=/path/to/rinha-de-backend-2026$(NC)"; \
+		exit 1; \
+	fi
+	@K6_NO_USAGE_REPORT=true k6 run $(RINHA_DIR)/test/smoke.js
+	@echo -e "$(GREEN)✓ Smoke test passed$(NC)"
+
+k6-full: ## Full k6 test (120s ramp to 900 RPS) - matches Rinha evaluator exactly
+	@echo -e "$(BLUE)🔥 Running full k6 test (120s, ramp to 900 RPS)...$(NC)"
+	@if [ ! -d "$(RINHA_DIR)" ]; then \
+		echo -e "$(RED)✗ Rinha repo not found at $(RINHA_DIR)$(NC)"; \
+		echo -e "$(YELLOW)  Set RINHA_DIR=/path/to/rinha-de-backend-2026$(NC)"; \
+		exit 1; \
+	fi
+	@cd $(RINHA_DIR) && K6_NO_USAGE_REPORT=true k6 run test/test.js
+	@echo -e "$(GREEN)✓ k6 test complete — results at $(RINHA_DIR)/test/results.json$(NC)"
+
+k6-results: ## Show last k6 results.json score breakdown
+	@if [ ! -f "$(RINHA_DIR)/test/results.json" ]; then \
+		echo -e "$(RED)✗ No results found. Run 'make k6-full' first.$(NC)"; \
+		exit 1; \
+	fi
+	@echo -e "$(BLUE)📊 Last k6 results:$(NC)"
+	@cat $(RINHA_DIR)/test/results.json | python3 -m json.tool 2>/dev/null || \
+	 cat $(RINHA_DIR)/test/results.json
