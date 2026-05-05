@@ -1,5 +1,6 @@
 rinha2026
 bin
+nginx.conf
 *.out
 *.html
 /test*
