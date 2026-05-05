@@ -4,13 +4,14 @@
 # Fraud detection API using KNN vector search
 # ============================================================================
 
-.PHONY: help build run test test-short test-race coverage fmt vet lint tidy clean bench bench-knn bench-vectorizer all docker-build docker-push docker-run docker-lint docker-clean docker-size docker-up docker-down
+.PHONY: help build run test test-short test-race coverage fmt vet lint tidy clean bench bench-knn bench-vectorizer all docker-build docker-push docker-run docker-lint docker-clean docker-size docker-up docker-down submit submission-update submission-test submission-result
 
 # ============================================================================
 # Variables
 # ============================================================================
 
-BINARY        := fraudctl
+RINHA_REPO    := zanfranceschi/rinha-de-backend-2026
+SUBMISSION_BRANCH := submission
 MODULE        := github.com/fabianoflorentino/fraudctl
 VERSION      ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS       := -s -w -X main.version=$(VERSION)
@@ -183,3 +184,52 @@ clean-cache: ## Clear Go build cache
 	@echo -e "$(YELLOW)🧹 Clearing Go build cache...$(NC)"
 	@go clean -cache
 	@echo -e "$(GREEN)✓ Go build cache cleared!$(NC)"
+
+##@ Submission
+
+submission-update: ## Update image tag in submission branch to latest CI release
+	@echo -e "$(BLUE)🔄 Fetching latest release tag...$(NC)"
+	$(eval LATEST_TAG := $(shell gh release list --repo fabianoflorentino/fraudctl --limit 1 --json tagName -q '.[0].tagName'))
+	@echo -e "$(BLUE)   Latest tag: $(LATEST_TAG)$(NC)"
+	@git checkout $(SUBMISSION_BRANCH)
+	@git pull origin $(SUBMISSION_BRANCH)
+	@sed -i "s|image: fabianoflorentino/fraudctl:.*|image: fabianoflorentino/fraudctl:$(LATEST_TAG)|" docker-compose.yml
+	@echo -e "$(BLUE)   Updated docker-compose.yml → $(LATEST_TAG)$(NC)"
+	@git add docker-compose.yml
+	@git commit -m "chore(submission): bump image to $(LATEST_TAG)"
+	@git push origin $(SUBMISSION_BRANCH)
+	@git checkout main
+	@echo -e "$(GREEN)✓ Submission branch updated to $(LATEST_TAG)$(NC)"
+
+submission-test: ## Open a test issue on the Rinha repo to trigger CI
+	@echo -e "$(BLUE)🚀 Opening test issue on $(RINHA_REPO)...$(NC)"
+	$(eval ISSUE_URL := $(shell gh issue create \
+		--repo $(RINHA_REPO) \
+		--title "rinha/test" \
+		--body "rinha/test"))
+	@echo -e "$(GREEN)✓ Issue opened: $(ISSUE_URL)$(NC)"
+	@echo "$(ISSUE_URL)" > /tmp/fraudctl_rinha_issue.txt
+	@echo -e "$(YELLOW)   Run 'make submission-result' to poll for results.$(NC)"
+
+submission-result: ## Poll the Rinha issue until closed, then print the result
+	@if [ ! -f /tmp/fraudctl_rinha_issue.txt ]; then \
+		echo -e "$(RED)✗ No issue URL found. Run 'make submission-test' first.$(NC)"; \
+		exit 1; \
+	fi
+	$(eval ISSUE_URL := $(shell cat /tmp/fraudctl_rinha_issue.txt))
+	$(eval ISSUE_NUMBER := $(shell echo "$(ISSUE_URL)" | grep -o '[0-9]*$$'))
+	@echo -e "$(BLUE)⏳ Polling issue \#$(ISSUE_NUMBER) until closed...$(NC)"
+	@while true; do \
+		STATE=$$(gh issue view $(ISSUE_NUMBER) --repo $(RINHA_REPO) --json state -q '.state'); \
+		if [ "$$STATE" = "CLOSED" ]; then \
+			echo -e "$(GREEN)✓ Issue closed — fetching result:$(NC)"; \
+			gh issue view $(ISSUE_NUMBER) --repo $(RINHA_REPO) --json comments -q '.comments[-1].body'; \
+			rm -f /tmp/fraudctl_rinha_issue.txt; \
+			break; \
+		fi; \
+		echo -e "$(YELLOW)   Still open, waiting 15s...$(NC)"; \
+		sleep 15; \
+	done
+
+submit: submission-update submission-test ## Full submission flow: update image + open test issue
+	@echo -e "$(GREEN)✓ Submission complete. Run 'make submission-result' to watch for results.$(NC)"
