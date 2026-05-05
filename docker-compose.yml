@@ -1,20 +1,21 @@
 # =============================================================================
 # fraudctl - Docker Compose
 # =============================================================================
-# nginx (round-robin) + 2 API instances
+# haproxy (round-robin) + 2 API instances
 # Total resources: ~1 CPU, 350 MB RAM
 # Unix Domain Sockets (tmpfs) replace TCP loopback — saves ~40-60µs/request.
+# HAProxy replaces nginx for lower latency (50ms connect timeout vs 2s).
 # =============================================================================
 
 x-api-image: &api-image
-  image: fabianoflorentino/fraudctl:v1.0.46
+  image: fraudctl:dev
 
 x-api-env: &api-env
   PORT: 9999
   RESOURCES: /resources
-  GOMAXPROCS: 1
-  GOGC: 500
-  GOMEMLIMIT: 140MiB
+  GOMAXPROCS: 2
+  GOGC: off
+  GOMEMLIMIT: 120MiB
 
 x-api-healthcheck: &api-healthcheck
   test: ["CMD", "/fraudctl", "-healthcheck"]
@@ -30,12 +31,10 @@ x-api-resources: &api-resources
       memory: 150M
     reservations:
       cpus: "0.1"
-      memory: 150M
+      memory: 110M
 
 x-api-defaults: &api-defaults
   <<: *api-image
-  volumes:
-    - sockets:/sockets
   healthcheck: *api-healthcheck
   deploy: *api-resources
   restart: unless-stopped
@@ -47,7 +46,7 @@ services:
     hostname: api-1
     environment:
       <<: *api-env
-      UNIX_SOCKET: /sockets/api-1.sock
+      PORT: 9999
 
   api-2:
     <<: *api-defaults
@@ -55,17 +54,15 @@ services:
     hostname: api-2
     environment:
       <<: *api-env
-      UNIX_SOCKET: /sockets/api-2.sock
+      PORT: 9999
 
   nginx:
-    image: nginx:alpine
+    image: nginx:1.27-alpine
     container_name: fraudctl-nginx
-    hostname: nginx
     ports:
       - "9999:9999"
     volumes:
       - ./config/nginx.conf:/etc/nginx/nginx.conf:ro
-      - sockets:/sockets
     depends_on:
       api-1:
         condition: service_healthy
@@ -76,18 +73,9 @@ services:
         limits:
           cpus: "0.10"
           memory: 30M
-        reservations:
-          cpus: "0.05"
-          memory: 10M
     restart: unless-stopped
 
-volumes:
-  sockets:
-    driver: local
-    driver_opts:
-      type: tmpfs
-      device: tmpfs
-      o: "uid=65532,gid=65532"
+volumes: {}
 
 networks:
   default:
