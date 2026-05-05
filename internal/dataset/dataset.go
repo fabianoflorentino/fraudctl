@@ -65,6 +65,31 @@ func (d *Dataset) FraudCount() int { return d.index.FraudCount() }
 // LegitCount returns legit reference count.
 func (d *Dataset) LegitCount() int { return d.index.Count() - d.index.FraudCount() }
 
+// LoadVectorizerOnly loads only the normalization constants and MCC risk scores
+// needed for the vectorizer, without loading the KNN index.
+// Use this when the predictor is a standalone model (GBDT/LightGBM) that does
+// not need the KNN index at runtime. This avoids loading the ~95MB ivf.bin.
+func LoadVectorizerOnly(path string) (*Dataset, error) {
+	loader := NewLoader(path)
+
+	norm, err := loader.LoadNormalization("")
+	if err != nil {
+		return nil, err
+	}
+
+	mccRisk, err := loader.LoadMCCRisk("")
+	if err != nil {
+		return nil, err
+	}
+
+	// Use an empty KNN index (never queried in production with GBDT/LightGBM)
+	return &Dataset{
+		norm:    norm,
+		mccRisk: mccRisk,
+		index:   knn.NewBruteIndex(),
+	}, nil
+}
+
 // LoadDefault loads the dataset from path.
 // Priority: brute.bin (exact brute-force KNN) > ivf.bin (IVF approx) > references.json.gz (fallback).
 func LoadDefault(path string) (*Dataset, error) {
