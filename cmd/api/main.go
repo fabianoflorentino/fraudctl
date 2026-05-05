@@ -7,7 +7,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"runtime"
 	"strconv"
 	"syscall"
 	"time"
@@ -24,9 +23,6 @@ var (
 )
 
 func main() {
-	runtime.GOMAXPROCS(1)
-	runtime.LockOSThread()
-
 	flag.Parse()
 
 	if *healthCheck {
