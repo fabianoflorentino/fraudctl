@@ -18,12 +18,15 @@ import (
 )
 
 type IVFIndex struct {
-	centroids []float32
-	blocks    []int16
-	labels    []byte
-	offsets   []uint32
-	nlist     int
-	nprobe    int
+	centroids  []float32
+	blocks     []int16
+	labels     []byte
+	offsets    []uint32
+	nlist      int
+	nprobe     int
+	retryExtra int
+	boundaryLo int
+	boundaryHi int
 }
 
 func (idx *IVFIndex) SetNProbe(n int) {
@@ -31,6 +34,17 @@ func (idx *IVFIndex) SetNProbe(n int) {
 		n = 1
 	}
 	idx.nprobe = n
+}
+
+func (idx *IVFIndex) NProbe() int { return idx.nprobe }
+
+// SetRetry configures the incremental boundary retry.
+// retryExtra clusters are scanned on top of nprobe when the fraud count
+// is in [lo, hi] (ambiguous zone around the decision threshold).
+func (idx *IVFIndex) SetRetry(retryExtra, lo, hi int) {
+	idx.retryExtra = retryExtra
+	idx.boundaryLo = lo
+	idx.boundaryHi = hi
 }
 
 func NewIVFIndex() *IVFIndex { return &IVFIndex{} }
@@ -146,43 +160,51 @@ func LoadIVF(path string) (*IVFIndex, error) {
 	return idx, nil
 }
 
-func (idx *IVFIndex) Predict(query model.Vector14, k int) float64 {
+// quantize converts a float32 vector to int16 scaled by int16Scale.
+func quantize(query model.Vector14) [14]C.int16_t {
+	var qiC [14]C.int16_t
+	for d := 0; d < 14; d++ {
+		v := query[d]
+		var s int16
+		if v < -1.0 {
+			s = -int16Scale
+		} else if v > 1.0 {
+			s = int16Scale
+		} else {
+			s = int16(math.Round(float64(v * int16Scale)))
+		}
+		qiC[d] = C.int16_t(s)
+	}
+	return qiC
+}
+
+// PredictRaw returns the raw fraud neighbor count (0..K_NEIGHBORS) using
+// incremental boundary retry: if the result is in [boundaryLo, boundaryHi],
+// retryExtra additional clusters are scanned on top of the initial nprobe.
+func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 	if len(idx.blocks) == 0 {
 		return 0
 	}
-
-	var qi [14]int16
-	for d := 0; d < 14; d++ {
-		if query[d] < -1.0 {
-			qi[d] = -int16Scale
-		} else if query[d] > 1.0 {
-			qi[d] = int16Scale
-		} else {
-			qi[d] = int16(math.Round(float64(query[d] * int16Scale)))
-		}
-	}
-
+	qiC := quantize(query)
 	var fraudCount C.int
-	var qiC [14]C.int16_t
-	for d := 0; d < 14; d++ {
-		qiC[d] = C.int16_t(qi[d])
-	}
-
-	C.knn_fraud_count_avx2(
+	C.knn_fraud_count_retry(
 		(*C.int16_t)(unsafe.Pointer(&idx.blocks[0])),
 		(*C.uint8_t)(unsafe.Pointer(&idx.labels[0])),
 		(*C.uint32_t)(unsafe.Pointer(&idx.offsets[0])),
 		(*C.float)(unsafe.Pointer(&idx.centroids[0])),
 		C.int(idx.nlist),
-		C.int(idx.nprobe),
+		C.int(nprobe),
+		C.int(idx.retryExtra),
+		C.int(idx.boundaryLo),
+		C.int(idx.boundaryHi),
 		(*C.int16_t)(unsafe.Pointer(&qiC[0])),
 		&fraudCount,
 	)
+	return int(fraudCount)
+}
 
-	if k == 0 {
-		k = K
-	}
-	return float64(fraudCount) / float64(k)
+func (idx *IVFIndex) Predict(query model.Vector14, k int) float64 {
+	return float64(idx.PredictRaw(query, idx.nprobe)) / float64(K)
 }
 
 func (idx *IVFIndex) Count() int {

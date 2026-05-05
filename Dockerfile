@@ -31,9 +31,9 @@ RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
     CGO_LDFLAGS="-march=x86-64-v3 -flto" \
     go build -ldflags="-s -w -extldflags=-Wl,--gc-sections" -o build-index ./cmd/build-index
 
-# Build the IVF index from references.json.gz (nlist=1024, 20 iterations).
+# Build the IVF index from references.json.gz (nlist=1024, 60 iterations).
 # This runs at image build time so startup only needs to mmap the file.
-RUN ./build-index -resources ./resources -nlist 1024 -iterations 20
+RUN ./build-index -resources ./resources -nlist 1024 -iterations 60
 
 # ── Stage 2: production ────────────────────────────────────────────────────────
 FROM gcr.io/distroless/base-debian12 AS production

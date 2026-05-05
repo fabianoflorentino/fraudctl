@@ -18,6 +18,10 @@ type Vectorizer interface {
 // KNNIndex runs exact/approximate k-nearest-neighbor lookup.
 type KNNIndex interface {
 	Predict(query model.Vector14, k int) float64
+	// PredictRaw returns the raw fraud neighbor count using the given nprobe.
+	PredictRaw(query model.Vector14, nprobe int) int
+	// NProbe returns the default nprobe configured on the index.
+	NProbe() int
 }
 
 const (
@@ -25,8 +29,11 @@ const (
 	knnK = 5
 
 	// knnFraudThreshold: fraction of fraud neighbors >= this → deny.
-	// With k=5, majority vote >=3 → threshold = 3/5 = 0.6.
+	// C collects K_NEIGHBORS=10; threshold=0.6 → deny when >=6/10 are fraud.
 	knnFraudThreshold = 0.6
+
+	// knnNeighbors matches C K_NEIGHBORS — number of neighbors C collects.
+	knnNeighbors = 5
 )
 
 var (
@@ -62,7 +69,9 @@ func (h *FraudScoreHandler) Handle(ctx *fasthttp.RequestCtx) {
 	}
 
 	vec := h.vec.Vectorize(&req)
-	score := h.knn.Predict(vec, knnK)
+	nprobe := h.knn.NProbe()
+	fraudCount := h.knn.PredictRaw(vec, nprobe)
+	score := float64(fraudCount) / float64(knnNeighbors)
 
 	var resp []byte
 	if score >= knnFraudThreshold {

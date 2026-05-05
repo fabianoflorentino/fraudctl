@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"math"
 	"strings"
 	"testing"
 
@@ -19,6 +20,10 @@ func (m *mockVec) Vectorize(req *model.FraudScoreRequest) model.Vector14 {
 type mockKNN struct{ score float64 }
 
 func (m *mockKNN) Predict(_ model.Vector14, _ int) float64 { return m.score }
+func (m *mockKNN) PredictRaw(_ model.Vector14, _ int) int {
+	return int(math.Round(m.score * float64(knnNeighbors)))
+}
+func (m *mockKNN) NProbe() int { return 8 }
 
 func newCtx(method, body string) *fasthttp.RequestCtx {
 	ctx := &fasthttp.RequestCtx{}

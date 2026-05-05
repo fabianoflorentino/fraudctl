@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"os"
 
 	"github.com/fabianoflorentino/fraudctl/internal/model"
@@ -76,6 +77,17 @@ func (b *BruteIndex) BuildFromGzip(path string, capacity int) error {
 func (b *BruteIndex) Predict(query model.Vector14, k int) float64 {
 	return brutePredict(b.flat, b.fraudFlags, b.count, query, k)
 }
+
+// PredictRaw for BruteIndex ignores nprobe (exact search has no concept of it).
+// Returns fraud count out of k=5 neighbors to match IVFIndex behavior.
+func (b *BruteIndex) PredictRaw(query model.Vector14, _ int) int {
+	const k = 5
+	score := brutePredict(b.flat, b.fraudFlags, b.count, query, k)
+	return int(math.Round(score * float64(k)))
+}
+
+// NProbe for BruteIndex returns 0 — not applicable for exact search.
+func (b *BruteIndex) NProbe() int { return 0 }
 
 func (b *BruteIndex) Count() int { return b.count }
 

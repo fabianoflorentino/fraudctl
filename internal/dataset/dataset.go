@@ -20,6 +20,8 @@ type Dataset struct {
 // KNNIndex is implemented by IVFIndex, BruteIndex and BruteAVX2Index.
 type KNNIndex interface {
 	Predict(query model.Vector14, k int) float64
+	PredictRaw(query model.Vector14, nprobe int) int
+	NProbe() int
 	Count() int
 	FraudCount() int
 }
@@ -124,7 +126,7 @@ func LoadDefault(path string) (*Dataset, error) {
 		if _, err := os.Stat(ivfPath); err == nil {
 			ivf, err := knn.LoadIVF(ivfPath)
 			if err == nil {
-				ivf.SetNProbe(4)
+				ivf.SetNProbe(8)
 				idx = ivf
 			}
 		}

@@ -12,7 +12,7 @@ import (
 	"sync"
 )
 
-const K = 10
+const K = 5
 const DIM = 14
 const int16Scale = 10000
 const int16Pad = math.MaxInt16

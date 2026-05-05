@@ -5,7 +5,7 @@
 
 #define DIM 14
 #define BLOCK_SIZE 112 /* 14 dims * 8 vectors */
-#define K_NEIGHBORS 10
+#define K_NEIGHBORS 5
 #define PAD_VALUE 32767 /* INT16_MAX, outside real data range */
 
 static inline void sort_topK(int32_t top_d[K_NEIGHBORS], uint8_t top_l[K_NEIGHBORS], int *worst_idx, int32_t new_d, uint8_t new_l) {
@@ -28,8 +28,8 @@ static void find_top_centroids(
     int nprobe,
     int *out_probes
 ) {
-    if (nprobe > 64) nprobe = 64;
     if (nprobe > nlist) nprobe = nlist;
+    if (nprobe < 1) nprobe = 1;
 
     float dists[2048]; /* max nlist supported */
     memset(dists, 0, nlist * sizeof(float));
@@ -47,10 +47,9 @@ static void find_top_centroids(
         }
     }
 
-    /* Select top-nprobe */
-    for (int i = 0; i < nprobe; i++) out_probes[i] = i;
-    float probe_dist[64];
-    for (int i = 0; i < nprobe; i++) probe_dist[i] = dists[i];
+    /* Select top-nprobe using a fixed-size heap (nprobe <= 2048) */
+    float probe_dist[2048];
+    for (int i = 0; i < nprobe; i++) { out_probes[i] = i; probe_dist[i] = dists[i]; }
 
     int worst = 0;
     for (int i = 1; i < nprobe; i++) {
@@ -177,7 +176,8 @@ int knn_fraud_count_avx2(
     }
 
     /* Find nearest centroids */
-    int probes[64];
+    if (nprobe > k) nprobe = k; /* clamp to nlist (k param is nlist here) */
+    int probes[2048];
     find_top_centroids(centroids, k, query, nprobe, probes);
 
     int total_blocks = 0;
@@ -207,6 +207,77 @@ int knn_fraud_count_avx2(
     for (int i = 0; i < K_NEIGHBORS; i++) {
         if (top_l[i] == 1) fraud++;
     }
+    *out_fraud_count = fraud;
+    return fraud;
+}
+
+/*
+ * knn_fraud_count_retry: boundary-aware search with incremental retry.
+ *
+ * Phase 1: scan nprobe clusters, count fraud.
+ * Phase 2: if fraud in [boundary_lo, boundary_hi], scan retry_extra more
+ *          clusters using the SAME top-K heap (incremental, not restart).
+ */
+int knn_fraud_count_retry(
+    const int16_t *blocks,
+    const uint8_t *labels,
+    const uint32_t *offsets,
+    const float *centroids,
+    int nlist,
+    int nprobe,
+    int retry_extra,
+    int boundary_lo,
+    int boundary_hi,
+    const int16_t query[14],
+    int *out_fraud_count
+) {
+    __m256i q_vecs[DIM];
+    for (int d = 0; d < DIM; d++) {
+        q_vecs[d] = _mm256_set1_epi32((int32_t)query[d]);
+    }
+
+    int total_nprobe = nprobe + retry_extra;
+    if (total_nprobe > nlist) total_nprobe = nlist;
+    if (nprobe > nlist) nprobe = nlist;
+
+    /* Pre-compute all candidate centroids up to total_nprobe */
+    int probes[2048];
+    find_top_centroids(centroids, nlist, query, total_nprobe, probes);
+
+    int32_t top_d[K_NEIGHBORS];
+    uint8_t top_l[K_NEIGHBORS];
+    for (int i = 0; i < K_NEIGHBORS; i++) { top_d[i] = INT32_MAX; top_l[i] = 0; }
+    int worst_idx = 0;
+
+    /* Phase 1: scan first nprobe clusters */
+    for (int pi = 0; pi < nprobe; pi++) {
+        int ci = probes[pi];
+        uint32_t start = offsets[ci];
+        uint32_t end = offsets[ci + 1];
+        if (start == end) continue;
+        scan_blocks_avx2(blocks, labels, start, end, q_vecs, top_d, top_l, &worst_idx);
+    }
+
+    int fraud = 0;
+    for (int i = 0; i < K_NEIGHBORS; i++) {
+        if (top_l[i] == 1) fraud++;
+    }
+
+    /* Phase 2: boundary retry — incrementally scan extra clusters */
+    if (fraud >= boundary_lo && fraud <= boundary_hi && retry_extra > 0) {
+        for (int pi = nprobe; pi < total_nprobe; pi++) {
+            int ci = probes[pi];
+            uint32_t start = offsets[ci];
+            uint32_t end = offsets[ci + 1];
+            if (start == end) continue;
+            scan_blocks_avx2(blocks, labels, start, end, q_vecs, top_d, top_l, &worst_idx);
+        }
+        fraud = 0;
+        for (int i = 0; i < K_NEIGHBORS; i++) {
+            if (top_l[i] == 1) fraud++;
+        }
+    }
+
     *out_fraud_count = fraud;
     return fraud;
 }

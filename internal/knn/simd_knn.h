@@ -14,7 +14,7 @@
  *   - Labels are stored per-block (8 bytes per block)
  *
  * Query: int16[14] (scale=10000, same as stored vectors)
- * Returns: number of fraud neighbors among top-K (K=5)
+ * Returns: number of fraud neighbors among top-K (K=10)
  */
 
 int knn_fraud_count_avx2(
@@ -24,6 +24,30 @@ int knn_fraud_count_avx2(
     const float *centroids,
     int k,
     int nprobe,
+    const int16_t query[14],
+    int *out_fraud_count
+);
+
+/*
+ * knn_fraud_count_retry: same as knn_fraud_count_avx2 but with boundary retry.
+ *
+ * If the fraud count after nprobe clusters is in [boundary_lo, boundary_hi],
+ * scan retry_extra additional clusters (incrementally, keeping the same heap)
+ * and return the updated fraud count.
+ *
+ * This is equivalent to thiagorigonatti's "Tier 1" boundary retry but done
+ * entirely in C to avoid a second CGo round-trip.
+ */
+int knn_fraud_count_retry(
+    const int16_t *blocks,
+    const uint8_t *labels,
+    const uint32_t *offsets,
+    const float *centroids,
+    int nlist,
+    int nprobe,
+    int retry_extra,
+    int boundary_lo,
+    int boundary_hi,
     const int16_t query[14],
     int *out_fraud_count
 );

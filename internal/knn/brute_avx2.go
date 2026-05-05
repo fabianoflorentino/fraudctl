@@ -96,6 +96,12 @@ func (idx *BruteAVX2Index) Predict(query model.Vector14, k int) float64 {
 }
 
 func (idx *BruteAVX2Index) Count() int     { return idx.N }
+func (idx *BruteAVX2Index) NProbe() int    { return 0 }
+func (idx *BruteAVX2Index) PredictRaw(query model.Vector14, _ int) int {
+	const k = 5
+	score := idx.Predict(query, k)
+	return int(math.Round(score * float64(k)))
+}
 func (idx *BruteAVX2Index) FraudCount() int {
 	n := 0
 	for _, b := range idx.labels {
