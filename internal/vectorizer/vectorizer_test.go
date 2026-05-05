@@ -160,8 +160,8 @@ func TestParseHourAndWeekday(t *testing.T) {
 		wantWeekday int
 		valid       bool
 	}{
-		{"valid UTC", "2026-03-11T20:23:35Z", 20, 3, true},  // 2026-03-11 is Wednesday=3
-		{"midnight", "2026-01-01T00:00:00Z", 0, 4, true},    // 2026-01-01 is Thursday=4
+		{"valid UTC", "2026-03-11T20:23:35Z", 20, 2, true},  // 2026-03-11 is Wednesday=2 (0=Mon)
+		{"midnight", "2026-01-01T00:00:00Z", 0, 3, true},    // 2026-01-01 is Thursday=3 (0=Mon)
 		{"invalid format", "2026-03-11", 0, 0, false},
 		{"empty string", "", 0, 0, false},
 	}
