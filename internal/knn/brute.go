@@ -11,6 +11,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"time"
 	"unsafe"
 
 	"github.com/fabianoflorentino/fraudctl/internal/model"
@@ -128,6 +129,19 @@ func LoadIVF(path string) (*IVFIndex, error) {
 	for i := 0; i < len(allLabels); i += 4096 {
 		_ = allLabels[i]
 	}
+
+	// Keep pages hot: with swappiness=100 on the host, the kernel aggressively
+	// swaps out inactive pages even when RAM is available. Touch every page every
+	// 10s to prevent the index from being evicted to swap.
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			for i := 0; i < len(blocks); i += 2048 {
+				_ = blocks[i]
+			}
+		}
+	}()
 
 	return idx, nil
 }
