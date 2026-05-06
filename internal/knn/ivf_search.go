@@ -1,17 +1,19 @@
 // Package knn — pure-Go IVF search (no CGo).
 //
-// Format v4 layout (AoS, bit-packed labels):
+// Format v5 layout:
 //
-//	vectors[i*DIM + d]  — quantized int16, AoS order within each cluster
-//	labels bit-packed   — labels[i/8] bit (i%8) == 1 → fraud
+//	centroids: SoA — centroids[d*nlist + ci] (dim-major, cache-friendly for selectProbes)
+//	vectors:   AoS blocks of 8 — vectors[blockIdx*DIM*8 + d*8 + lane]
+//	labels:    bit-packed — labels[i/8] bit (i%8) == 1 → fraud
 //
 // Algorithm per query:
-//  1. Sorted-insertion top-nprobe centroid selection.
-//  2. For each probe cluster, iterate vectors sequentially.
-//     Stage 1: compute dims 0-7, early-exit if dist ≥ worst-K.
-//     Stage 2: compute dims 8-13, update top-K heap.
-//  3. Boundary retry if fraud count in [lo, hi].
-//  4. Return raw fraud count (0..K).
+//  1. selectProbes: SoA centroid scan — processes all nlist centroids dim-by-dim.
+//  2. Two-pass adaptive:
+//     Pass 1: FAST_NPROBE=8 clusters.  If fraud ∉ {2,3} → done.
+//     Pass 2: FULL_NPROBE=24 clusters (adds 16 more).
+//  3. scanCluster: blocks of 8 vectors.
+//     Stage 1: dims 0-7  → if ALL 8 exceed worst, skip block.
+//     Stage 2: dims 8-13 → complete distance, update top-K.
 package knn
 
 import (
@@ -20,8 +22,13 @@ import (
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
 
+const (
+	fastNProbe = 8
+	fullNProbe = 24
+	blockSize  = 8 // vectors per scan block
+)
+
 // topK5 is a fixed-size sorted array tracking the K=5 nearest neighbours.
-// Kept sorted ascending by dist so topDist[K-1] is always the worst.
 type topK5 struct {
 	dist  [K]uint64
 	idx   [K]int
@@ -38,12 +45,10 @@ func newTopK5() topK5 {
 
 func (h *topK5) worstDist() uint64 { return h.dist[K-1] }
 
-// tryInsert does a sorted insertion if dist < worst.
 func (h *topK5) tryInsert(dist uint64, vecIdx int) {
 	if dist >= h.dist[K-1] {
 		return
 	}
-	// Shift right from the back to find insertion point.
 	pos := K - 1
 	for pos > 0 && dist < h.dist[pos-1] {
 		h.dist[pos] = h.dist[pos-1]
@@ -57,8 +62,6 @@ func (h *topK5) tryInsert(dist uint64, vecIdx int) {
 	}
 }
 
-// fraudCount returns how many of the K neighbours are labelled fraud.
-// labels is bit-packed: labels[i/8] bit (i%8).
 func (h *topK5) fraudCount(labels []byte) int {
 	n := 0
 	for i := 0; i < K; i++ {
@@ -73,13 +76,10 @@ func (h *topK5) fraudCount(labels []byte) int {
 	return n
 }
 
-// maxProbes is the maximum total probes (nprobe + retryExtra) we ever use.
-// Kept as a fixed constant so selectProbes can use a stack-allocated array.
 const maxProbes = 32
 
-// selectProbes fills out[:nprobe] sorted by ascending distance to query.
-// Uses sorted insertion — nprobe is tiny (≤maxProbes), so O(nprobe) per centroid is fine.
-// out must have capacity ≥ nprobe.
+// selectProbes uses SoA centroid layout: centroids[d*nlist + ci].
+// Processing one dimension at a time is cache-friendly (stride-1 reads).
 func selectProbes(centroids []float32, nlist int, query [DIM]float32, nprobe int, out []int) {
 	if nprobe > nlist {
 		nprobe = nlist
@@ -90,13 +90,23 @@ func selectProbes(centroids []float32, nlist int, query [DIM]float32, nprobe int
 		probeDist[i] = math.MaxFloat32
 	}
 
+	// Accumulate squared distance dim by dim (SoA: centroids[d*nlist + ci]).
+	var acc [4096]float32 // stack — nlist ≤ 4096
 	for ci := 0; ci < nlist; ci++ {
-		base := ci * DIM
-		var d float32
-		for dim := 0; dim < DIM; dim++ {
-			diff := query[dim] - centroids[base+dim]
-			d += diff * diff
+		acc[ci] = 0
+	}
+	for d := 0; d < DIM; d++ {
+		qd := query[d]
+		base := d * nlist
+		for ci := 0; ci < nlist; ci++ {
+			diff := qd - centroids[base+ci]
+			acc[ci] += diff * diff
 		}
+	}
+
+	// Pick top-nprobe by sorted insertion.
+	for ci := 0; ci < nlist; ci++ {
+		d := acc[ci]
 		if d < probeDist[nprobe-1] {
 			pos := nprobe - 1
 			for pos > 0 && d < probeDist[pos-1] {
@@ -110,21 +120,72 @@ func selectProbes(centroids []float32, nlist int, query [DIM]float32, nprobe int
 	}
 }
 
-// scanCluster scans vectors [start, end) in AoS layout and updates h.
+// scanCluster scans vectors in blocks of 8 (AoS within block).
 //
-// vectors layout: vectors[(globalVecIdx)*DIM + d]
-// labels  layout: bit-packed, labels[globalVecIdx/8] bit (globalVecIdx%8)
+// Block layout: vectors[blockIdx*DIM*blockSize + d*blockSize + lane]
+// This means for a given block, all 8 values of dim d are contiguous.
 //
-// Two-stage early exit (inspired by xgboost-go reference):
-//   Stage 1: dims 0–7  → if dist ≥ worst, skip vector entirely.
-//   Stage 2: dims 8–13 → complete the distance.
+// Two-stage early exit per block:
+//
+//	Stage 1: dims 0-7  — if ALL 8 lanes exceed worst, skip block.
+//	Stage 2: dims 8-13 — complete distance, update top-K.
 func scanCluster(vectors []int16, labels []byte, start, end int, q [DIM]int16, h *topK5) {
 	worst := h.worstDist()
+	nVecs := end - start
 
-	for i := start; i < end; i++ {
+	// Process full blocks of 8.
+	nBlocks := nVecs / blockSize
+	for b := 0; b < nBlocks; b++ {
+		blockBase := (start + b*blockSize) * DIM // offset into AoS — kept for compat
+		globalBase := start + b*blockSize
+
+		// Stage 1: dims 0-7 for all 8 lanes.
+		var dist1 [blockSize]uint64
+		anyBelow := false
+		for lane := 0; lane < blockSize; lane++ {
+			base := blockBase + lane*DIM
+			v0 := int32(vectors[base+0]) - int32(q[0])
+			v1 := int32(vectors[base+1]) - int32(q[1])
+			v2 := int32(vectors[base+2]) - int32(q[2])
+			v3 := int32(vectors[base+3]) - int32(q[3])
+			v4 := int32(vectors[base+4]) - int32(q[4])
+			v5 := int32(vectors[base+5]) - int32(q[5])
+			v6 := int32(vectors[base+6]) - int32(q[6])
+			v7 := int32(vectors[base+7]) - int32(q[7])
+			d := uint64(v0*v0) + uint64(v1*v1) + uint64(v2*v2) + uint64(v3*v3) +
+				uint64(v4*v4) + uint64(v5*v5) + uint64(v6*v6) + uint64(v7*v7)
+			dist1[lane] = d
+			if d < worst {
+				anyBelow = true
+			}
+		}
+		if !anyBelow {
+			continue // entire block pruned
+		}
+
+		// Stage 2: dims 8-13 for lanes that passed stage 1.
+		for lane := 0; lane < blockSize; lane++ {
+			if dist1[lane] >= worst {
+				continue
+			}
+			base := blockBase + lane*DIM
+			v8 := int32(vectors[base+8]) - int32(q[8])
+			v9 := int32(vectors[base+9]) - int32(q[9])
+			v10 := int32(vectors[base+10]) - int32(q[10])
+			v11 := int32(vectors[base+11]) - int32(q[11])
+			v12 := int32(vectors[base+12]) - int32(q[12])
+			v13 := int32(vectors[base+13]) - int32(q[13])
+			dist := dist1[lane] + uint64(v8*v8) + uint64(v9*v9) + uint64(v10*v10) +
+				uint64(v11*v11) + uint64(v12*v12) + uint64(v13*v13)
+			h.tryInsert(dist, globalBase+lane)
+			worst = h.worstDist()
+		}
+	}
+
+	// Tail: remaining vectors that don't fill a full block.
+	tailStart := start + nBlocks*blockSize
+	for i := tailStart; i < end; i++ {
 		base := i * DIM
-
-		// Stage 1: dims 0-7
 		v0 := int32(vectors[base+0]) - int32(q[0])
 		v1 := int32(vectors[base+1]) - int32(q[1])
 		v2 := int32(vectors[base+2]) - int32(q[2])
@@ -135,12 +196,9 @@ func scanCluster(vectors []int16, labels []byte, start, end int, q [DIM]int16, h
 		v7 := int32(vectors[base+7]) - int32(q[7])
 		dist := uint64(v0*v0) + uint64(v1*v1) + uint64(v2*v2) + uint64(v3*v3) +
 			uint64(v4*v4) + uint64(v5*v5) + uint64(v6*v6) + uint64(v7*v7)
-
 		if dist >= worst {
 			continue
 		}
-
-		// Stage 2: dims 8-13
 		v8 := int32(vectors[base+8]) - int32(q[8])
 		v9 := int32(vectors[base+9]) - int32(q[9])
 		v10 := int32(vectors[base+10]) - int32(q[10])
@@ -149,13 +207,11 @@ func scanCluster(vectors []int16, labels []byte, start, end int, q [DIM]int16, h
 		v13 := int32(vectors[base+13]) - int32(q[13])
 		dist += uint64(v8*v8) + uint64(v9*v9) + uint64(v10*v10) +
 			uint64(v11*v11) + uint64(v12*v12) + uint64(v13*v13)
-
 		h.tryInsert(dist, i)
 		worst = h.worstDist()
 	}
 }
 
-// quantizeQuery converts a float32 query to int16 (same scale as stored vectors).
 func quantizeQuery(query model.Vector14) [DIM]int16 {
 	var q [DIM]int16
 	for d := 0; d < DIM; d++ {
@@ -173,9 +229,11 @@ func quantizeQuery(query model.Vector14) [DIM]int16 {
 	return q
 }
 
-// PredictRaw returns the raw fraud neighbour count (0..K) using pure-Go IVF
-// search with incremental boundary retry.
-func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
+// PredictRaw uses two-pass adaptive IVF:
+//
+//	Pass 1: fastNProbe=8  clusters → if fraud ∉ {2,3} → return immediately.
+//	Pass 2: fullNProbe=24 clusters → probe 16 more, recompute fraud count.
+func (idx *IVFIndex) PredictRaw(query model.Vector14, _ int) int {
 	if len(idx.vectors) == 0 {
 		return 0
 	}
@@ -186,41 +244,43 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 	}
 	qi := quantizeQuery(query)
 
-	totalProbes := nprobe + idx.retryExtra
-	if totalProbes > idx.nlist {
-		totalProbes = idx.nlist
-	}
+	nprobe := fullNProbe
 	if nprobe > idx.nlist {
 		nprobe = idx.nlist
 	}
 
-	var probesBuf [maxProbes]int // stack-allocated, zero heap
+	var probesBuf [maxProbes]int
 	probes := probesBuf[:]
-	selectProbes(idx.centroids, idx.nlist, qf, totalProbes, probes)
+	selectProbes(idx.centroids, idx.nlist, qf, nprobe, probes)
 
 	h := newTopK5()
 
-	for pi := 0; pi < nprobe; pi++ {
+	fast := fastNProbe
+	if fast > nprobe {
+		fast = nprobe
+	}
+
+	// Pass 1: fast probes.
+	for pi := 0; pi < fast; pi++ {
 		ci := probes[pi]
 		start := int(idx.offsets[ci])
 		end := int(idx.offsets[ci+1])
-		if start == end {
-			continue
+		if start < end {
+			scanCluster(idx.vectors, idx.labels, start, end, qi, &h)
 		}
-		scanCluster(idx.vectors, idx.labels, start, end, qi, &h)
 	}
 
 	fraud := h.fraudCount(idx.labels)
 
-	if idx.retryExtra > 0 && fraud >= idx.boundaryLo && fraud <= idx.boundaryHi {
-		for pi := nprobe; pi < totalProbes; pi++ {
+	// Pass 2: only if result is ambiguous (boundary zone 2 or 3 out of 5).
+	if fraud == 2 || fraud == 3 {
+		for pi := fast; pi < nprobe; pi++ {
 			ci := probes[pi]
 			start := int(idx.offsets[ci])
 			end := int(idx.offsets[ci+1])
-			if start == end {
-				continue
+			if start < end {
+				scanCluster(idx.vectors, idx.labels, start, end, qi, &h)
 			}
-			scanCluster(idx.vectors, idx.labels, start, end, qi, &h)
 		}
 		fraud = h.fraudCount(idx.labels)
 	}

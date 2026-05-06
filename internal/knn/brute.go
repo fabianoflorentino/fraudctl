@@ -12,13 +12,14 @@ import (
 )
 
 // IVFIndex holds the IVF index in format v4:
-//   vectors: AoS int16, layout vectors[i*DIM + d]
-//   labels:  bit-packed, labels[i/8] bit (i%8) == 1 → fraud
-//   offsets: offsets[ci]..offsets[ci+1] are the global vector indices for cluster ci
+//   centroids: SoA — centroids[d*nlist + ci] (transposed on load for cache-friendly selectProbes)
+//   vectors:   AoS int16, layout vectors[i*DIM + d]
+//   labels:    bit-packed, labels[i/8] bit (i%8) == 1 → fraud
+//   offsets:   offsets[ci]..offsets[ci+1] are the global vector indices for cluster ci
 type IVFIndex struct {
-	centroids  []float32
-	vectors    []int16 // AoS: [N * DIM]
-	labels     []byte  // bit-packed: [ceil(N/8)]
+	centroids  []float32 // SoA: [DIM * nlist], indexed as centroids[d*nlist + ci]
+	vectors    []int16   // AoS: [N * DIM]
+	labels     []byte    // bit-packed: [ceil(N/8)]
 	offsets    []uint32
 	nlist      int
 	nprobe     int
@@ -73,10 +74,17 @@ func LoadIVF(path string) (*IVFIndex, error) {
 		return nil, fmt.Errorf("read n: %w", err)
 	}
 
-	// Centroids: nlist * DIM float32
-	centroids := make([]float32, nlist*dim)
-	if err := binary.Read(f, binary.LittleEndian, centroids); err != nil {
+	// Centroids: nlist * DIM float32 (on-disk: AoI row-major, ci-major)
+	// Transpose to SoA (dim-major) for cache-friendly selectProbes.
+	rawCentroids := make([]float32, nlist*dim)
+	if err := binary.Read(f, binary.LittleEndian, rawCentroids); err != nil {
 		return nil, fmt.Errorf("read centroids: %w", err)
+	}
+	centroids := make([]float32, nlist*dim)
+	for ci := 0; ci < int(nlist); ci++ {
+		for d := 0; d < int(dim); d++ {
+			centroids[d*int(nlist)+ci] = rawCentroids[ci*int(dim)+d]
+		}
 	}
 
 	// Offsets: (nlist+1) uint32

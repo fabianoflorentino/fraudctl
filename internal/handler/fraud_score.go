@@ -60,6 +60,7 @@ type FraudScoreHandler struct {
 	knn          KNNIndex
 	gbdt         GBDTPredictor // nil if not loaded
 	requestCount atomic.Uint64
+	ivfCount     atomic.Uint64
 }
 
 func NewFraudScoreHandler(vec Vectorizer, knn KNNIndex, gbdt GBDTPredictor) *FraudScoreHandler {
@@ -105,6 +106,7 @@ func (h *FraudScoreHandler) Handle(ctx *fasthttp.RequestCtx) {
 			resp = disapprovedBody
 		} else {
 			// Tier 2: IVF for ambiguous cases
+			h.ivfCount.Add(1)
 			nprobe := h.knn.NProbe()
 			fraudCount := h.knn.PredictRaw(vec, nprobe)
 			score := float64(fraudCount) / float64(knnNeighbors)
@@ -131,6 +133,6 @@ func (h *FraudScoreHandler) Handle(ctx *fasthttp.RequestCtx) {
 	ctx.Write(resp)
 
 	if count := h.requestCount.Add(1); count%10000 == 0 {
-		log.Printf("requests=%d", count)
+		log.Printf("requests=%d ivf=%d (%.1f%%)", count, h.ivfCount.Load(), float64(h.ivfCount.Load())/float64(count)*100)
 	}
 }
