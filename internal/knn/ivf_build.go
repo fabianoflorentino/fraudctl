@@ -181,11 +181,75 @@ func kmeansAssign(flat []float32, n int, centroids []float32, k int, assign []in
 				base := i * 14
 				for ci := 0; ci < k; ci++ {
 					cb := ci * 14
-					var d float32
-					for dim := 0; dim < 14; dim++ {
-						diff := flat[base+dim] - centroids[cb+dim]
-						d += diff * diff
+					// Partial Distance Elimination (PDE): accumulate dims
+					// one at a time and bail out as soon as d ≥ bestD.
+					d0 := flat[base+0] - centroids[cb+0]
+					d := d0 * d0
+					if d >= bestD {
+						continue
 					}
+					d1 := flat[base+1] - centroids[cb+1]
+					d += d1 * d1
+					if d >= bestD {
+						continue
+					}
+					d2 := flat[base+2] - centroids[cb+2]
+					d += d2 * d2
+					if d >= bestD {
+						continue
+					}
+					d3 := flat[base+3] - centroids[cb+3]
+					d += d3 * d3
+					if d >= bestD {
+						continue
+					}
+					d4 := flat[base+4] - centroids[cb+4]
+					d += d4 * d4
+					if d >= bestD {
+						continue
+					}
+					d5 := flat[base+5] - centroids[cb+5]
+					d += d5 * d5
+					if d >= bestD {
+						continue
+					}
+					d6 := flat[base+6] - centroids[cb+6]
+					d += d6 * d6
+					if d >= bestD {
+						continue
+					}
+					d7 := flat[base+7] - centroids[cb+7]
+					d += d7 * d7
+					if d >= bestD {
+						continue
+					}
+					d8 := flat[base+8] - centroids[cb+8]
+					d += d8 * d8
+					if d >= bestD {
+						continue
+					}
+					d9 := flat[base+9] - centroids[cb+9]
+					d += d9 * d9
+					if d >= bestD {
+						continue
+					}
+					d10 := flat[base+10] - centroids[cb+10]
+					d += d10 * d10
+					if d >= bestD {
+						continue
+					}
+					d11 := flat[base+11] - centroids[cb+11]
+					d += d11 * d11
+					if d >= bestD {
+						continue
+					}
+					d12 := flat[base+12] - centroids[cb+12]
+					d += d12 * d12
+					if d >= bestD {
+						continue
+					}
+					d13 := flat[base+13] - centroids[cb+13]
+					d += d13 * d13
 					if d < bestD {
 						bestD = d
 						best = ci
