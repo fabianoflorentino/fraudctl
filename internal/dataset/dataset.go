@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/fabianoflorentino/fraudctl/internal/gbdt"
 	"github.com/fabianoflorentino/fraudctl/internal/knn"
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 	"github.com/fabianoflorentino/fraudctl/internal/vectorizer"
@@ -15,6 +16,7 @@ type Dataset struct {
 	norm    model.NormalizationConstants
 	mccRisk model.MCCRisk
 	index   KNNIndex
+	gbdt    *gbdt.GBDT
 }
 
 // KNNIndex is implemented by IVFIndex, BruteIndex and BruteAVX2Index.
@@ -57,6 +59,9 @@ func (d *Dataset) Index() KNNIndex { return d.index }
 
 // KNN returns the KNN index (backward-compat alias).
 func (d *Dataset) KNN() KNNIndex { return d.index }
+
+// GBDT returns the loaded GBDT pre-filter model, or nil if not loaded.
+func (d *Dataset) GBDT() *gbdt.GBDT { return d.gbdt }
 
 // Count returns total reference vectors.
 func (d *Dataset) Count() int { return d.index.Count() }
@@ -143,9 +148,22 @@ func LoadDefault(path string) (*Dataset, error) {
 		idx = brute
 	}
 
-	return &Dataset{
+	ds := &Dataset{
 		norm:    norm,
 		mccRisk: mccRisk,
 		index:   idx,
-	}, nil
+	}
+
+	// Optional: GBDT pre-filter model (gbdt.bin or model.bin in resources dir)
+	for _, name := range []string{"gbdt.bin", "model.bin"} {
+		gbdtPath := filepath.Join(path, name)
+		if _, err := os.Stat(gbdtPath); err == nil {
+			if g, err := gbdt.Load(gbdtPath); err == nil {
+				ds.gbdt = g
+				break
+			}
+		}
+	}
+
+	return ds, nil
 }

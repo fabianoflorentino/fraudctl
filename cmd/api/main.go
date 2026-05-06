@@ -48,7 +48,7 @@ func main() {
 	}
 	log.Printf("Dataset loaded: %d vectors (%d fraud)", ds.Count(), ds.FraudCount())
 
-	fraudHandler := handler.NewFraudScoreHandler(ds.Vectorizer(), ds.KNN())
+	fraudHandler := handler.NewFraudScoreHandler(ds.Vectorizer(), ds.KNN(), ds.GBDT())
 
 	requestHandler := func(ctx *fasthttp.RequestCtx) {
 		path := ctx.Path()
