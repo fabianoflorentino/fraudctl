@@ -29,19 +29,24 @@ func quantizeFloat32(v float32) int16 {
 	return int16(math.Round(float64(v * int16Scale)))
 }
 
-// BuildIVF builds an IVF index in format v4 (AoS vectors, bit-packed labels).
+// BuildIVF builds an IVF index in format v5 (SoA blocks, bit-packed labels).
 //
 // File layout:
 //
-//	magic    uint32  0x49564649
-//	version  uint32  4
-//	nlist    uint32
-//	dim      uint32  14
-//	n        uint32  total vectors
-//	centroids [nlist*DIM]float32
-//	offsets  [nlist+1]uint32   — vector indices (not block indices)
-//	vectors  [n*DIM]int16      — AoS: vectors[i*DIM+d]
-//	labels   [ceil(n/8)]byte   — bit-packed: bit i%8 of byte i/8
+//	magic       uint32  0x49564649
+//	version     uint32  5
+//	nlist       uint32
+//	dim         uint32  14
+//	n           uint32  total vectors
+//	centroids   [nlist*DIM]float32
+//	offsets     [nlist+1]uint32   — vector indices (not block indices)
+//	blockOff    [nlist+1]uint32   — block indices per cluster
+//	vectors     [nBlocks*DIM*blockSize]int16  — SoA blocks; block[b][d][lane]
+//	            padding: last block has unused lanes filled with int16Pad
+//	labels      [ceil(n/8)]byte   — bit-packed: bit i%8 of byte i/8
+//
+// SoA block layout: block b contains up to blockSize vectors.
+// Within a block: offset of dimension d, lane l = (b*DIM*blockSize + d*blockSize + l) * 2
 func BuildIVF(refsGz, outPath string, nlist, iterations int) error {
 	fmt.Printf("BuildIVF: loading %s ...\n", refsGz)
 
@@ -105,27 +110,57 @@ func BuildIVF(refsGz, outPath string, nlist, iterations int) error {
 		clusterLists[ci] = append(clusterLists[ci], i)
 	}
 
-	// Build AoS vectors and bit-packed labels in cluster order.
-	aosVectors := make([]int16, n*DIM)
-	bitLabels := make([]byte, (n+7)/8)
+	// Build SoA blocks and bit-packed labels in cluster order.
+	// offsets[ci] = first vector index in cluster ci (in vector units)
+	// blockOff[ci] = first block index in cluster ci
 	offsets := make([]uint32, nlist+1)
+	blockOff := make([]uint32, nlist+1)
+	bitLabels := make([]byte, (n+7)/8)
 
-	pos := 0
+	// Count total blocks needed.
+	totalBlocks := 0
 	for ci := 0; ci < nlist; ci++ {
-		offsets[ci] = uint32(pos)
-		for _, vi := range clusterLists[ci] {
-			for d := 0; d < DIM; d++ {
-				aosVectors[pos*DIM+d] = quantizeFloat32(flat[vi*DIM+d])
+		clusterN := len(clusterLists[ci])
+		totalBlocks += (clusterN + blockSize - 1) / blockSize
+	}
+
+	soaBlocks := make([]int16, totalBlocks*DIM*blockSize)
+
+	vecPos := 0
+	blkPos := 0
+	for ci := 0; ci < nlist; ci++ {
+		offsets[ci] = uint32(vecPos)
+		blockOff[ci] = uint32(blkPos)
+		list := clusterLists[ci]
+		for lb := 0; lb < len(list); lb += blockSize {
+			blockBase := blkPos * DIM * blockSize
+			for lane := 0; lane < blockSize; lane++ {
+				vi := -1
+				if lb+lane < len(list) {
+					vi = list[lb+lane]
+				}
+				for d := 0; d < DIM; d++ {
+					idx := blockBase + d*blockSize + lane
+					if vi >= 0 {
+						soaBlocks[idx] = quantizeFloat32(flat[vi*DIM+d])
+					} else {
+						soaBlocks[idx] = int16Pad // padding lane
+					}
+				}
 			}
+			blkPos++
+		}
+		for _, vi := range list {
 			if fraudFlags[vi] {
-				bitLabels[pos>>3] |= 1 << uint(pos&7)
+				bitLabels[vecPos>>3] |= 1 << uint(vecPos&7)
 			}
-			pos++
+			vecPos++
 		}
 	}
-	offsets[nlist] = uint32(pos)
+	offsets[nlist] = uint32(vecPos)
+	blockOff[nlist] = uint32(blkPos)
 
-	fmt.Printf("BuildIVF: writing %s (v4, AoS, bit-packed) ...\n", outPath)
+	fmt.Printf("BuildIVF: writing %s (v5, SoA blocks, bit-packed) ...\n", outPath)
 	out, err := os.Create(outPath)
 	if err != nil {
 		return err
@@ -134,17 +169,18 @@ func BuildIVF(refsGz, outPath string, nlist, iterations int) error {
 
 	write32 := func(v uint32) { binary.Write(out, binary.LittleEndian, v) }
 	write32(ivfMagic)
-	write32(4) // version
+	write32(5) // version
 	write32(uint32(nlist))
 	write32(DIM)
 	write32(uint32(n))
 
 	binary.Write(out, binary.LittleEndian, centroids)
 	binary.Write(out, binary.LittleEndian, offsets)
-	binary.Write(out, binary.LittleEndian, aosVectors)
+	binary.Write(out, binary.LittleEndian, blockOff)
+	binary.Write(out, binary.LittleEndian, soaBlocks)
 	out.Write(bitLabels)
 
-	fmt.Printf("BuildIVF: done. n=%d nlist=%d\n", n, nlist)
+	fmt.Printf("BuildIVF: done. n=%d nlist=%d blocks=%d\n", n, nlist, blkPos)
 	return nil
 }
 

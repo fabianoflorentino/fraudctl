@@ -31,7 +31,7 @@ func BenchmarkIVFPredict(b *testing.B) {
 	}
 }
 
-// buildSmallIVF creates a minimal IVF index in v4 format (AoS, bit-packed labels).
+// buildSmallIVF creates a minimal IVF index in v5 format (SoA blocks, bit-packed labels).
 //
 // 6 vectors total:
 //   cluster 0 (centroid ≈ [1,0,…]): indices 0-2, all fraud
@@ -42,7 +42,6 @@ func buildSmallIVF() *IVFIndex {
 	centroids := make([]float32, nlist*DIM)
 	centroids[0] = 1.0 // centroid 0 near [1,0,...]
 
-	// AoS vectors: cluster 0 first (indices 0,1,2), cluster 1 next (indices 3,4,5)
 	rawVectors := [][DIM]float32{
 		{0.90, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // fraud
 		{0.95, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // fraud
@@ -53,29 +52,62 @@ func buildSmallIVF() *IVFIndex {
 	}
 	fraudLabels := []bool{true, true, true, false, false, false}
 
+	// cluster 0: vecs 0-2 (3 vecs → 1 block); cluster 1: vecs 3-5 (3 vecs → 1 block)
+	clusterLists := [][]int{{0, 1, 2}, {3, 4, 5}}
+
+	offsets := make([]uint32, nlist+1)
+	blockOff := make([]uint32, nlist+1)
+	totalBlocks := 0
+	for ci := 0; ci < nlist; ci++ {
+		totalBlocks += (len(clusterLists[ci]) + blockSize - 1) / blockSize
+	}
+	soaBlocks := make([]int16, totalBlocks*DIM*blockSize)
+
 	n := len(rawVectors)
-	vectors := make([]int16, n*DIM)
 	bitLabels := make([]byte, (n+7)/8)
 
-	for i, v := range rawVectors {
-		for d := 0; d < DIM; d++ {
-			vectors[i*DIM+d] = quantizeFloat32(v[d])
+	vecPos := 0
+	blkPos := 0
+	for ci := 0; ci < nlist; ci++ {
+		offsets[ci] = uint32(vecPos)
+		blockOff[ci] = uint32(blkPos)
+		list := clusterLists[ci]
+		for lb := 0; lb < len(list); lb += blockSize {
+			blockBase := blkPos * DIM * blockSize
+			for lane := 0; lane < blockSize; lane++ {
+				vi := -1
+				if lb+lane < len(list) {
+					vi = list[lb+lane]
+				}
+				for d := 0; d < DIM; d++ {
+					idx := blockBase + d*blockSize + lane
+					if vi >= 0 {
+						soaBlocks[idx] = quantizeFloat32(rawVectors[vi][d])
+					} else {
+						soaBlocks[idx] = int16Pad
+					}
+				}
+			}
+			blkPos++
 		}
-		if fraudLabels[i] {
-			bitLabels[i>>3] |= 1 << uint(i&7)
+		for _, vi := range list {
+			if fraudLabels[vi] {
+				bitLabels[vecPos>>3] |= 1 << uint(vecPos&7)
+			}
+			vecPos++
 		}
 	}
-
-	// offsets: cluster 0 → [0,3), cluster 1 → [3,6)
-	offsets := []uint32{0, 3, 6}
+	offsets[nlist] = uint32(vecPos)
+	blockOff[nlist] = uint32(blkPos)
 
 	return &IVFIndex{
 		nlist:     nlist,
 		nprobe:    2,
 		centroids: centroids,
-		vectors:   vectors,
+		blocks:    soaBlocks,
 		labels:    bitLabels,
 		offsets:   offsets,
+		blockOff:  blockOff,
 	}
 }
 
@@ -99,6 +131,7 @@ func TestIVFIndex_Predict_EmptyIndex(t *testing.T) {
 		nprobe:    1,
 		centroids: make([]float32, DIM),
 		offsets:   []uint32{0, 0},
+		blockOff:  []uint32{0, 0},
 	}
 	var query model.Vector14
 	score := idx.Predict(query, K)
