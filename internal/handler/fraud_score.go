@@ -25,11 +25,6 @@ type KNNIndex interface {
 	NProbe() int
 }
 
-// GBDTPredictor is the GBDT pre-filter model interface.
-type GBDTPredictor interface {
-	Predict(vec [14]float32) float32
-}
-
 const (
 	// knnK is the number of neighbors for KNN lookup.
 	knnK = 5
@@ -39,11 +34,6 @@ const (
 
 	// knnNeighbors matches C K_NEIGHBORS — number of neighbors C collects.
 	knnNeighbors = 5
-
-	// GBDT thresholds: confident-approve and confident-deny zones.
-	// Middle band [gbdtLow, gbdtHigh] falls through to IVF.
-	gbdtLow  = float32(0.35)
-	gbdtHigh = float32(0.65)
 )
 
 var (
@@ -58,20 +48,13 @@ var (
 type FraudScoreHandler struct {
 	vec          Vectorizer
 	knn          KNNIndex
-	gbdt         GBDTPredictor // nil if not loaded
 	requestCount atomic.Uint64
-	ivfCount     atomic.Uint64
 }
 
-func NewFraudScoreHandler(vec Vectorizer, knn KNNIndex, gbdt GBDTPredictor) *FraudScoreHandler {
-	if gbdt != nil {
-		log.Printf("3-tier inference: GBDT pre-filter [<%.2f→approve, >%.2f→deny] + IVF fallback (k=%d threshold=%.1f)",
-			gbdtLow, gbdtHigh, knnK, knnFraudThreshold)
-	} else {
-		log.Printf("KNN-only inference: k=%d fraud_threshold=%.1f (majority vote >=3/%d)",
-			knnK, knnFraudThreshold, knnK)
-	}
-	return &FraudScoreHandler{vec: vec, knn: knn, gbdt: gbdt}
+func NewFraudScoreHandler(vec Vectorizer, knn KNNIndex) *FraudScoreHandler {
+	log.Printf("KNN inference: k=%d fraud_threshold=%.1f (majority vote >=3/%d)",
+		knnK, knnFraudThreshold, knnK)
+	return &FraudScoreHandler{vec: vec, knn: knn}
 }
 
 func (h *FraudScoreHandler) Handle(ctx *fasthttp.RequestCtx) {
@@ -95,37 +78,14 @@ func (h *FraudScoreHandler) Handle(ctx *fasthttp.RequestCtx) {
 	vec := h.vec.Vectorize(req)
 	reqPool.Put(req)
 
+	nprobe := h.knn.NProbe()
+	fraudCount := h.knn.PredictRaw(vec, nprobe)
+	score := float64(fraudCount) / float64(knnNeighbors)
 	var resp []byte
-
-	if h.gbdt != nil {
-		// Tier 1: GBDT fast pre-filter (~1µs)
-		gbdtScore := h.gbdt.Predict(vec)
-		if gbdtScore < gbdtLow {
-			resp = approvedBody
-		} else if gbdtScore > gbdtHigh {
-			resp = disapprovedBody
-		} else {
-			// Tier 2: IVF for ambiguous cases
-			h.ivfCount.Add(1)
-			nprobe := h.knn.NProbe()
-			fraudCount := h.knn.PredictRaw(vec, nprobe)
-			score := float64(fraudCount) / float64(knnNeighbors)
-			if score >= knnFraudThreshold {
-				resp = disapprovedBody
-			} else {
-				resp = approvedBody
-			}
-		}
+	if score >= knnFraudThreshold {
+		resp = disapprovedBody
 	} else {
-		// KNN-only fallback (no GBDT loaded)
-		nprobe := h.knn.NProbe()
-		fraudCount := h.knn.PredictRaw(vec, nprobe)
-		score := float64(fraudCount) / float64(knnNeighbors)
-		if score >= knnFraudThreshold {
-			resp = disapprovedBody
-		} else {
-			resp = approvedBody
-		}
+		resp = approvedBody
 	}
 
 	ctx.SetStatusCode(fasthttp.StatusOK)
@@ -133,6 +93,6 @@ func (h *FraudScoreHandler) Handle(ctx *fasthttp.RequestCtx) {
 	ctx.Write(resp)
 
 	if count := h.requestCount.Add(1); count%10000 == 0 {
-		log.Printf("requests=%d ivf=%d (%.1f%%)", count, h.ivfCount.Load(), float64(h.ivfCount.Load())/float64(count)*100)
+		log.Printf("requests=%d", count)
 	}
 }

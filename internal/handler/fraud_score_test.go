@@ -44,7 +44,7 @@ const validPayload = `{
 }`
 
 func TestFraudScoreHandler_MethodNotAllowed(t *testing.T) {
-	h := NewFraudScoreHandler(&mockVec{}, &mockKNN{0.0}, nil)
+	h := NewFraudScoreHandler(&mockVec{}, &mockKNN{0.0})
 	ctx := newCtx("GET", "")
 	h.Handle(ctx)
 	if ctx.Response.StatusCode() != fasthttp.StatusMethodNotAllowed {
@@ -53,7 +53,7 @@ func TestFraudScoreHandler_MethodNotAllowed(t *testing.T) {
 }
 
 func TestFraudScoreHandler_InvalidJSON(t *testing.T) {
-	h := NewFraudScoreHandler(&mockVec{}, &mockKNN{0.0}, nil)
+	h := NewFraudScoreHandler(&mockVec{}, &mockKNN{0.0})
 	ctx := newCtx("POST", "invalid json")
 	h.Handle(ctx)
 	if ctx.Response.StatusCode() != fasthttp.StatusOK {
@@ -67,7 +67,7 @@ func TestFraudScoreHandler_InvalidJSON(t *testing.T) {
 
 func TestFraudScoreHandler_LegitScore(t *testing.T) {
 	// KNN returns 0.4 → below threshold → approved
-	h := NewFraudScoreHandler(&mockVec{}, &mockKNN{0.4}, nil)
+	h := NewFraudScoreHandler(&mockVec{}, &mockKNN{0.4})
 	ctx := newCtx("POST", validPayload)
 	h.Handle(ctx)
 	if ctx.Response.StatusCode() != fasthttp.StatusOK {
@@ -81,7 +81,7 @@ func TestFraudScoreHandler_LegitScore(t *testing.T) {
 
 func TestFraudScoreHandler_FraudScore(t *testing.T) {
 	// KNN returns 0.6 → at threshold → denied (majority vote >=3/5)
-	h := NewFraudScoreHandler(&mockVec{}, &mockKNN{0.6}, nil)
+	h := NewFraudScoreHandler(&mockVec{}, &mockKNN{0.6})
 	ctx := newCtx("POST", validPayload)
 	h.Handle(ctx)
 	if ctx.Response.StatusCode() != fasthttp.StatusOK {

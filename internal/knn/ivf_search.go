@@ -122,13 +122,15 @@ func selectProbes(centroids []float32, nlist int, query [DIM]float32, nprobe int
 
 // scanCluster scans vectors in blocks of 8 (AoS within block).
 //
-// Block layout: vectors[blockIdx*DIM*blockSize + d*blockSize + lane]
-// This means for a given block, all 8 values of dim d are contiguous.
+// Dimension processing order mirrors the C reference (highest variance first):
 //
-// Two-stage early exit per block:
+//	Stage 1: dims 5,6,2,0,7,1,3,4  (first 8 of C order — maximize early-exit)
+//	Stage 2: dims 8,11,12,9,10,13  (remaining 6)
 //
-//	Stage 1: dims 0-7  — if ALL 8 lanes exceed worst, skip block.
-//	Stage 2: dims 8-13 — complete distance, update top-K.
+// Two-stage block pruning:
+//
+//	Stage 1: if ALL 8 lanes exceed worst, skip block.
+//	Stage 2: complete distance, update top-K.
 func scanCluster(vectors []int16, labels []byte, start, end int, q [DIM]int16, h *topK5) {
 	worst := h.worstDist()
 	nVecs := end - start
@@ -136,77 +138,120 @@ func scanCluster(vectors []int16, labels []byte, start, end int, q [DIM]int16, h
 	// Process full blocks of 8.
 	nBlocks := nVecs / blockSize
 	for b := 0; b < nBlocks; b++ {
-		blockBase := (start + b*blockSize) * DIM // offset into AoS — kept for compat
+		blockBase := (start + b*blockSize) * DIM
 		globalBase := start + b*blockSize
 
-		// Stage 1: dims 0-7 for all 8 lanes.
+		// Stage 1: dims 5,6,2,0,7,1,3,4 for all 8 lanes.
 		var dist1 [blockSize]uint64
 		anyBelow := false
 		for lane := 0; lane < blockSize; lane++ {
 			base := blockBase + lane*DIM
-			v0 := int32(vectors[base+0]) - int32(q[0])
-			v1 := int32(vectors[base+1]) - int32(q[1])
-			v2 := int32(vectors[base+2]) - int32(q[2])
-			v3 := int32(vectors[base+3]) - int32(q[3])
-			v4 := int32(vectors[base+4]) - int32(q[4])
 			v5 := int32(vectors[base+5]) - int32(q[5])
 			v6 := int32(vectors[base+6]) - int32(q[6])
+			v2 := int32(vectors[base+2]) - int32(q[2])
+			v0 := int32(vectors[base+0]) - int32(q[0])
 			v7 := int32(vectors[base+7]) - int32(q[7])
-			d := uint64(v0*v0) + uint64(v1*v1) + uint64(v2*v2) + uint64(v3*v3) +
-				uint64(v4*v4) + uint64(v5*v5) + uint64(v6*v6) + uint64(v7*v7)
+			v1 := int32(vectors[base+1]) - int32(q[1])
+			v3 := int32(vectors[base+3]) - int32(q[3])
+			v4 := int32(vectors[base+4]) - int32(q[4])
+			d := uint64(v5*v5) + uint64(v6*v6) + uint64(v2*v2) + uint64(v0*v0) +
+				uint64(v7*v7) + uint64(v1*v1) + uint64(v3*v3) + uint64(v4*v4)
 			dist1[lane] = d
 			if d < worst {
 				anyBelow = true
 			}
 		}
 		if !anyBelow {
-			continue // entire block pruned
+			continue
 		}
 
-		// Stage 2: dims 8-13 for lanes that passed stage 1.
+		// Stage 2: dims 8,11,12,9,10,13 for lanes that passed stage 1.
 		for lane := 0; lane < blockSize; lane++ {
 			if dist1[lane] >= worst {
 				continue
 			}
 			base := blockBase + lane*DIM
 			v8 := int32(vectors[base+8]) - int32(q[8])
-			v9 := int32(vectors[base+9]) - int32(q[9])
-			v10 := int32(vectors[base+10]) - int32(q[10])
 			v11 := int32(vectors[base+11]) - int32(q[11])
 			v12 := int32(vectors[base+12]) - int32(q[12])
+			v9 := int32(vectors[base+9]) - int32(q[9])
+			v10 := int32(vectors[base+10]) - int32(q[10])
 			v13 := int32(vectors[base+13]) - int32(q[13])
-			dist := dist1[lane] + uint64(v8*v8) + uint64(v9*v9) + uint64(v10*v10) +
-				uint64(v11*v11) + uint64(v12*v12) + uint64(v13*v13)
+			dist := dist1[lane] + uint64(v8*v8) + uint64(v11*v11) + uint64(v12*v12) +
+				uint64(v9*v9) + uint64(v10*v10) + uint64(v13*v13)
 			h.tryInsert(dist, globalBase+lane)
 			worst = h.worstDist()
 		}
 	}
 
 	// Tail: remaining vectors that don't fill a full block.
+	// Scalar loop with per-dim early-exit in C reference order: 5,6,2,0,7,8,11,12,9,10,1,13,3,4
 	tailStart := start + nBlocks*blockSize
 	for i := tailStart; i < end; i++ {
 		base := i * DIM
-		v0 := int32(vectors[base+0]) - int32(q[0])
-		v1 := int32(vectors[base+1]) - int32(q[1])
-		v2 := int32(vectors[base+2]) - int32(q[2])
-		v3 := int32(vectors[base+3]) - int32(q[3])
-		v4 := int32(vectors[base+4]) - int32(q[4])
 		v5 := int32(vectors[base+5]) - int32(q[5])
 		v6 := int32(vectors[base+6]) - int32(q[6])
+		dist := uint64(v5*v5) + uint64(v6*v6)
+		if dist >= worst {
+			continue
+		}
+		v2 := int32(vectors[base+2]) - int32(q[2])
+		dist += uint64(v2 * v2)
+		if dist >= worst {
+			continue
+		}
+		v0 := int32(vectors[base+0]) - int32(q[0])
+		dist += uint64(v0 * v0)
+		if dist >= worst {
+			continue
+		}
 		v7 := int32(vectors[base+7]) - int32(q[7])
-		dist := uint64(v0*v0) + uint64(v1*v1) + uint64(v2*v2) + uint64(v3*v3) +
-			uint64(v4*v4) + uint64(v5*v5) + uint64(v6*v6) + uint64(v7*v7)
+		dist += uint64(v7 * v7)
 		if dist >= worst {
 			continue
 		}
 		v8 := int32(vectors[base+8]) - int32(q[8])
-		v9 := int32(vectors[base+9]) - int32(q[9])
-		v10 := int32(vectors[base+10]) - int32(q[10])
+		dist += uint64(v8 * v8)
+		if dist >= worst {
+			continue
+		}
 		v11 := int32(vectors[base+11]) - int32(q[11])
+		dist += uint64(v11 * v11)
+		if dist >= worst {
+			continue
+		}
 		v12 := int32(vectors[base+12]) - int32(q[12])
+		dist += uint64(v12 * v12)
+		if dist >= worst {
+			continue
+		}
+		v9 := int32(vectors[base+9]) - int32(q[9])
+		dist += uint64(v9 * v9)
+		if dist >= worst {
+			continue
+		}
+		v10 := int32(vectors[base+10]) - int32(q[10])
+		dist += uint64(v10 * v10)
+		if dist >= worst {
+			continue
+		}
+		v1 := int32(vectors[base+1]) - int32(q[1])
+		dist += uint64(v1 * v1)
+		if dist >= worst {
+			continue
+		}
 		v13 := int32(vectors[base+13]) - int32(q[13])
-		dist += uint64(v8*v8) + uint64(v9*v9) + uint64(v10*v10) +
-			uint64(v11*v11) + uint64(v12*v12) + uint64(v13*v13)
+		dist += uint64(v13 * v13)
+		if dist >= worst {
+			continue
+		}
+		v3 := int32(vectors[base+3]) - int32(q[3])
+		dist += uint64(v3 * v3)
+		if dist >= worst {
+			continue
+		}
+		v4 := int32(vectors[base+4]) - int32(q[4])
+		dist += uint64(v4 * v4)
 		h.tryInsert(dist, i)
 		worst = h.worstDist()
 	}
