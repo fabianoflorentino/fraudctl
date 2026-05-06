@@ -4,16 +4,17 @@ High-performance fraud detection API for [Rinha de Backend 2026](https://github.
 
 ## Overview
 
-fraudctl is a pure-Go API that scores credit card transactions for fraud using an IVF (Inverted File Index) KNN search over 3 million labeled reference vectors. The IVF index is built at `docker build` time and baked into the image — startup loads it in ~148ms with zero disk I/O at request time.
+fraudctl is a pure-Go API that scores credit card transactions for fraud using an IVF (Inverted File Index) KNN search over 3 million labeled reference vectors. The IVF index is built at `docker build` time and baked into the image — startup loads it in memory at boot with zero disk I/O at request time.
 
 ### Key Features
 
-- **IVF KNN**: K=300 clusters, nprobe=1 — ~67μs per prediction over 3M vectors
-- **14D Vectorization**: Transaction features normalized to float32[14]
-- **Pure Go**: `CGO_ENABLED=0`, `distroless/static:nonroot` image
+- **IVF KNN v4**: `nlist=4096` clusters, `nprobe=16`, `retryExtra=8` — AoS int16 vectors + bit-packed labels
+- **2-stage early exit**: dims 0–7 screened first; skip vector if partial distance ≥ worst-K
+- **Zero allocations per query**: `0 B/op, 0 allocs/op` (stack-allocated probe arrays)
+- **14D Vectorization**: transaction features normalized to float32[14], quantized to int16 at index time
+- **Pure Go**: `CGO_ENABLED=0`, `distroless/base-debian12` image, no C dependencies
 - **Resource budget**: 2× API (150MB, 0.45 CPU) + nginx (30MB, 0.10 CPU) = 1 CPU / 330MB total
 - **No caching**: prohibited by contest rules; every request goes through KNN
-- **p99 = 112.72ms** (latest official k6 run, 250 VUs)
 
 ## API Endpoints
 
@@ -69,13 +70,13 @@ fraudctl is a pure-Go API that scores credit card transactions for fraud using a
 docker compose up -d
 ```
 
-API available at `http://localhost:9999`. The first `/ready` poll may take up to ~15s while the IVF index loads.
+API available at `http://localhost:9999`.
 
 ### Build from Source
 
 ```bash
-# Build IVF index (writes resources/ivf.bin, ~164MB)
-go run ./cmd/build-index -nlist 300 -iterations 15
+# Build IVF index (writes resources/ivf.bin)
+go run ./cmd/build-index -resources ./resources -nlist 4096 -iterations 25
 
 # Run API
 PORT=9999 RESOURCES=./resources go run ./cmd/api
@@ -86,28 +87,43 @@ PORT=9999 RESOURCES=./resources go run ./cmd/api
 ```
 HTTP Request (JSON)
     ↓
-[nginx] round-robin to API-1 / API-2
+[nginx] round-robin to API-1 / API-2 (Unix Domain Sockets)
     ↓
-[Handler] stream-decode JSON → model.FraudScoreRequest
+[Handler] decode JSON → model.FraudScoreRequest
     ↓
 [Vectorizer] → float32[14]  (pre-computed inverse constants, no division)
     ↓
-[IVFIndex.Predict] → find nearest centroid → scan ~10k cluster vectors
+[IVFIndex.PredictRaw] nprobe=16 clusters → 2-stage scan → topK5 sorted
     ↓
-[Voting] fraud neighbors / K  →  fraud_score  →  approved = score < 0.6
+[Boundary retry] if fraud count in [2,3]: probe 8 extra clusters
+    ↓
+[Voting] fraud neighbors / K=5  →  fraud_score  →  approved = score < 0.6
     ↓
 HTTP Response { approved, fraud_score }
 ```
 
-### IVF Index
+### IVF Index (format v4)
 
 The index is built once at image build time by `cmd/build-index`:
 
 1. Stream `resources/references.json.gz` (3M vectors)
-2. Run parallel k-means (K=300, 15 iterations, `GOMAXPROCS` workers)
-3. Write `resources/ivf.bin` (magic `0x49564649`, version 1, centroids + per-cluster flat float32 + label bytes)
+2. Run parallel k-means (`nlist=4096`, 25 iterations, `GOMAXPROCS` workers, PDE early exit)
+3. Write `resources/ivf.bin` (magic `0x49564649`, version 4):
+   - AoS layout: `vectors[i*DIM+d]` as `int16` (quantized, scale=10000)
+   - Bit-packed labels: `labels[i/8] bit (i%8)`
 
-At startup, `dataset.LoadDefault` memory-maps `ivf.bin` in ~148ms.
+At startup, `dataset.LoadDefault` reads `ivf.bin` into memory.
+
+### IVF Query Path
+
+For each query:
+1. **quantizeQuery**: float32[14] → int16[14]
+2. **selectProbes**: sorted-insertion over all 4096 centroids → top-16 closest (stack array, 0 allocs)
+3. **scanCluster** × 16: for each cluster (~733 vectors each):
+   - Stage 1: compute dims 0–7, skip if `dist ≥ worstK`
+   - Stage 2: compute dims 8–13, update `topK5` sorted array
+4. **Boundary retry**: if `fraudCount ∈ [2,3]`, probe 8 more clusters (edge case accuracy)
+5. Return `fraudCount / 5` as fraud score
 
 ### 14 Dimensions
 
@@ -132,59 +148,48 @@ At startup, `dataset.LoadDefault` memory-maps `ivf.bin` in ~148ms.
 
 | Metric | Value |
 |---|---|
-| IVF build time | ~27s (16 CPUs) |
-| Index load time | ~148ms |
-| KNN predict (IVF, 3M) | ~67μs |
-| HTTP handler p50 | ~50μs |
-| p99 latency (250 VUs) | 112.72ms |
+| IVF build time (16 CPUs, nlist=4096, 25 iter) | ~54s |
+| IVF build time (2 CPUs, CI runner) | ~10min |
+| KNN predict (nlist=512 local, nprobe=16) | ~566µs, 0 allocs |
+| KNN predict (nlist=4096 Docker, nprobe=16) | ~70µs (estimated) |
+| p99 latency (Docker, 0.45 CPU, k6) | ~91ms |
 | HTTP errors | 0% |
-| F1 score | ~97.5% |
-| Memory per instance | ~147MB |
+| Memory per instance | ~150MB |
 
-### Latest Official Result
+### Score History
 
-Run metadata:
+| Version | Official Score | p99 | Notes |
+|---|---|---|---|
+| v1.0.45 | 1650 | 112ms | IVF nlist=300, CGo AVX2 |
+| v1.0.51 | 3443 | — | IVF nlist=1024, CGo AVX2 |
+| v1.0.52 | 3434 | 157ms | IVF nlist=1024, CGo AVX2 (throttled) |
+| v1.0.53+ | TBD | ~91ms | IVF v4 nlist=4096, pure Go, 0 allocs |
 
-- Commit: `c6c61ee`
-- Image: `fabianoflorentino/fraudctl:v1.0.45`
-- Final score: `1650.64`
-- p99 score: `948`
-- Detection score: `702.64`
+### Latest Local Docker Result (nlist=4096, nprobe=16)
 
-Detection breakdown:
-
-- TP: `24019`
-- TN: `28790`
-- FP: `1229`
-- FN: `10`
-- HTTP errors: `0`
-
-Runtime constraints validated:
-
-- nginx: `0.10 CPU`, `30MB`
-- api-1: `0.45 CPU`, `150MB`
-- api-2: `0.45 CPU`, `150MB`
-- Total: `1.00 CPU`, `330MB`
+- p99: `91ms`
+- p99 score: `1039`
+- detection score: `2910` (FP=1, FN=0, weighted_errors=1)
+- **final score: `3949`**
 
 ## Project Structure
 
 ```
 fraudctl/
 ├── cmd/
-│   ├── api/            # HTTP server entrypoint
+│   ├── api/            # HTTP server entrypoint (fasthttp)
 │   └── build-index/    # IVF index builder (runs at docker build time)
 ├── internal/
-│   ├── handler/        # HTTP handler (stream decode + manual JSON encode)
-│   ├── knn/            # IVFIndex + BruteIndex (tests/fallback)
-│   ├── vectorizer/     # 14D float32 vectorization
-│   ├── dataset/        # LoadDefault (ivf.bin fast path → BruteIndex fallback)
+│   ├── handler/        # HTTP handler (fasthttp, pre-allocated JSON responses)
+│   ├── knn/            # IVFIndex (v4 format), BruteAVX2Index, ivf_build, ivf_search
+│   ├── vectorizer/     # 14D float32 vectorization (zero-alloc, inverse constants)
+│   ├── dataset/        # LoadDefault (ivf.bin loader, SetNProbe/SetRetry config)
 │   └── model/          # Vector14, FraudScoreRequest/Response, NormalizationConstants
 ├── resources/          # references.json.gz (3M vectors); ivf.bin (gitignored, built by Docker)
-├── config/             # nginx.conf
-├── scripts/            # docker-up.sh, run-k6-test.sh
+├── scripts/            # docker-up.sh
 ├── docs/               # Architecture, API, detection rules, evaluation
-├── Dockerfile
-└── docker-compose.yml
+├── Dockerfile          # CGO_ENABLED=0, nlist=4096, iterations=25
+└── docker-compose.yml  # 2× API + nginx, UDS sockets, GOMAXPROCS=2, GOGC=off
 ```
 
 ## Documentation

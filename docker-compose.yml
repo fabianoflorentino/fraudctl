@@ -29,7 +29,7 @@ x-api-resources: &api-resources
       memory: 110M
 
 x-api-defaults: &api-defaults
-  image: fabianoflorentino/fraudctl:v1.0.50
+  image: fabianoflorentino/fraudctl:v1.0.53
   volumes:
     - sockets:/sockets
   healthcheck: *api-healthcheck
