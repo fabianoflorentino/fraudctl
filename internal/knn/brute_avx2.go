@@ -1,16 +1,11 @@
 package knn
 
-// #cgo CFLAGS: -march=x86-64-v3 -O3 -flto
-// #cgo LDFLAGS: -lm
-// #include "simd_brute.h"
-import "C"
 import (
 	"encoding/binary"
 	"fmt"
 	"io"
 	"math"
 	"os"
-	"unsafe"
 
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
@@ -58,6 +53,8 @@ func LoadBruteAVX2(path string) (*BruteAVX2Index, error) {
 	return &BruteAVX2Index{data: soa, labels: labels, N: int(N)}, nil
 }
 
+// Predict performs pure-Go brute-force KNN on SoA int16 layout.
+// data layout: data[d*N + i] = quantized dim d of vector i.
 func (idx *BruteAVX2Index) Predict(query model.Vector14, k int) float64 {
 	if idx.N == 0 || idx.data == nil {
 		return 0
@@ -66,41 +63,64 @@ func (idx *BruteAVX2Index) Predict(query model.Vector14, k int) float64 {
 		k = K
 	}
 
-	var qi [DIM]int16
+	var qi [DIM]int32
 	for d := 0; d < DIM; d++ {
-		if query[d] < -1.0 {
-			qi[d] = -int16Scale
-		} else if query[d] > 1.0 {
-			qi[d] = int16Scale
-		} else {
-			qi[d] = int16(math.Round(float64(query[d] * int16Scale)))
+		qi[d] = int32(quantizeFloat32(query[d]))
+	}
+
+	// max-heap of size k tracking worst distance
+	hDist := make([]int32, k)
+	hLbl := make([]byte, k)
+	for i := range hDist {
+		hDist[i] = math.MaxInt32
+	}
+	worst := 0
+
+	for i := 0; i < idx.N; i++ {
+		var dist int32
+		for d := 0; d < DIM; d++ {
+			v := int32(idx.data[d*idx.N+i])
+			diff := v - qi[d]
+			dist += diff * diff
+		}
+		if dist < hDist[worst] {
+			hDist[worst] = dist
+			hLbl[worst] = idx.labels[i]
+			// find new worst
+			wv, wi := hDist[0], 0
+			for j := 1; j < k; j++ {
+				if hDist[j] > wv {
+					wv = hDist[j]
+					wi = j
+				}
+			}
+			worst = wi
 		}
 	}
 
-	var fraudCount C.int
-	var qiC [DIM]C.int16_t
-	for d := 0; d < DIM; d++ {
-		qiC[d] = C.int16_t(qi[d])
+	fraudCount := 0
+	for i := 0; i < k; i++ {
+		if hDist[i] != math.MaxInt32 && hLbl[i] == 1 {
+			fraudCount++
+		}
 	}
-
-	C.brute_fraud_count_avx2(
-		(*C.int16_t)(unsafe.Pointer(&idx.data[0])),
-		(*C.uint8_t)(unsafe.Pointer(&idx.labels[0])),
-		C.int(idx.N),
-		(*C.int16_t)(unsafe.Pointer(&qiC[0])),
-		C.int(k),
-		&fraudCount,
-	)
-
-	return float64(fraudCount) / float64(k)
+	filled := 0
+	for i := 0; i < k; i++ {
+		if hDist[i] != math.MaxInt32 {
+			filled++
+		}
+	}
+	if filled == 0 {
+		return 0
+	}
+	return float64(fraudCount) / float64(filled)
 }
 
-func (idx *BruteAVX2Index) Count() int     { return idx.N }
-func (idx *BruteAVX2Index) NProbe() int    { return 0 }
+func (idx *BruteAVX2Index) Count() int  { return idx.N }
+func (idx *BruteAVX2Index) NProbe() int { return 0 }
 func (idx *BruteAVX2Index) PredictRaw(query model.Vector14, _ int) int {
-	const k = 5
-	score := idx.Predict(query, k)
-	return int(math.Round(score * float64(k)))
+	score := idx.Predict(query, K)
+	return int(math.Round(score * float64(K)))
 }
 func (idx *BruteAVX2Index) FraudCount() int {
 	n := 0

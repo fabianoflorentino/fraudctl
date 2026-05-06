@@ -1,15 +1,10 @@
 // Package knn implements k-nearest-neighbor search over 14-dimensional vectors.
 package knn
 
-// #cgo CFLAGS: -march=x86-64-v3 -O3 -flto
-// #cgo LDFLAGS: -lm
-// #include "simd_knn.h"
-import "C"
 import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"time"
 	"unsafe"
@@ -160,49 +155,9 @@ func LoadIVF(path string) (*IVFIndex, error) {
 	return idx, nil
 }
 
-// quantize converts a float32 vector to int16 scaled by int16Scale.
-func quantize(query model.Vector14) [14]C.int16_t {
-	var qiC [14]C.int16_t
-	for d := 0; d < 14; d++ {
-		v := query[d]
-		var s int16
-		if v < -1.0 {
-			s = -int16Scale
-		} else if v > 1.0 {
-			s = int16Scale
-		} else {
-			s = int16(math.Round(float64(v * int16Scale)))
-		}
-		qiC[d] = C.int16_t(s)
-	}
-	return qiC
-}
-
-// PredictRaw returns the raw fraud neighbor count (0..K_NEIGHBORS) using
-// incremental boundary retry: if the result is in [boundaryLo, boundaryHi],
-// retryExtra additional clusters are scanned on top of the initial nprobe.
-func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
-	if len(idx.blocks) == 0 {
-		return 0
-	}
-	qiC := quantize(query)
-	var fraudCount C.int
-	C.knn_fraud_count_retry(
-		(*C.int16_t)(unsafe.Pointer(&idx.blocks[0])),
-		(*C.uint8_t)(unsafe.Pointer(&idx.labels[0])),
-		(*C.uint32_t)(unsafe.Pointer(&idx.offsets[0])),
-		(*C.float)(unsafe.Pointer(&idx.centroids[0])),
-		C.int(idx.nlist),
-		C.int(nprobe),
-		C.int(idx.retryExtra),
-		C.int(idx.boundaryLo),
-		C.int(idx.boundaryHi),
-		(*C.int16_t)(unsafe.Pointer(&qiC[0])),
-		&fraudCount,
-	)
-	return int(fraudCount)
-}
-
+// PredictRaw returns the raw fraud neighbor count (0..K) using the pure-Go
+// IVF search with incremental boundary retry.
+// The actual search is implemented in ivf_search.go.
 func (idx *IVFIndex) Predict(query model.Vector14, k int) float64 {
 	return float64(idx.PredictRaw(query, idx.nprobe)) / float64(K)
 }
