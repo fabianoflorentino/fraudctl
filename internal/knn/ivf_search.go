@@ -23,8 +23,8 @@ import (
 )
 
 const (
-	fastNProbe = 8
-	fullNProbe = 24
+	fastNProbe = 16
+	fullNProbe = 32
 	blockSize  = 8 // vectors per scan block
 )
 
