@@ -11,5 +11,4 @@ require (
 	github.com/andybalholm/brotli v1.2.1 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
-	golang.org/x/sys v0.43.0 // indirect
 )

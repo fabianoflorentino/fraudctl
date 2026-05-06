@@ -11,19 +11,17 @@ import (
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
 
-// IVFIndex holds the IVF index in format v5:
-//   blocks:    SoA blocks of blockSize=8 vectors, layout blocks[b*DIM*blockSize + d*blockSize + lane]
-//   labels:    bit-packed, labels[i/8] bit (i%8) == 1 → fraud  (indexed by vector order within cluster)
-//   offsets:   offsets[ci]..offsets[ci+1] are the global vector indices for cluster ci
-//   blockOff:  blockOff[ci]..blockOff[ci+1] are the block indices for cluster ci
+// IVFIndex holds the IVF index in format v4:
+//   vectors: AoS int16, layout vectors[i*DIM + d]
+//   labels:  bit-packed, labels[i/8] bit (i%8) == 1 → fraud
+//   offsets: offsets[ci]..offsets[ci+1] are the global vector indices for cluster ci
 type IVFIndex struct {
-	centroids []float32
-	blocks    []int16  // SoA blocks: [totalBlocks * DIM * blockSize]
-	labels    []byte   // bit-packed: [ceil(N/8)]
-	offsets   []uint32 // vector offsets per cluster [nlist+1]
-	blockOff  []uint32 // block offsets per cluster [nlist+1]
-	nlist     int
-	nprobe    int
+	centroids  []float32
+	vectors    []int16 // AoS: [N * DIM]
+	labels     []byte  // bit-packed: [ceil(N/8)]
+	offsets    []uint32
+	nlist      int
+	nprobe     int
 	retryExtra int
 	boundaryLo int
 	boundaryHi int
@@ -47,7 +45,7 @@ func (idx *IVFIndex) SetRetry(retryExtra, lo, hi int) {
 
 func NewIVFIndex() *IVFIndex { return &IVFIndex{} }
 
-// LoadIVF loads an IVF index in format v5 (SoA blocks, bit-packed labels).
+// LoadIVF loads an IVF index in format v4 (AoS, bit-packed labels).
 func LoadIVF(path string) (*IVFIndex, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -59,8 +57,8 @@ func LoadIVF(path string) (*IVFIndex, error) {
 	if err := binary.Read(f, binary.LittleEndian, &magic); err != nil || magic != ivfMagic {
 		return nil, fmt.Errorf("invalid ivf magic (got 0x%08x)", magic)
 	}
-	if err := binary.Read(f, binary.LittleEndian, &version); err != nil || version != 5 {
-		return nil, fmt.Errorf("unsupported ivf version %d (expected 5)", version)
+	if err := binary.Read(f, binary.LittleEndian, &version); err != nil || version != 4 {
+		return nil, fmt.Errorf("unsupported ivf version %d (expected 4)", version)
 	}
 	if err := binary.Read(f, binary.LittleEndian, &nlist); err != nil {
 		return nil, fmt.Errorf("read nlist: %w", err)
@@ -69,6 +67,7 @@ func LoadIVF(path string) (*IVFIndex, error) {
 		return nil, fmt.Errorf("expected dim=14, got %d", dim)
 	}
 
+	// Total number of vectors
 	var n uint32
 	if err := binary.Read(f, binary.LittleEndian, &n); err != nil {
 		return nil, fmt.Errorf("read n: %w", err)
@@ -80,23 +79,16 @@ func LoadIVF(path string) (*IVFIndex, error) {
 		return nil, fmt.Errorf("read centroids: %w", err)
 	}
 
-	// Vector offsets: (nlist+1) uint32
+	// Offsets: (nlist+1) uint32
 	offsets := make([]uint32, nlist+1)
 	if err := binary.Read(f, binary.LittleEndian, offsets); err != nil {
 		return nil, fmt.Errorf("read offsets: %w", err)
 	}
 
-	// Block offsets: (nlist+1) uint32
-	blockOff := make([]uint32, nlist+1)
-	if err := binary.Read(f, binary.LittleEndian, blockOff); err != nil {
-		return nil, fmt.Errorf("read blockOff: %w", err)
-	}
-
-	// SoA blocks
-	totalBlocks := int(blockOff[nlist])
-	blocks := make([]int16, totalBlocks*DIM*blockSize)
-	if err := binary.Read(f, binary.LittleEndian, blocks); err != nil {
-		return nil, fmt.Errorf("read blocks: %w", err)
+	// Vectors: n * DIM int16 (AoS)
+	vectors := make([]int16, int(n)*DIM)
+	if err := binary.Read(f, binary.LittleEndian, vectors); err != nil {
+		return nil, fmt.Errorf("read vectors: %w", err)
 	}
 
 	// Labels: ceil(n/8) bytes, bit-packed
@@ -110,15 +102,14 @@ func LoadIVF(path string) (*IVFIndex, error) {
 		nlist:     int(nlist),
 		nprobe:    16,
 		centroids: centroids,
-		blocks:    blocks,
+		vectors:   vectors,
 		labels:    labels,
 		offsets:   offsets,
-		blockOff:  blockOff,
 	}
 
 	// Pre-touch all pages to avoid page faults during queries.
-	for i := 0; i < len(blocks); i += 4096 {
-		_ = blocks[i]
+	for i := 0; i < len(vectors); i += 4096 {
+		_ = vectors[i]
 	}
 	for i := 0; i < len(labels); i += 4096 {
 		_ = labels[i]
@@ -129,8 +120,8 @@ func LoadIVF(path string) (*IVFIndex, error) {
 		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
-			for i := 0; i < len(blocks); i += 2048 {
-				_ = blocks[i]
+			for i := 0; i < len(vectors); i += 2048 {
+				_ = vectors[i]
 			}
 		}
 	}()
@@ -142,7 +133,8 @@ func (idx *IVFIndex) Predict(query model.Vector14, k int) float64 {
 	return float64(idx.PredictRaw(query, idx.nprobe)) / float64(K)
 }
 
-// Count returns approximate total number of vectors.
+// Count returns approximate total number of vectors (last offset value × 1,
+// since offsets are in vector units in v4).
 func (idx *IVFIndex) Count() int {
 	return int(idx.offsets[idx.nlist])
 }

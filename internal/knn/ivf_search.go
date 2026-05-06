@@ -1,22 +1,21 @@
-// Package knn — pure-Go IVF search with optional AVX2 acceleration.
+// Package knn — pure-Go IVF search (no CGo).
 //
-// Format v5 layout (SoA blocks, bit-packed labels):
+// Format v4 layout (AoS, bit-packed labels):
 //
-//	blocks[b*DIM*blockSize + d*blockSize + lane]  — quantized int16, SoA within each block
-//	labels bit-packed   — labels[i/8] bit (i%8) == 1 → fraud (indexed by vector order in cluster)
+//	vectors[i*DIM + d]  — quantized int16, AoS order within each cluster
+//	labels bit-packed   — labels[i/8] bit (i%8) == 1 → fraud
 //
 // Algorithm per query:
 //  1. Sorted-insertion top-nprobe centroid selection.
-//  2. For each probe cluster, scan SoA blocks:
-//     AVX2: scanBlock32AVX2 (4 blocks=32 vecs) or scanBlock8AVX2 (1 block=8 vecs).
-//     Scalar fallback: 2-stage early exit per vector.
+//  2. For each probe cluster, iterate vectors sequentially.
+//     Stage 1: compute dims 0-7, early-exit if dist ≥ worst-K.
+//     Stage 2: compute dims 8-13, update top-K heap.
 //  3. Boundary retry if fraud count in [lo, hi].
 //  4. Return raw fraud count (0..K).
 package knn
 
 import (
 	"math"
-	"unsafe"
 
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
@@ -111,107 +110,48 @@ func selectProbes(centroids []float32, nlist int, query [DIM]float32, nprobe int
 	}
 }
 
-// scanCluster scans a cluster's SoA blocks and updates h.
-// If AVX2 is available, uses scanBlock32AVX2/scanBlock8AVX2; otherwise scalar fallback.
+// scanCluster scans vectors [start, end) in AoS layout and updates h.
 //
-// vecStart/vecEnd: vector indices (relative to the overall labels array).
-// blkStart/blkEnd: block indices into idx.blocks.
-func scanCluster(idx *IVFIndex, vecStart, vecEnd, blkStart, blkEnd int, q [DIM]int16, h *topK5) {
-	if vecStart >= vecEnd {
-		return
-	}
-	if useAVX2 {
-		scanClusterAVX2(idx, vecStart, vecEnd, blkStart, blkEnd, q, h)
-	} else {
-		scanClusterScalar(idx.blocks, idx.labels, vecStart, vecEnd, blkStart, blkEnd, q, h)
-	}
-}
-
-// scanClusterAVX2 uses SIMD to process 32 or 8 vectors per call.
-func scanClusterAVX2(idx *IVFIndex, vecStart, vecEnd, blkStart, blkEnd int, q [DIM]int16, h *topK5) {
-	var dist32 [32]uint64
-	blocks := unsafe.Pointer(unsafe.SliceData(idx.blocks))
-
-	b := blkStart
-	for ; b+4 <= blkEnd; b += 4 {
-		blockPtr := unsafe.Add(blocks, b*DIM*blockSize*2)
-		scanBlock32AVX2(&q[0], blockPtr, &dist32[0])
-		rowBase := vecStart + (b-blkStart)*blockSize
-		lanes := 32
-		if remaining := vecEnd - rowBase; remaining < lanes {
-			lanes = remaining
-		}
-		worst := h.worstDist()
-		for lane := 0; lane < lanes; lane++ {
-			d := dist32[lane]
-			if d < worst {
-				vi := rowBase + lane
-				h.tryInsert(d, vi)
-				worst = h.worstDist()
-			}
-		}
-	}
-
-	var dist8 [8]uint64
-	for ; b < blkEnd; b++ {
-		blockPtr := unsafe.Add(blocks, b*DIM*blockSize*2)
-		scanBlock8AVX2(&q[0], blockPtr, &dist8[0])
-		rowBase := vecStart + (b-blkStart)*blockSize
-		lanes := blockSize
-		if remaining := vecEnd - rowBase; remaining < lanes {
-			lanes = remaining
-		}
-		worst := h.worstDist()
-		for lane := 0; lane < lanes; lane++ {
-			d := dist8[lane]
-			if d < worst {
-				vi := rowBase + lane
-				h.tryInsert(d, vi)
-				worst = h.worstDist()
-			}
-		}
-	}
-}
-
-// scanClusterScalar is the scalar fallback for non-AVX2 systems.
-// Reads from SoA blocks with 2-stage early exit.
-func scanClusterScalar(blocks []int16, labels []byte, vecStart, vecEnd, blkStart, blkEnd int, q [DIM]int16, h *topK5) {
+// vectors layout: vectors[(globalVecIdx)*DIM + d]
+// labels  layout: bit-packed, labels[globalVecIdx/8] bit (globalVecIdx%8)
+//
+// Two-stage early exit (inspired by xgboost-go reference):
+//   Stage 1: dims 0–7  → if dist ≥ worst, skip vector entirely.
+//   Stage 2: dims 8–13 → complete the distance.
+func scanCluster(vectors []int16, labels []byte, start, end int, q [DIM]int16, h *topK5) {
 	worst := h.worstDist()
-	for b := blkStart; b < blkEnd; b++ {
-		blockBase := b * DIM * blockSize
-		rowBase := vecStart + (b-blkStart)*blockSize
-		lanes := blockSize
-		if remaining := vecEnd - rowBase; remaining < lanes {
-			lanes = remaining
+
+	for i := start; i < end; i++ {
+		base := i * DIM
+
+		// Stage 1: dims 0-7
+		v0 := int32(vectors[base+0]) - int32(q[0])
+		v1 := int32(vectors[base+1]) - int32(q[1])
+		v2 := int32(vectors[base+2]) - int32(q[2])
+		v3 := int32(vectors[base+3]) - int32(q[3])
+		v4 := int32(vectors[base+4]) - int32(q[4])
+		v5 := int32(vectors[base+5]) - int32(q[5])
+		v6 := int32(vectors[base+6]) - int32(q[6])
+		v7 := int32(vectors[base+7]) - int32(q[7])
+		dist := uint64(v0*v0) + uint64(v1*v1) + uint64(v2*v2) + uint64(v3*v3) +
+			uint64(v4*v4) + uint64(v5*v5) + uint64(v6*v6) + uint64(v7*v7)
+
+		if dist >= worst {
+			continue
 		}
-		for lane := 0; lane < lanes; lane++ {
-			// Stage 1: dims 0-7
-			v0 := int32(blocks[blockBase+0*blockSize+lane]) - int32(q[0])
-			v1 := int32(blocks[blockBase+1*blockSize+lane]) - int32(q[1])
-			v2 := int32(blocks[blockBase+2*blockSize+lane]) - int32(q[2])
-			v3 := int32(blocks[blockBase+3*blockSize+lane]) - int32(q[3])
-			v4 := int32(blocks[blockBase+4*blockSize+lane]) - int32(q[4])
-			v5 := int32(blocks[blockBase+5*blockSize+lane]) - int32(q[5])
-			v6 := int32(blocks[blockBase+6*blockSize+lane]) - int32(q[6])
-			v7 := int32(blocks[blockBase+7*blockSize+lane]) - int32(q[7])
-			dist := uint64(v0*v0) + uint64(v1*v1) + uint64(v2*v2) + uint64(v3*v3) +
-				uint64(v4*v4) + uint64(v5*v5) + uint64(v6*v6) + uint64(v7*v7)
-			if dist >= worst {
-				continue
-			}
-			// Stage 2: dims 8-13
-			v8 := int32(blocks[blockBase+8*blockSize+lane]) - int32(q[8])
-			v9 := int32(blocks[blockBase+9*blockSize+lane]) - int32(q[9])
-			v10 := int32(blocks[blockBase+10*blockSize+lane]) - int32(q[10])
-			v11 := int32(blocks[blockBase+11*blockSize+lane]) - int32(q[11])
-			v12 := int32(blocks[blockBase+12*blockSize+lane]) - int32(q[12])
-			v13 := int32(blocks[blockBase+13*blockSize+lane]) - int32(q[13])
-			dist += uint64(v8*v8) + uint64(v9*v9) + uint64(v10*v10) +
-				uint64(v11*v11) + uint64(v12*v12) + uint64(v13*v13)
-			vi := rowBase + lane
-			h.tryInsert(dist, vi)
-			worst = h.worstDist()
-		}
+
+		// Stage 2: dims 8-13
+		v8 := int32(vectors[base+8]) - int32(q[8])
+		v9 := int32(vectors[base+9]) - int32(q[9])
+		v10 := int32(vectors[base+10]) - int32(q[10])
+		v11 := int32(vectors[base+11]) - int32(q[11])
+		v12 := int32(vectors[base+12]) - int32(q[12])
+		v13 := int32(vectors[base+13]) - int32(q[13])
+		dist += uint64(v8*v8) + uint64(v9*v9) + uint64(v10*v10) +
+			uint64(v11*v11) + uint64(v12*v12) + uint64(v13*v13)
+
+		h.tryInsert(dist, i)
+		worst = h.worstDist()
 	}
 }
 
@@ -233,10 +173,10 @@ func quantizeQuery(query model.Vector14) [DIM]int16 {
 	return q
 }
 
-// PredictRaw returns the raw fraud neighbour count (0..K) using IVF search
-// with optional AVX2 acceleration and incremental boundary retry.
+// PredictRaw returns the raw fraud neighbour count (0..K) using pure-Go IVF
+// search with incremental boundary retry.
 func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
-	if len(idx.blocks) == 0 {
+	if len(idx.vectors) == 0 {
 		return 0
 	}
 
@@ -262,11 +202,12 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 
 	for pi := 0; pi < nprobe; pi++ {
 		ci := probes[pi]
-		vecStart := int(idx.offsets[ci])
-		vecEnd := int(idx.offsets[ci+1])
-		blkStart := int(idx.blockOff[ci])
-		blkEnd := int(idx.blockOff[ci+1])
-		scanCluster(idx, vecStart, vecEnd, blkStart, blkEnd, qi, &h)
+		start := int(idx.offsets[ci])
+		end := int(idx.offsets[ci+1])
+		if start == end {
+			continue
+		}
+		scanCluster(idx.vectors, idx.labels, start, end, qi, &h)
 	}
 
 	fraud := h.fraudCount(idx.labels)
@@ -274,11 +215,12 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 	if idx.retryExtra > 0 && fraud >= idx.boundaryLo && fraud <= idx.boundaryHi {
 		for pi := nprobe; pi < totalProbes; pi++ {
 			ci := probes[pi]
-			vecStart := int(idx.offsets[ci])
-			vecEnd := int(idx.offsets[ci+1])
-			blkStart := int(idx.blockOff[ci])
-			blkEnd := int(idx.blockOff[ci+1])
-			scanCluster(idx, vecStart, vecEnd, blkStart, blkEnd, qi, &h)
+			start := int(idx.offsets[ci])
+			end := int(idx.offsets[ci+1])
+			if start == end {
+				continue
+			}
+			scanCluster(idx.vectors, idx.labels, start, end, qi, &h)
 		}
 		fraud = h.fraudCount(idx.labels)
 	}
