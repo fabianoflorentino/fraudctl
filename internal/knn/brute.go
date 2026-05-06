@@ -11,16 +11,20 @@ import (
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
 
-// IVFIndex holds the IVF index in format v4:
+// IVFIndex holds the IVF index in format v5:
 //   centroids: SoA — centroids[d*nlist + ci] (transposed on load for cache-friendly selectProbes)
 //   vectors:   AoS int16, layout vectors[i*DIM + d]
 //   labels:    bit-packed, labels[i/8] bit (i%8) == 1 → fraud
 //   offsets:   offsets[ci]..offsets[ci+1] are the global vector indices for cluster ci
+//   bboxMin:   AoI int16 — bboxMin[ci*DIM+d] = min quantized value in dim d for cluster ci
+//   bboxMax:   AoI int16 — bboxMax[ci*DIM+d] = max quantized value in dim d for cluster ci
 type IVFIndex struct {
 	centroids  []float32 // SoA: [DIM * nlist], indexed as centroids[d*nlist + ci]
 	vectors    []int16   // AoS: [N * DIM]
 	labels     []byte    // bit-packed: [ceil(N/8)]
 	offsets    []uint32
+	bboxMin    []int16 // AoI: [nlist * DIM]
+	bboxMax    []int16 // AoI: [nlist * DIM]
 	nlist      int
 	nprobe     int
 	retryExtra int
@@ -46,7 +50,7 @@ func (idx *IVFIndex) SetRetry(retryExtra, lo, hi int) {
 
 func NewIVFIndex() *IVFIndex { return &IVFIndex{} }
 
-// LoadIVF loads an IVF index in format v4 (AoS, bit-packed labels).
+// LoadIVF loads an IVF index in format v5 (AoS, bit-packed labels, bbox per cluster).
 func LoadIVF(path string) (*IVFIndex, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -58,8 +62,8 @@ func LoadIVF(path string) (*IVFIndex, error) {
 	if err := binary.Read(f, binary.LittleEndian, &magic); err != nil || magic != ivfMagic {
 		return nil, fmt.Errorf("invalid ivf magic (got 0x%08x)", magic)
 	}
-	if err := binary.Read(f, binary.LittleEndian, &version); err != nil || version != 4 {
-		return nil, fmt.Errorf("unsupported ivf version %d (expected 4)", version)
+	if err := binary.Read(f, binary.LittleEndian, &version); err != nil || version != 5 {
+		return nil, fmt.Errorf("unsupported ivf version %d (expected 5)", version)
 	}
 	if err := binary.Read(f, binary.LittleEndian, &nlist); err != nil {
 		return nil, fmt.Errorf("read nlist: %w", err)
@@ -93,6 +97,16 @@ func LoadIVF(path string) (*IVFIndex, error) {
 		return nil, fmt.Errorf("read offsets: %w", err)
 	}
 
+	// BBox: nlist * DIM int16 each
+	bboxMin := make([]int16, int(nlist)*DIM)
+	if err := binary.Read(f, binary.LittleEndian, bboxMin); err != nil {
+		return nil, fmt.Errorf("read bbox_min: %w", err)
+	}
+	bboxMax := make([]int16, int(nlist)*DIM)
+	if err := binary.Read(f, binary.LittleEndian, bboxMax); err != nil {
+		return nil, fmt.Errorf("read bbox_max: %w", err)
+	}
+
 	// Vectors: n * DIM int16 (AoS)
 	vectors := make([]int16, int(n)*DIM)
 	if err := binary.Read(f, binary.LittleEndian, vectors); err != nil {
@@ -113,6 +127,8 @@ func LoadIVF(path string) (*IVFIndex, error) {
 		vectors:   vectors,
 		labels:    labels,
 		offsets:   offsets,
+		bboxMin:   bboxMin,
+		bboxMax:   bboxMax,
 	}
 
 	// Pre-touch all pages to avoid page faults during queries.

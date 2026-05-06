@@ -29,17 +29,19 @@ func quantizeFloat32(v float32) int16 {
 	return int16(math.Round(float64(v * int16Scale)))
 }
 
-// BuildIVF builds an IVF index in format v4 (AoS vectors, bit-packed labels).
+// BuildIVF builds an IVF index in format v5 (AoS vectors, bit-packed labels, bbox per cluster).
 //
 // File layout:
 //
 //	magic    uint32  0x49564649
-//	version  uint32  4
+//	version  uint32  5
 //	nlist    uint32
 //	dim      uint32  14
 //	n        uint32  total vectors
 //	centroids [nlist*DIM]float32
 //	offsets  [nlist+1]uint32   — vector indices (not block indices)
+//	bbox_min [nlist*DIM]int16  — per-cluster min per dimension (quantized)
+//	bbox_max [nlist*DIM]int16  — per-cluster max per dimension (quantized)
 //	vectors  [n*DIM]int16      — AoS: vectors[i*DIM+d]
 //	labels   [ceil(n/8)]byte   — bit-packed: bit i%8 of byte i/8
 func BuildIVF(refsGz, outPath string, nlist, iterations int) error {
@@ -105,27 +107,49 @@ func BuildIVF(refsGz, outPath string, nlist, iterations int) error {
 		clusterLists[ci] = append(clusterLists[ci], i)
 	}
 
-	// Build AoS vectors and bit-packed labels in cluster order.
+	// Build AoS vectors, bit-packed labels, and bbox per cluster.
 	aosVectors := make([]int16, n*DIM)
 	bitLabels := make([]byte, (n+7)/8)
 	offsets := make([]uint32, nlist+1)
+	bboxMin := make([]int16, nlist*DIM)
+	bboxMax := make([]int16, nlist*DIM)
+
+	// Initialize bbox to extreme values.
+	for i := range bboxMin {
+		bboxMin[i] = math.MaxInt16
+		bboxMax[i] = math.MinInt16
+	}
 
 	pos := 0
 	for ci := 0; ci < nlist; ci++ {
 		offsets[ci] = uint32(pos)
 		for _, vi := range clusterLists[ci] {
 			for d := 0; d < DIM; d++ {
-				aosVectors[pos*DIM+d] = quantizeFloat32(flat[vi*DIM+d])
+				q := quantizeFloat32(flat[vi*DIM+d])
+				aosVectors[pos*DIM+d] = q
+				if q < bboxMin[ci*DIM+d] {
+					bboxMin[ci*DIM+d] = q
+				}
+				if q > bboxMax[ci*DIM+d] {
+					bboxMax[ci*DIM+d] = q
+				}
 			}
 			if fraudFlags[vi] {
 				bitLabels[pos>>3] |= 1 << uint(pos&7)
 			}
 			pos++
 		}
+		// Empty cluster: set bbox to zero range.
+		if offsets[ci] == uint32(pos) {
+			for d := 0; d < DIM; d++ {
+				bboxMin[ci*DIM+d] = 0
+				bboxMax[ci*DIM+d] = 0
+			}
+		}
 	}
 	offsets[nlist] = uint32(pos)
 
-	fmt.Printf("BuildIVF: writing %s (v4, AoS, bit-packed) ...\n", outPath)
+	fmt.Printf("BuildIVF: writing %s (v5, AoS, bit-packed, bbox) ...\n", outPath)
 	out, err := os.Create(outPath)
 	if err != nil {
 		return err
@@ -134,13 +158,15 @@ func BuildIVF(refsGz, outPath string, nlist, iterations int) error {
 
 	write32 := func(v uint32) { binary.Write(out, binary.LittleEndian, v) }
 	write32(ivfMagic)
-	write32(4) // version
+	write32(5) // version
 	write32(uint32(nlist))
 	write32(DIM)
 	write32(uint32(n))
 
 	binary.Write(out, binary.LittleEndian, centroids)
 	binary.Write(out, binary.LittleEndian, offsets)
+	binary.Write(out, binary.LittleEndian, bboxMin)
+	binary.Write(out, binary.LittleEndian, bboxMax)
 	binary.Write(out, binary.LittleEndian, aosVectors)
 	out.Write(bitLabels)
 

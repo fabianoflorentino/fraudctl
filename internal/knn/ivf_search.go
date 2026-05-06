@@ -3,28 +3,32 @@
 // Format v5 layout:
 //
 //	centroids: SoA — centroids[d*nlist + ci] (dim-major, cache-friendly for selectProbes)
+//	bbox_min:  AoI int16 — bboxMin[ci*DIM+d]
+//	bbox_max:  AoI int16 — bboxMax[ci*DIM+d]
 //	vectors:   AoS blocks of 8 — vectors[blockIdx*DIM*8 + d*8 + lane]
 //	labels:    bit-packed — labels[i/8] bit (i%8) == 1 → fraud
 //
 // Algorithm per query:
 //  1. selectProbes: SoA centroid scan — processes all nlist centroids dim-by-dim.
-//  2. Two-pass adaptive:
-//     Pass 1: FAST_NPROBE=8 clusters.  If fraud ∉ {2,3} → done.
-//     Pass 2: FULL_NPROBE=24 clusters (adds 16 more).
+//  2. Two-pass adaptive (correct):
+//     Pass 1: select fastNProbe clusters → scan.  If fraud ∉ {2,3} → done.
+//     Pass 2: select fullNProbe clusters → scan only the NEW ones (fastNProbe..fullNProbe).
 //  3. scanCluster: blocks of 8 vectors.
 //     Stage 1: dims 0-7  → if ALL 8 exceed worst, skip block.
 //     Stage 2: dims 8-13 → complete distance, update top-K.
+//  4. bbox pruning: before scanCluster, check bounding box lower-bound vs worst_d.
 package knn
 
 import (
 	"math"
+	"unsafe"
 
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
 
 const (
-	fastNProbe = 16
-	fullNProbe = 32
+	fastNProbe = 8
+	fullNProbe = 24
 	blockSize  = 8 // vectors per scan block
 )
 
@@ -77,6 +81,33 @@ func (h *topK5) fraudCount(labels []byte) int {
 }
 
 const maxProbes = 32
+
+// bboxMayImprove returns true if the cluster's bounding box could contain a
+// vector closer than worstDist to the query. Uses the same dim ordering as
+// scanCluster (highest-variance dims first) for early exit.
+// bboxMin/bboxMax are AoI: [nlist*DIM], indexed as [ci*DIM+d].
+func bboxMayImprove(bboxMin, bboxMax []int16, ci int, q [DIM]int16, worstDist uint64) bool {
+	base := ci * DIM
+	var d uint64
+	// Unrolled in high-variance dim order: 5,6,2,0,7,8,11,12,9,10,1,13,3,4
+	// Each iteration: clamp to box, accumulate, early-exit.
+	for _, dim := range [DIM]int{5, 6, 2, 0, 7, 8, 11, 12, 9, 10, 1, 13, 3, 4} {
+		mn := bboxMin[base+dim]
+		mx := bboxMax[base+dim]
+		qv := q[dim]
+		var diff int32
+		if qv < mn {
+			diff = int32(mn) - int32(qv)
+		} else if qv > mx {
+			diff = int32(qv) - int32(mx)
+		}
+		d += uint64(diff * diff)
+		if d >= worstDist {
+			return false
+		}
+	}
+	return true
+}
 
 // selectProbes uses SoA centroid layout: centroids[d*nlist + ci].
 // Processing one dimension at a time is cache-friendly (stride-1 reads).
@@ -274,10 +305,10 @@ func quantizeQuery(query model.Vector14) [DIM]int16 {
 	return q
 }
 
-// PredictRaw uses two-pass adaptive IVF:
+// PredictRaw uses two-pass adaptive IVF with bbox pruning:
 //
-//	Pass 1: fastNProbe=8  clusters → if fraud ∉ {2,3} → return immediately.
-//	Pass 2: fullNProbe=24 clusters → probe 16 more, recompute fraud count.
+//	Pass 1: select fastNProbe=8  clusters → scan with bbox pruning → if fraud ∉ {2,3} → return.
+//	Pass 2: select fullNProbe=24 clusters → scan only new clusters (fastNProbe..fullNProbe).
 func (idx *IVFIndex) PredictRaw(query model.Vector14, _ int) int {
 	if len(idx.vectors) == 0 {
 		return 0
@@ -289,43 +320,63 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, _ int) int {
 	}
 	qi := quantizeQuery(query)
 
-	nprobe := fullNProbe
-	if nprobe > idx.nlist {
-		nprobe = idx.nlist
+	// Pass 1: fast probes.
+	fast := fastNProbe
+	if fast > idx.nlist {
+		fast = idx.nlist
 	}
-
 	var probesBuf [maxProbes]int
-	probes := probesBuf[:]
-	selectProbes(idx.centroids, idx.nlist, qf, nprobe, probes)
+	selectProbes(idx.centroids, idx.nlist, qf, fast, probesBuf[:fast])
 
 	h := newTopK5()
+	hasBbox := len(idx.bboxMin) > 0
 
-	fast := fastNProbe
-	if fast > nprobe {
-		fast = nprobe
-	}
-
-	// Pass 1: fast probes.
 	for pi := 0; pi < fast; pi++ {
-		ci := probes[pi]
+		ci := probesBuf[pi]
 		start := int(idx.offsets[ci])
 		end := int(idx.offsets[ci+1])
-		if start < end {
-			scanCluster(idx.vectors, idx.labels, start, end, qi, &h)
+		if start >= end {
+			continue
 		}
+		if hasBbox && h.worstDist() != math.MaxUint64 {
+			if !bboxMayImprove(idx.bboxMin, idx.bboxMax, ci, qi, h.worstDist()) {
+				continue
+			}
+		}
+		// Prefetch next cluster's first cache line.
+		if pi+1 < fast {
+			nextCI := probesBuf[pi+1]
+			nextStart := int(idx.offsets[nextCI])
+			if nextStart < int(idx.offsets[nextCI+1]) {
+				_ = *(*byte)(unsafe.Pointer(&idx.vectors[nextStart*DIM]))
+			}
+		}
+		scanCluster(idx.vectors, idx.labels, start, end, qi, &h)
 	}
 
 	fraud := h.fraudCount(idx.labels)
 
 	// Pass 2: only if result is ambiguous (boundary zone 2 or 3 out of 5).
 	if fraud == 2 || fraud == 3 {
-		for pi := fast; pi < nprobe; pi++ {
-			ci := probes[pi]
+		full := fullNProbe
+		if full > idx.nlist {
+			full = idx.nlist
+		}
+		// Re-select to get full probe list; scan only new clusters.
+		selectProbes(idx.centroids, idx.nlist, qf, full, probesBuf[:full])
+		for pi := fast; pi < full; pi++ {
+			ci := probesBuf[pi]
 			start := int(idx.offsets[ci])
 			end := int(idx.offsets[ci+1])
-			if start < end {
-				scanCluster(idx.vectors, idx.labels, start, end, qi, &h)
+			if start >= end {
+				continue
 			}
+			if hasBbox && h.worstDist() != math.MaxUint64 {
+				if !bboxMayImprove(idx.bboxMin, idx.bboxMax, ci, qi, h.worstDist()) {
+					continue
+				}
+			}
+			scanCluster(idx.vectors, idx.labels, start, end, qi, &h)
 		}
 		fraud = h.fraudCount(idx.labels)
 	}
