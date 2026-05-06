@@ -21,7 +21,6 @@ package knn
 
 import (
 	"math"
-	"unsafe"
 
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
@@ -83,29 +82,167 @@ func (h *topK5) fraudCount(labels []byte) int {
 const maxProbes = 32
 
 // bboxMayImprove returns true if the cluster's bounding box could contain a
-// vector closer than worstDist to the query. Uses the same dim ordering as
-// scanCluster (highest-variance dims first) for early exit.
-// bboxMin/bboxMax are AoI: [nlist*DIM], indexed as [ci*DIM+d].
+// vector closer than worstDist to the query. Fully unrolled in high-variance
+// dim order (5,6,2,0,7,8,11,12,9,10,1,13,3,4) for early-exit efficiency.
 func bboxMayImprove(bboxMin, bboxMax []int16, ci int, q [DIM]int16, worstDist uint64) bool {
 	base := ci * DIM
 	var d uint64
-	// Unrolled in high-variance dim order: 5,6,2,0,7,8,11,12,9,10,1,13,3,4
-	// Each iteration: clamp to box, accumulate, early-exit.
-	for _, dim := range [DIM]int{5, 6, 2, 0, 7, 8, 11, 12, 9, 10, 1, 13, 3, 4} {
-		mn := bboxMin[base+dim]
-		mx := bboxMax[base+dim]
-		qv := q[dim]
-		var diff int32
-		if qv < mn {
-			diff = int32(mn) - int32(qv)
-		} else if qv > mx {
-			diff = int32(qv) - int32(mx)
-		}
-		d += uint64(diff * diff)
-		if d >= worstDist {
-			return false
-		}
+	var diff int32
+
+	diff = 0
+	if q[5] < bboxMin[base+5] {
+		diff = int32(bboxMin[base+5]) - int32(q[5])
+	} else if q[5] > bboxMax[base+5] {
+		diff = int32(q[5]) - int32(bboxMax[base+5])
 	}
+	d += uint64(diff * diff)
+	if d >= worstDist {
+		return false
+	}
+
+	diff = 0
+	if q[6] < bboxMin[base+6] {
+		diff = int32(bboxMin[base+6]) - int32(q[6])
+	} else if q[6] > bboxMax[base+6] {
+		diff = int32(q[6]) - int32(bboxMax[base+6])
+	}
+	d += uint64(diff * diff)
+	if d >= worstDist {
+		return false
+	}
+
+	diff = 0
+	if q[2] < bboxMin[base+2] {
+		diff = int32(bboxMin[base+2]) - int32(q[2])
+	} else if q[2] > bboxMax[base+2] {
+		diff = int32(q[2]) - int32(bboxMax[base+2])
+	}
+	d += uint64(diff * diff)
+	if d >= worstDist {
+		return false
+	}
+
+	diff = 0
+	if q[0] < bboxMin[base+0] {
+		diff = int32(bboxMin[base+0]) - int32(q[0])
+	} else if q[0] > bboxMax[base+0] {
+		diff = int32(q[0]) - int32(bboxMax[base+0])
+	}
+	d += uint64(diff * diff)
+	if d >= worstDist {
+		return false
+	}
+
+	diff = 0
+	if q[7] < bboxMin[base+7] {
+		diff = int32(bboxMin[base+7]) - int32(q[7])
+	} else if q[7] > bboxMax[base+7] {
+		diff = int32(q[7]) - int32(bboxMax[base+7])
+	}
+	d += uint64(diff * diff)
+	if d >= worstDist {
+		return false
+	}
+
+	diff = 0
+	if q[8] < bboxMin[base+8] {
+		diff = int32(bboxMin[base+8]) - int32(q[8])
+	} else if q[8] > bboxMax[base+8] {
+		diff = int32(q[8]) - int32(bboxMax[base+8])
+	}
+	d += uint64(diff * diff)
+	if d >= worstDist {
+		return false
+	}
+
+	diff = 0
+	if q[11] < bboxMin[base+11] {
+		diff = int32(bboxMin[base+11]) - int32(q[11])
+	} else if q[11] > bboxMax[base+11] {
+		diff = int32(q[11]) - int32(bboxMax[base+11])
+	}
+	d += uint64(diff * diff)
+	if d >= worstDist {
+		return false
+	}
+
+	diff = 0
+	if q[12] < bboxMin[base+12] {
+		diff = int32(bboxMin[base+12]) - int32(q[12])
+	} else if q[12] > bboxMax[base+12] {
+		diff = int32(q[12]) - int32(bboxMax[base+12])
+	}
+	d += uint64(diff * diff)
+	if d >= worstDist {
+		return false
+	}
+
+	diff = 0
+	if q[9] < bboxMin[base+9] {
+		diff = int32(bboxMin[base+9]) - int32(q[9])
+	} else if q[9] > bboxMax[base+9] {
+		diff = int32(q[9]) - int32(bboxMax[base+9])
+	}
+	d += uint64(diff * diff)
+	if d >= worstDist {
+		return false
+	}
+
+	diff = 0
+	if q[10] < bboxMin[base+10] {
+		diff = int32(bboxMin[base+10]) - int32(q[10])
+	} else if q[10] > bboxMax[base+10] {
+		diff = int32(q[10]) - int32(bboxMax[base+10])
+	}
+	d += uint64(diff * diff)
+	if d >= worstDist {
+		return false
+	}
+
+	diff = 0
+	if q[1] < bboxMin[base+1] {
+		diff = int32(bboxMin[base+1]) - int32(q[1])
+	} else if q[1] > bboxMax[base+1] {
+		diff = int32(q[1]) - int32(bboxMax[base+1])
+	}
+	d += uint64(diff * diff)
+	if d >= worstDist {
+		return false
+	}
+
+	diff = 0
+	if q[13] < bboxMin[base+13] {
+		diff = int32(bboxMin[base+13]) - int32(q[13])
+	} else if q[13] > bboxMax[base+13] {
+		diff = int32(q[13]) - int32(bboxMax[base+13])
+	}
+	d += uint64(diff * diff)
+	if d >= worstDist {
+		return false
+	}
+
+	diff = 0
+	if q[3] < bboxMin[base+3] {
+		diff = int32(bboxMin[base+3]) - int32(q[3])
+	} else if q[3] > bboxMax[base+3] {
+		diff = int32(q[3]) - int32(bboxMax[base+3])
+	}
+	d += uint64(diff * diff)
+	if d >= worstDist {
+		return false
+	}
+
+	diff = 0
+	if q[4] < bboxMin[base+4] {
+		diff = int32(bboxMin[base+4]) - int32(q[4])
+	} else if q[4] > bboxMax[base+4] {
+		diff = int32(q[4]) - int32(bboxMax[base+4])
+	}
+	d += uint64(diff * diff)
+	if d >= worstDist {
+		return false
+	}
+
 	return true
 }
 
@@ -307,8 +444,9 @@ func quantizeQuery(query model.Vector14) [DIM]int16 {
 
 // PredictRaw uses two-pass adaptive IVF with bbox pruning:
 //
-//	Pass 1: select fastNProbe=8  clusters → scan with bbox pruning → if fraud ∉ {2,3} → return.
-//	Pass 2: select fullNProbe=24 clusters → scan only new clusters (fastNProbe..fullNProbe).
+//	selectProbes once with fullNProbe=24.
+//	Pass 1: scan fastNProbe=8 clusters (bbox pruning when worstDist is known).
+//	Pass 2: only if fraud ∈ {2,3} → scan remaining clusters with bbox pruning.
 func (idx *IVFIndex) PredictRaw(query model.Vector14, _ int) int {
 	if len(idx.vectors) == 0 {
 		return 0
@@ -320,17 +458,23 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, _ int) int {
 	}
 	qi := quantizeQuery(query)
 
-	// Pass 1: fast probes.
-	fast := fastNProbe
-	if fast > idx.nlist {
-		fast = idx.nlist
+	// Select all probes once — reused for both passes.
+	full := fullNProbe
+	if full > idx.nlist {
+		full = idx.nlist
 	}
+	fast := fastNProbe
+	if fast > full {
+		fast = full
+	}
+
 	var probesBuf [maxProbes]int
-	selectProbes(idx.centroids, idx.nlist, qf, fast, probesBuf[:fast])
+	selectProbes(idx.centroids, idx.nlist, qf, full, probesBuf[:full])
 
 	h := newTopK5()
 	hasBbox := len(idx.bboxMin) > 0
 
+	// Pass 1: fast probes.
 	for pi := 0; pi < fast; pi++ {
 		ci := probesBuf[pi]
 		start := int(idx.offsets[ci])
@@ -338,17 +482,10 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, _ int) int {
 		if start >= end {
 			continue
 		}
-		if hasBbox && h.worstDist() != math.MaxUint64 {
+		// bbox pruning only once we have a real worst distance.
+		if hasBbox && h.count == K {
 			if !bboxMayImprove(idx.bboxMin, idx.bboxMax, ci, qi, h.worstDist()) {
 				continue
-			}
-		}
-		// Prefetch next cluster's first cache line.
-		if pi+1 < fast {
-			nextCI := probesBuf[pi+1]
-			nextStart := int(idx.offsets[nextCI])
-			if nextStart < int(idx.offsets[nextCI+1]) {
-				_ = *(*byte)(unsafe.Pointer(&idx.vectors[nextStart*DIM]))
 			}
 		}
 		scanCluster(idx.vectors, idx.labels, start, end, qi, &h)
@@ -358,12 +495,6 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, _ int) int {
 
 	// Pass 2: only if result is ambiguous (boundary zone 2 or 3 out of 5).
 	if fraud == 2 || fraud == 3 {
-		full := fullNProbe
-		if full > idx.nlist {
-			full = idx.nlist
-		}
-		// Re-select to get full probe list; scan only new clusters.
-		selectProbes(idx.centroids, idx.nlist, qf, full, probesBuf[:full])
 		for pi := fast; pi < full; pi++ {
 			ci := probesBuf[pi]
 			start := int(idx.offsets[ci])
@@ -371,7 +502,7 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, _ int) int {
 			if start >= end {
 				continue
 			}
-			if hasBbox && h.worstDist() != math.MaxUint64 {
+			if hasBbox && h.count == K {
 				if !bboxMayImprove(idx.bboxMin, idx.bboxMax, ci, qi, h.worstDist()) {
 					continue
 				}

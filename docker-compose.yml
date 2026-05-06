@@ -8,7 +8,7 @@
 x-api-env: &api-env
   PORT: 9999
   RESOURCES: /resources
-  GOMAXPROCS: 2
+  GOMAXPROCS: 1
   GOGC: off
   GOMEMLIMIT: 120MiB
 
