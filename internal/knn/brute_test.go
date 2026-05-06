@@ -31,70 +31,50 @@ func BenchmarkIVFPredict(b *testing.B) {
 	}
 }
 
-// buildSmallIVFSoA creates a minimal IVF index with SoA blocks.
-func buildSmallIVFSoA() *IVFIndex {
+// buildSmallIVF creates a minimal IVF index in v4 format (AoS, bit-packed labels).
+//
+// 6 vectors total:
+//   cluster 0 (centroid ≈ [1,0,…]): indices 0-2, all fraud
+//   cluster 1 (centroid ≈ [0,0,…]): indices 3-5, all legit
+func buildSmallIVF() *IVFIndex {
 	const nlist = 2
-	const dim = 14
 
-	centroids := make([]float32, nlist*dim)
+	centroids := make([]float32, nlist*DIM)
 	centroids[0] = 1.0 // centroid 0 near [1,0,...]
 
-	// 6 vectors total: 3 fraud (cluster 0), 3 legit (cluster 1)
-	vectors := [][14]float32{
-		{0.90, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // cluster 0, fraud
-		{0.95, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // cluster 0, fraud
-		{1.00, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // cluster 0, fraud
-		{0.05, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // cluster 1, legit
-		{0.10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // cluster 1, legit
-		{0.02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // cluster 1, legit
+	// AoS vectors: cluster 0 first (indices 0,1,2), cluster 1 next (indices 3,4,5)
+	rawVectors := [][DIM]float32{
+		{0.90, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // fraud
+		{0.95, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // fraud
+		{1.00, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // fraud
+		{0.05, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // legit
+		{0.10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // legit
+		{0.02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // legit
 	}
-	labels := []byte{1, 1, 1, 0, 0, 0}
+	fraudLabels := []bool{true, true, true, false, false, false}
 
-	// SoA: 1 block for cluster 0 (3 vectors, padded to 8), 1 block for cluster 1
-	nBlocks := 2
-	blocks := make([]int16, nBlocks*dim*8)
-	allLabels := make([]byte, nBlocks*8)
+	n := len(rawVectors)
+	vectors := make([]int16, n*DIM)
+	bitLabels := make([]byte, (n+7)/8)
 
-	// Block 0: cluster 0 vectors (3 actual, 5 padding)
-	b0 := 0
-	for d := 0; d < dim; d++ {
-		for s := 0; s < 8; s++ {
-			idx := b0*dim*8 + d*8 + s
-			if s < 3 {
-				blocks[idx] = quantizeFloat32(vectors[s][d])
-			} else {
-				blocks[idx] = int16Pad // padding
-			}
+	for i, v := range rawVectors {
+		for d := 0; d < DIM; d++ {
+			vectors[i*DIM+d] = quantizeFloat32(v[d])
+		}
+		if fraudLabels[i] {
+			bitLabels[i>>3] |= 1 << uint(i&7)
 		}
 	}
-	for s := 0; s < 3; s++ {
-		allLabels[b0*8+s] = labels[s]
-	}
 
-	// Block 1: cluster 1 vectors (3 actual, 5 padding)
-	b1 := 1
-	for d := 0; d < dim; d++ {
-		for s := 0; s < 8; s++ {
-			idx := b1*dim*8 + d*8 + s
-			if s < 3 {
-				blocks[idx] = quantizeFloat32(vectors[3+s][d])
-			} else {
-				blocks[idx] = int16Pad
-			}
-		}
-	}
-	for s := 0; s < 3; s++ {
-		allLabels[b1*8+s] = labels[3+s]
-	}
-
-	offsets := []uint32{0, 1, 2}
+	// offsets: cluster 0 → [0,3), cluster 1 → [3,6)
+	offsets := []uint32{0, 3, 6}
 
 	return &IVFIndex{
 		nlist:     nlist,
 		nprobe:    2,
 		centroids: centroids,
-		blocks:    blocks,
-		labels:    allLabels,
+		vectors:   vectors,
+		labels:    bitLabels,
 		offsets:   offsets,
 	}
 }
@@ -117,7 +97,7 @@ func TestIVFIndex_Predict_EmptyIndex(t *testing.T) {
 	idx := &IVFIndex{
 		nlist:     1,
 		nprobe:    1,
-		centroids: make([]float32, 14),
+		centroids: make([]float32, DIM),
 		offsets:   []uint32{0, 0},
 	}
 	var query model.Vector14
@@ -128,20 +108,18 @@ func TestIVFIndex_Predict_EmptyIndex(t *testing.T) {
 }
 
 func TestIVFIndex_Predict_AllFraud(t *testing.T) {
-	idx := buildSmallIVFSoA()
+	idx := buildSmallIVF()
 	var query model.Vector14
 	query[0] = 0.95
 
 	score := idx.Predict(query, K)
-	// With K=10 and 6 vectors (3 fraud, 3 legit), expect ~0.3
-	// Verify score is not zero (fraud vectors are being found)
 	if score <= 0.2 {
 		t.Errorf("Predict near fraud cluster = %v, want > 0.2", score)
 	}
 }
 
 func TestIVFIndex_Predict_AllLegit(t *testing.T) {
-	idx := buildSmallIVFSoA()
+	idx := buildSmallIVF()
 	var query model.Vector14
 
 	score := idx.Predict(query, K)
@@ -151,7 +129,7 @@ func TestIVFIndex_Predict_AllLegit(t *testing.T) {
 }
 
 func TestIVFIndex_Predict_ScoreRange(t *testing.T) {
-	idx := buildSmallIVFSoA()
+	idx := buildSmallIVF()
 
 	queries := []model.Vector14{
 		{},

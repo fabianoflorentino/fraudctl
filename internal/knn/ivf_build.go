@@ -29,6 +29,19 @@ func quantizeFloat32(v float32) int16 {
 	return int16(math.Round(float64(v * int16Scale)))
 }
 
+// BuildIVF builds an IVF index in format v4 (AoS vectors, bit-packed labels).
+//
+// File layout:
+//
+//	magic    uint32  0x49564649
+//	version  uint32  4
+//	nlist    uint32
+//	dim      uint32  14
+//	n        uint32  total vectors
+//	centroids [nlist*DIM]float32
+//	offsets  [nlist+1]uint32   — vector indices (not block indices)
+//	vectors  [n*DIM]int16      — AoS: vectors[i*DIM+d]
+//	labels   [ceil(n/8)]byte   — bit-packed: bit i%8 of byte i/8
 func BuildIVF(refsGz, outPath string, nlist, iterations int) error {
 	fmt.Printf("BuildIVF: loading %s ...\n", refsGz)
 
@@ -83,65 +96,36 @@ func BuildIVF(refsGz, outPath string, nlist, iterations int) error {
 		}
 	}
 
-	clusterSizes := make([]int, nlist)
-	for _, ci := range assign {
-		clusterSizes[ci]++
+	// Build per-cluster vector index lists.
+	clusterLists := make([][]int, nlist)
+	for i := 0; i < nlist; i++ {
+		clusterLists[i] = make([]int, 0, n/nlist+1)
+	}
+	for i, ci := range assign {
+		clusterLists[ci] = append(clusterLists[ci], i)
 	}
 
-	nBlocksTotal := 0
-	for _, sz := range clusterSizes {
-		nBlocksTotal += (sz + 7) / 8
-	}
+	// Build AoS vectors and bit-packed labels in cluster order.
+	aosVectors := make([]int16, n*DIM)
+	bitLabels := make([]byte, (n+7)/8)
+	offsets := make([]uint32, nlist+1)
 
-	soaBlocks := make([]int16, nBlocksTotal*14*8)
-	soaLabels := make([]byte, nBlocksTotal*8)
-
-	blockOffsets := make([]uint32, nlist+1)
-	var blockPos int
+	pos := 0
 	for ci := 0; ci < nlist; ci++ {
-		blockOffsets[ci] = uint32(blockPos)
-		sz := clusterSizes[ci]
-		nBlocks := (sz + 7) / 8
-
-		vecIndices := make([]int, 0, sz)
-		for i, a := range assign {
-			if a == ci {
-				vecIndices = append(vecIndices, i)
+		offsets[ci] = uint32(pos)
+		for _, vi := range clusterLists[ci] {
+			for d := 0; d < DIM; d++ {
+				aosVectors[pos*DIM+d] = quantizeFloat32(flat[vi*DIM+d])
 			}
+			if fraudFlags[vi] {
+				bitLabels[pos>>3] |= 1 << uint(pos&7)
+			}
+			pos++
 		}
-
-		for bi := 0; bi < nBlocks; bi++ {
-			blockBase := (blockPos + bi) * 14 * 8
-			labelBase := (blockPos + bi) * 8
-
-			for d := 0; d < 14; d++ {
-				for s := 0; s < 8; s++ {
-					soaBlocks[blockBase+d*8+s] = int16Pad
-				}
-			}
-
-			vecStart := bi * 8
-			vecEnd := vecStart + 8
-			if vecEnd > sz {
-				vecEnd = sz
-			}
-			for si := vecStart; si < vecEnd; si++ {
-				vi := vecIndices[si]
-				slot := si - bi*8
-				for d := 0; d < 14; d++ {
-					soaBlocks[blockBase+d*8+slot] = quantizeFloat32(flat[vi*14+d])
-				}
-				soaLabels[labelBase+slot] = 0
-				if fraudFlags[vi] {
-					soaLabels[labelBase+slot] = 1
-				}
-			}
-		}
-		blockPos += nBlocks
 	}
-	blockOffsets[nlist] = uint32(blockPos)
+	offsets[nlist] = uint32(pos)
 
-	fmt.Printf("BuildIVF: writing %s (v3, SoA blocks) ...\n", outPath)
+	fmt.Printf("BuildIVF: writing %s (v4, AoS, bit-packed) ...\n", outPath)
 	out, err := os.Create(outPath)
 	if err != nil {
 		return err
@@ -150,23 +134,17 @@ func BuildIVF(refsGz, outPath string, nlist, iterations int) error {
 
 	write32 := func(v uint32) { binary.Write(out, binary.LittleEndian, v) }
 	write32(ivfMagic)
-	write32(3)
+	write32(4) // version
 	write32(uint32(nlist))
-	write32(14)
+	write32(DIM)
+	write32(uint32(n))
 
 	binary.Write(out, binary.LittleEndian, centroids)
+	binary.Write(out, binary.LittleEndian, offsets)
+	binary.Write(out, binary.LittleEndian, aosVectors)
+	out.Write(bitLabels)
 
-	for ci := 0; ci < nlist; ci++ {
-		sz := clusterSizes[ci]
-		write32(uint32(sz))
-		nBlocks := blockOffsets[ci+1] - blockOffsets[ci]
-		blockBytes := nBlocks * 14 * 8 * 2
-		labelBytes := nBlocks * 8
-		binary.Write(out, binary.LittleEndian, soaBlocks[blockOffsets[ci]*14*8:blockOffsets[ci]*14*8+blockBytes/2])
-		out.Write(soaLabels[blockOffsets[ci]*8 : blockOffsets[ci]*8+labelBytes])
-	}
-
-	fmt.Printf("BuildIVF: done. Blocks: %d\n", blockPos)
+	fmt.Printf("BuildIVF: done. n=%d nlist=%d\n", n, nlist)
 	return nil
 }
 

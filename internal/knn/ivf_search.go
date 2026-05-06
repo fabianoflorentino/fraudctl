@@ -1,19 +1,16 @@
 // Package knn — pure-Go IVF search (no CGo).
 //
-// Layout of idx.blocks (SoA, block of 8 vectors):
+// Format v4 layout (AoS, bit-packed labels):
 //
-//	block b, dimension d, slot s  →  blocks[(b*DIM + d)*8 + s]
-//
-// Quantisation: float32 ∈ [-1,1]  →  int16 × 10000
-// Padding slots carry int16Pad (32767 = INT16_MAX), excluded from top-K.
+//	vectors[i*DIM + d]  — quantized int16, AoS order within each cluster
+//	labels bit-packed   — labels[i/8] bit (i%8) == 1 → fraud
 //
 // Algorithm per query:
-//  1. Find top-nprobe centroids by squared-float32 distance.
-//  2. For each probe cluster scan its SoA blocks.
-//     - For each block, compute squared int32 distance for all 8 slots in
-//       parallel (auto-vectorisable inner loop), then update top-K heap.
-//  3. If fraud count ∈ [boundaryLo, boundaryHi] and retryExtra > 0,
-//     extend the probe list incrementally (heap preserved).
+//  1. Sorted-insertion top-nprobe centroid selection.
+//  2. For each probe cluster, iterate vectors sequentially.
+//     Stage 1: compute dims 0-7, early-exit if dist ≥ worst-K.
+//     Stage 2: compute dims 8-13, update top-K heap.
+//  3. Boundary retry if fraud count in [lo, hi].
 //  4. Return raw fraud count (0..K).
 package knn
 
@@ -23,67 +20,75 @@ import (
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
 
-// topK is a fixed-size max-heap tracking the K nearest neighbours.
-// dist[i] == math.MaxInt32 means slot i is empty (not yet filled).
-type topK struct {
-	dist  [K]int32
-	label [K]uint8
-	worst int // index of the maximum dist in the heap
+// topK5 is a fixed-size sorted array tracking the K=5 nearest neighbours.
+// Kept sorted ascending by dist so topDist[K-1] is always the worst.
+type topK5 struct {
+	dist  [K]uint64
+	idx   [K]int
+	count int
 }
 
-func newTopK() topK {
-	var h topK
+func newTopK5() topK5 {
+	var h topK5
 	for i := range h.dist {
-		h.dist[i] = math.MaxInt32
+		h.dist[i] = math.MaxUint64
 	}
 	return h
 }
 
-// worstDist returns the current largest distance in the heap.
-func (h *topK) worstDist() int32 { return h.dist[h.worst] }
+func (h *topK5) worstDist() uint64 { return h.dist[K-1] }
 
-// tryInsert inserts (d, lbl) if d < worst distance, then updates worst.
-func (h *topK) tryInsert(d int32, lbl uint8) {
-	if d >= h.dist[h.worst] {
+// tryInsert does a sorted insertion if dist < worst.
+func (h *topK5) tryInsert(dist uint64, vecIdx int) {
+	if dist >= h.dist[K-1] {
 		return
 	}
-	h.dist[h.worst] = d
-	h.label[h.worst] = lbl
-	// find new worst (K=5, tiny loop)
-	wi, wv := 0, h.dist[0]
-	for i := 1; i < K; i++ {
-		if h.dist[i] > wv {
-			wv = h.dist[i]
-			wi = i
-		}
+	// Shift right from the back to find insertion point.
+	pos := K - 1
+	for pos > 0 && dist < h.dist[pos-1] {
+		h.dist[pos] = h.dist[pos-1]
+		h.idx[pos] = h.idx[pos-1]
+		pos--
 	}
-	h.worst = wi
+	h.dist[pos] = dist
+	h.idx[pos] = vecIdx
+	if h.count < K {
+		h.count++
+	}
 }
 
-// fraudCount returns how many of the K neighbours are labelled fraud (1).
-func (h *topK) fraudCount() int {
+// fraudCount returns how many of the K neighbours are labelled fraud.
+// labels is bit-packed: labels[i/8] bit (i%8).
+func (h *topK5) fraudCount(labels []byte) int {
 	n := 0
 	for i := 0; i < K; i++ {
-		if h.label[i] == 1 {
+		if h.dist[i] == math.MaxUint64 {
+			break
+		}
+		vi := h.idx[i]
+		if (labels[vi>>3] & (1 << uint(vi&7))) != 0 {
 			n++
 		}
 	}
 	return n
 }
 
-// selectProbes fills out[:nprobe] with the indices of the nprobe nearest
-// centroids to query (float32 squared-distance, AoS layout).
-// centroids layout: centroids[ci*DIM + d]
+// maxProbes is the maximum total probes (nprobe + retryExtra) we ever use.
+// Kept as a fixed constant so selectProbes can use a stack-allocated array.
+const maxProbes = 32
+
+// selectProbes fills out[:nprobe] sorted by ascending distance to query.
+// Uses sorted insertion — nprobe is tiny (≤maxProbes), so O(nprobe) per centroid is fine.
+// out must have capacity ≥ nprobe.
 func selectProbes(centroids []float32, nlist int, query [DIM]float32, nprobe int, out []int) {
 	if nprobe > nlist {
 		nprobe = nlist
 	}
 
-	probeDist := make([]float32, nprobe)
-	for i := range probeDist {
+	var probeDist [maxProbes]float32
+	for i := 0; i < nprobe; i++ {
 		probeDist[i] = math.MaxFloat32
 	}
-	worst := 0
 
 	for ci := 0; ci < nlist; ci++ {
 		base := ci * DIM
@@ -92,86 +97,86 @@ func selectProbes(centroids []float32, nlist int, query [DIM]float32, nprobe int
 			diff := query[dim] - centroids[base+dim]
 			d += diff * diff
 		}
-		if d < probeDist[worst] {
-			out[worst] = ci
-			probeDist[worst] = d
-			wv := probeDist[0]
-			wi := 0
-			for i := 1; i < nprobe; i++ {
-				if probeDist[i] > wv {
-					wv = probeDist[i]
-					wi = i
-				}
+		if d < probeDist[nprobe-1] {
+			pos := nprobe - 1
+			for pos > 0 && d < probeDist[pos-1] {
+				probeDist[pos] = probeDist[pos-1]
+				out[pos] = out[pos-1]
+				pos--
 			}
-			worst = wi
+			probeDist[pos] = d
+			out[pos] = ci
 		}
 	}
 }
 
-// scanCluster iterates over the SoA blocks belonging to cluster [startBlock, endBlock)
-// and updates the top-K heap h.
+// scanCluster scans vectors [start, end) in AoS layout and updates h.
 //
-// For each block, we accumulate squared int32 distances for all 8 slots
-// simultaneously across all 14 dimensions. The inner loop over DIM=14 with a
-// fixed stride of 8 is auto-vectorisable by the Go compiler (SSE2/AVX2).
+// vectors layout: vectors[(globalVecIdx)*DIM + d]
+// labels  layout: bit-packed, labels[globalVecIdx/8] bit (globalVecIdx%8)
 //
-// blocks layout: blocks[(blockIdx*DIM + dim)*8 + slot]
-// labels layout: labels[blockIdx*8 + slot]
-func scanCluster(blocks []int16, labels []byte, startBlock, endBlock int, q [DIM]int32, h *topK) {
-	for bi := startBlock; bi < endBlock; bi++ {
-		blockBase := bi * DIM * 8
-		labelBase := bi * 8
+// Two-stage early exit (inspired by xgboost-go reference):
+//   Stage 1: dims 0–7  → if dist ≥ worst, skip vector entirely.
+//   Stage 2: dims 8–13 → complete the distance.
+func scanCluster(vectors []int16, labels []byte, start, end int, q [DIM]int16, h *topK5) {
+	worst := h.worstDist()
 
-		// Accumulate squared distance for each of the 8 slots.
-		var dist [8]int32
+	for i := start; i < end; i++ {
+		base := i * DIM
 
-		for d := 0; d < DIM; d++ {
-			qd := q[d]
-			base := blockBase + d*8
-			// This inner loop is over a contiguous int16 slice of length 8,
-			// enabling the compiler to auto-vectorise with SIMD.
-			for s := 0; s < 8; s++ {
-				diff := int32(blocks[base+s]) - qd
-				dist[s] += diff * diff
-			}
+		// Stage 1: dims 0-7
+		v0 := int32(vectors[base+0]) - int32(q[0])
+		v1 := int32(vectors[base+1]) - int32(q[1])
+		v2 := int32(vectors[base+2]) - int32(q[2])
+		v3 := int32(vectors[base+3]) - int32(q[3])
+		v4 := int32(vectors[base+4]) - int32(q[4])
+		v5 := int32(vectors[base+5]) - int32(q[5])
+		v6 := int32(vectors[base+6]) - int32(q[6])
+		v7 := int32(vectors[base+7]) - int32(q[7])
+		dist := uint64(v0*v0) + uint64(v1*v1) + uint64(v2*v2) + uint64(v3*v3) +
+			uint64(v4*v4) + uint64(v5*v5) + uint64(v6*v6) + uint64(v7*v7)
+
+		if dist >= worst {
+			continue
 		}
 
-		worst := h.worstDist()
-		for s := 0; s < 8; s++ {
-			// Padding slots have int16Pad in every dimension, giving a very
-			// large distance. We filter them out by checking the raw value of
-			// dim 0 for this slot.
-			if blocks[blockBase+s] == int16Pad {
-				continue
-			}
-			if dist[s] < worst {
-				h.tryInsert(dist[s], labels[labelBase+s])
-				worst = h.worstDist()
-			}
-		}
+		// Stage 2: dims 8-13
+		v8 := int32(vectors[base+8]) - int32(q[8])
+		v9 := int32(vectors[base+9]) - int32(q[9])
+		v10 := int32(vectors[base+10]) - int32(q[10])
+		v11 := int32(vectors[base+11]) - int32(q[11])
+		v12 := int32(vectors[base+12]) - int32(q[12])
+		v13 := int32(vectors[base+13]) - int32(q[13])
+		dist += uint64(v8*v8) + uint64(v9*v9) + uint64(v10*v10) +
+			uint64(v11*v11) + uint64(v12*v12) + uint64(v13*v13)
+
+		h.tryInsert(dist, i)
+		worst = h.worstDist()
 	}
 }
 
-// quantizeQuery converts a float32 query vector to int32 scaled by int16Scale.
-// Using int32 to avoid overflow when computing differences (max diff = 20000).
-func quantizeQuery(query model.Vector14) [DIM]int32 {
-	var q [DIM]int32
+// quantizeQuery converts a float32 query to int16 (same scale as stored vectors).
+func quantizeQuery(query model.Vector14) [DIM]int16 {
+	var q [DIM]int16
 	for d := 0; d < DIM; d++ {
 		v := query[d]
 		if v > 1.0 {
-			v = 1.0
+			q[d] = int16Scale
 		} else if v < -1.0 {
-			v = -1.0
+			q[d] = -int16Scale
+		} else if v < 0 {
+			q[d] = int16(v*int16Scale - 0.5)
+		} else {
+			q[d] = int16(v*int16Scale + 0.5)
 		}
-		q[d] = int32(math.Round(float64(v) * int16Scale))
 	}
 	return q
 }
 
-// PredictRaw returns the raw fraud neighbour count (0..K) using the pure-Go
-// IVF search with incremental boundary retry (no CGo).
+// PredictRaw returns the raw fraud neighbour count (0..K) using pure-Go IVF
+// search with incremental boundary retry.
 func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
-	if len(idx.blocks) == 0 {
+	if len(idx.vectors) == 0 {
 		return 0
 	}
 
@@ -189,13 +194,11 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 		nprobe = idx.nlist
 	}
 
-	// Pre-select all candidate centroids up to totalProbes.
-	probes := make([]int, totalProbes)
+	probes := make([]int, maxProbes) // stack-friendly fixed size, no heap alloc when ≤32
 	selectProbes(idx.centroids, idx.nlist, qf, totalProbes, probes)
 
-	h := newTopK()
+	h := newTopK5()
 
-	// Phase 1: scan first nprobe clusters.
 	for pi := 0; pi < nprobe; pi++ {
 		ci := probes[pi]
 		start := int(idx.offsets[ci])
@@ -203,12 +206,11 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 		if start == end {
 			continue
 		}
-		scanCluster(idx.blocks, idx.labels, start, end, qi, &h)
+		scanCluster(idx.vectors, idx.labels, start, end, qi, &h)
 	}
 
-	fraud := h.fraudCount()
+	fraud := h.fraudCount(idx.labels)
 
-	// Phase 2: boundary retry — scan extra clusters if result is ambiguous.
 	if idx.retryExtra > 0 && fraud >= idx.boundaryLo && fraud <= idx.boundaryHi {
 		for pi := nprobe; pi < totalProbes; pi++ {
 			ci := probes[pi]
@@ -217,9 +219,9 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 			if start == end {
 				continue
 			}
-			scanCluster(idx.blocks, idx.labels, start, end, qi, &h)
+			scanCluster(idx.vectors, idx.labels, start, end, qi, &h)
 		}
-		fraud = h.fraudCount()
+		fraud = h.fraudCount(idx.labels)
 	}
 
 	return fraud

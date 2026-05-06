@@ -7,15 +7,18 @@ import (
 	"io"
 	"os"
 	"time"
-	"unsafe"
 
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
 
+// IVFIndex holds the IVF index in format v4:
+//   vectors: AoS int16, layout vectors[i*DIM + d]
+//   labels:  bit-packed, labels[i/8] bit (i%8) == 1 → fraud
+//   offsets: offsets[ci]..offsets[ci+1] are the global vector indices for cluster ci
 type IVFIndex struct {
 	centroids  []float32
-	blocks     []int16
-	labels     []byte
+	vectors    []int16 // AoS: [N * DIM]
+	labels     []byte  // bit-packed: [ceil(N/8)]
 	offsets    []uint32
 	nlist      int
 	nprobe     int
@@ -34,8 +37,6 @@ func (idx *IVFIndex) SetNProbe(n int) {
 func (idx *IVFIndex) NProbe() int { return idx.nprobe }
 
 // SetRetry configures the incremental boundary retry.
-// retryExtra clusters are scanned on top of nprobe when the fraud count
-// is in [lo, hi] (ambiguous zone around the decision threshold).
 func (idx *IVFIndex) SetRetry(retryExtra, lo, hi int) {
 	idx.retryExtra = retryExtra
 	idx.boundaryLo = lo
@@ -44,6 +45,7 @@ func (idx *IVFIndex) SetRetry(retryExtra, lo, hi int) {
 
 func NewIVFIndex() *IVFIndex { return &IVFIndex{} }
 
+// LoadIVF loads an IVF index in format v4 (AoS, bit-packed labels).
 func LoadIVF(path string) (*IVFIndex, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -53,101 +55,73 @@ func LoadIVF(path string) (*IVFIndex, error) {
 
 	var magic, version, nlist, dim uint32
 	if err := binary.Read(f, binary.LittleEndian, &magic); err != nil || magic != ivfMagic {
-		return nil, fmt.Errorf("invalid ivf magic")
+		return nil, fmt.Errorf("invalid ivf magic (got 0x%08x)", magic)
 	}
-	if err := binary.Read(f, binary.LittleEndian, &version); err != nil || version != 3 {
-		return nil, fmt.Errorf("unsupported ivf version %d (expected 3)", version)
+	if err := binary.Read(f, binary.LittleEndian, &version); err != nil || version != 4 {
+		return nil, fmt.Errorf("unsupported ivf version %d (expected 4)", version)
 	}
-	binary.Read(f, binary.LittleEndian, &nlist)
-	binary.Read(f, binary.LittleEndian, &dim)
-	if dim != 14 {
+	if err := binary.Read(f, binary.LittleEndian, &nlist); err != nil {
+		return nil, fmt.Errorf("read nlist: %w", err)
+	}
+	if err := binary.Read(f, binary.LittleEndian, &dim); err != nil || dim != 14 {
 		return nil, fmt.Errorf("expected dim=14, got %d", dim)
 	}
 
+	// Total number of vectors
+	var n uint32
+	if err := binary.Read(f, binary.LittleEndian, &n); err != nil {
+		return nil, fmt.Errorf("read n: %w", err)
+	}
+
+	// Centroids: nlist * DIM float32
 	centroids := make([]float32, nlist*dim)
 	if err := binary.Read(f, binary.LittleEndian, centroids); err != nil {
 		return nil, fmt.Errorf("read centroids: %w", err)
 	}
 
-	type clusterMeta struct {
-		n          uint32
-		nBlocks    uint32
-		fileOffset int64
-	}
-	metas := make([]clusterMeta, nlist)
-	totalBlocks := uint64(0)
-	for i := uint32(0); i < nlist; i++ {
-		var n uint32
-		if err := binary.Read(f, binary.LittleEndian, &n); err != nil {
-			return nil, fmt.Errorf("read cluster size %d: %w", i, err)
-		}
-		nBlocks := (n + 7) / 8
-		off, _ := f.Seek(0, io.SeekCurrent)
-		metas[i] = clusterMeta{n: n, nBlocks: nBlocks, fileOffset: off}
-		totalBlocks += uint64(nBlocks)
-		skip := int64(nBlocks)*int64(dim)*8*2 + int64(nBlocks)*8
-		if _, err := f.Seek(skip, io.SeekCurrent); err != nil {
-			return nil, fmt.Errorf("seek cluster %d: %w", i, err)
-		}
-	}
-
+	// Offsets: (nlist+1) uint32
 	offsets := make([]uint32, nlist+1)
-	var blockPos uint64
-
-	totalVecBytes := totalBlocks * uint64(dim) * 8 * 2
-	totalLabelBytes := totalBlocks * 8
-	allVecBytes := make([]byte, totalVecBytes)
-	allLabels := make([]byte, totalLabelBytes)
-
-	for i := uint32(0); i < nlist; i++ {
-		nb := uint64(metas[i].nBlocks)
-		vecBytes := nb * uint64(dim) * 8 * 2
-		labelBytes := nb * 8
-
-		if _, err := f.Seek(metas[i].fileOffset, io.SeekStart); err != nil {
-			return nil, fmt.Errorf("seek cluster %d data: %w", i, err)
-		}
-		if _, err := io.ReadFull(f, allVecBytes[blockPos*uint64(dim)*8*2:blockPos*uint64(dim)*8*2+vecBytes]); err != nil {
-			return nil, fmt.Errorf("read cluster %d vecs: %w", i, err)
-		}
-		if _, err := io.ReadFull(f, allLabels[blockPos*8:blockPos*8+labelBytes]); err != nil {
-			return nil, fmt.Errorf("read cluster %d labels: %w", i, err)
-		}
-
-		offsets[i] = uint32(blockPos)
-
-		blockPos += nb
+	if err := binary.Read(f, binary.LittleEndian, offsets); err != nil {
+		return nil, fmt.Errorf("read offsets: %w", err)
 	}
-	offsets[nlist] = uint32(blockPos)
 
-	blocks := unsafe.Slice((*int16)(unsafe.Pointer(&allVecBytes[0])), len(allVecBytes)/2)
+	// Vectors: n * DIM int16 (AoS)
+	vectors := make([]int16, int(n)*DIM)
+	if err := binary.Read(f, binary.LittleEndian, vectors); err != nil {
+		return nil, fmt.Errorf("read vectors: %w", err)
+	}
+
+	// Labels: ceil(n/8) bytes, bit-packed
+	labelBytes := (int(n) + 7) / 8
+	labels := make([]byte, labelBytes)
+	if _, err := io.ReadFull(f, labels); err != nil {
+		return nil, fmt.Errorf("read labels: %w", err)
+	}
 
 	idx := &IVFIndex{
 		nlist:     int(nlist),
-		nprobe:    4,
+		nprobe:    16,
 		centroids: centroids,
-		blocks:    blocks,
-		labels:    allLabels,
+		vectors:   vectors,
+		labels:    labels,
 		offsets:   offsets,
 	}
 
 	// Pre-touch all pages to avoid page faults during queries.
-	for i := 0; i < len(blocks); i += 4096 {
-		_ = blocks[i]
+	for i := 0; i < len(vectors); i += 4096 {
+		_ = vectors[i]
 	}
-	for i := 0; i < len(allLabels); i += 4096 {
-		_ = allLabels[i]
+	for i := 0; i < len(labels); i += 4096 {
+		_ = labels[i]
 	}
 
-	// Keep pages hot: with swappiness=100 on the host, the kernel aggressively
-	// swaps out inactive pages even when RAM is available. Touch every page every
-	// 10s to prevent the index from being evicted to swap.
+	// Keep pages hot to prevent swapping under memory pressure.
 	go func() {
 		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
-			for i := 0; i < len(blocks); i += 2048 {
-				_ = blocks[i]
+			for i := 0; i < len(vectors); i += 2048 {
+				_ = vectors[i]
 			}
 		}
 	}()
@@ -155,39 +129,27 @@ func LoadIVF(path string) (*IVFIndex, error) {
 	return idx, nil
 }
 
-// PredictRaw returns the raw fraud neighbor count (0..K) using the pure-Go
-// IVF search with incremental boundary retry.
-// The actual search is implemented in ivf_search.go.
 func (idx *IVFIndex) Predict(query model.Vector14, k int) float64 {
 	return float64(idx.PredictRaw(query, idx.nprobe)) / float64(K)
 }
 
+// Count returns approximate total number of vectors (last offset value × 1,
+// since offsets are in vector units in v4).
 func (idx *IVFIndex) Count() int {
-	return int(idx.offsets[idx.nlist]) * 8
+	return int(idx.offsets[idx.nlist])
 }
 
 func (idx *IVFIndex) FraudCount() int {
 	n := 0
-	for _, lb := range idx.labels {
-		if lb == 1 {
+	total := idx.Count()
+	for i := 0; i < total; i++ {
+		if (idx.labels[i>>3] & (1 << uint(i&7))) != 0 {
 			n++
 		}
 	}
 	return n
 }
 
-func (idx *IVFIndex) DebugBlocks() []int16 {
-	return idx.blocks
-}
-
-func (idx *IVFIndex) DebugNList() int {
-	return idx.nlist
-}
-
-func (idx *IVFIndex) DebugOffsets() []uint32 {
-	return idx.offsets
-}
-
-func (idx *IVFIndex) DebugCentroids() []float32 {
-	return idx.centroids
-}
+func (idx *IVFIndex) DebugNList() int        { return idx.nlist }
+func (idx *IVFIndex) DebugOffsets() []uint32 { return idx.offsets }
+func (idx *IVFIndex) DebugCentroids() []float32 { return idx.centroids }
