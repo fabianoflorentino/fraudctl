@@ -16,12 +16,12 @@ RUN go mod download
 
 COPY . .
 
-# Pure-Go build — no CGo required.
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+# Pure-Go build — no CGo required. GOAMD64=v3 enables AVX2/BMI2 in the compiler.
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOAMD64=v3 \
     go build -ldflags="-s -w" -o fraudctl ./cmd/api
 
 # Compile the index builder.
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOAMD64=v3 \
     go build -ldflags="-s -w" -o build-index ./cmd/build-index
 
 # Build the IVF index from references.json.gz (nlist=4096, 60 iterations).

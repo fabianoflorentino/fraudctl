@@ -2,6 +2,7 @@ package handler
 
 import (
 	"log"
+	"sync"
 	"sync/atomic"
 
 	"github.com/valyala/fasthttp"
@@ -39,6 +40,10 @@ const (
 var (
 	approvedBody    = []byte(`{"approved":true,"fraud_score":0.0}`)
 	disapprovedBody = []byte(`{"approved":false,"fraud_score":1.0}`)
+
+	reqPool = sync.Pool{
+		New: func() any { return new(model.FraudScoreRequest) },
+	}
 )
 
 type FraudScoreHandler struct {
@@ -59,8 +64,11 @@ func (h *FraudScoreHandler) Handle(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	var req model.FraudScoreRequest
-	if err := gojson.Unmarshal(ctx.PostBody(), &req); err != nil {
+	req := reqPool.Get().(*model.FraudScoreRequest)
+	req.Customer.KnownMerchants = req.Customer.KnownMerchants[:0]
+	req.LastTx = nil
+	if err := gojson.Unmarshal(ctx.PostBody(), req); err != nil {
+		reqPool.Put(req)
 		// Decode errors: approve to avoid 5× error penalty.
 		ctx.SetStatusCode(fasthttp.StatusOK)
 		ctx.SetContentType("application/json")
@@ -68,10 +76,11 @@ func (h *FraudScoreHandler) Handle(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	vec := h.vec.Vectorize(&req)
+	vec := h.vec.Vectorize(req)
 	nprobe := h.knn.NProbe()
 	fraudCount := h.knn.PredictRaw(vec, nprobe)
 	score := float64(fraudCount) / float64(knnNeighbors)
+	reqPool.Put(req)
 
 	var resp []byte
 	if score >= knnFraudThreshold {

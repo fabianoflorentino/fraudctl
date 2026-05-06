@@ -194,7 +194,8 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 		nprobe = idx.nlist
 	}
 
-	probes := make([]int, maxProbes) // stack-friendly fixed size, no heap alloc when ≤32
+	var probesBuf [maxProbes]int // stack-allocated, zero heap
+	probes := probesBuf[:]
 	selectProbes(idx.centroids, idx.nlist, qf, totalProbes, probes)
 
 	h := newTopK5()

@@ -51,10 +51,11 @@ func main() {
 	fraudHandler := handler.NewFraudScoreHandler(ds.Vectorizer(), ds.KNN())
 
 	requestHandler := func(ctx *fasthttp.RequestCtx) {
-		switch string(ctx.Path()) {
-		case "/ready":
+		path := ctx.Path()
+		switch {
+		case len(path) == 6 && path[1] == 'r': // /ready
 			handler.Ready(ctx)
-		case "/fraud-score":
+		case len(path) == 12 && path[1] == 'f': // /fraud-score
 			fraudHandler.Handle(ctx)
 		default:
 			ctx.SetStatusCode(fasthttp.StatusNotFound)
