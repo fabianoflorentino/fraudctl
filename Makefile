@@ -181,10 +181,22 @@ clean: ## Remove build artifacts
 	@rm -rf bin/ coverage.out coverage.html
 	@echo -e "$(GREEN)✓ Clean done!$(NC)"
 
-clean-cache: ## Clear Go build cache
+##@ Go Cache & Modules
+
+clean-cache: ## Clear Go build cache only
 	@echo -e "$(YELLOW)🧹 Clearing Go build cache...$(NC)"
 	@go clean -cache
 	@echo -e "$(GREEN)✓ Go build cache cleared!$(NC)"
+
+clean-modcache: ## Clear Go module cache only
+	@echo -e "$(YELLOW)🧹 Clearing Go module cache...$(NC)"
+	@go clean -modcache
+	@echo -e "$(GREEN)✓ Go module cache cleared!$(NC)"
+
+clean-all-cache: ## Clear all Go caches (build + modules)
+	@echo -e "$(YELLOW)🧹 Clearing all Go caches...$(NC)"
+	@go clean -cache -modcache
+	@echo -e "$(GREEN)✓ All Go caches cleared!$(NC)"
 
 ##@ Submission
 
