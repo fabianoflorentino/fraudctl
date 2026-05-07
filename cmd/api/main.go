@@ -88,19 +88,16 @@ func main() {
 	}
 
 	srv := &fasthttp.Server{
-		Handler:                     requestHandler,
-		ReadTimeout:                 750 * time.Millisecond,
-		WriteTimeout:                750 * time.Millisecond,
-		IdleTimeout:                 10 * time.Second,
-		MaxRequestBodySize:          4 * 1024,
-		NoDefaultServerHeader:        true,
-		NoDefaultContentType:         true,
-		ReadBufferSize:              1024,
-		WriteBufferSize:             1024,
-		Concurrency:                 4096,
-		DisableHeaderNamesNormalizing: true,
-		DisablePreParseMultipartForm:  true,
-		ReduceMemoryUsage:            false,
+		Handler:               requestHandler,
+		ReadTimeout:           2 * time.Second,
+		WriteTimeout:          5 * time.Second,
+		IdleTimeout:           30 * time.Second,
+		MaxRequestBodySize:    4096,
+		NoDefaultServerHeader: true,
+		NoDefaultContentType:  true,
+		ReadBufferSize:        4096,
+		WriteBufferSize:       4096,
+		Concurrency:           1024,
 	}
 
 	go func() {
