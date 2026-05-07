@@ -4,7 +4,10 @@
 # Fraud detection API using KNN vector search
 # ============================================================================
 
-.PHONY: help build run test test-short test-race coverage fmt vet lint tidy clean bench bench-knn bench-vectorizer all docker-build docker-push docker-run docker-lint docker-clean docker-size docker-up docker-down submit submission-update submission-test submission-result k6-smoke k6-full k6-results
+.PHONY: help build run test test-short test-race coverage fmt vet lint tidy clean \
+	bench bench-knn bench-vectorizer all docker-build docker-push docker-run docker-lint \
+	docker-clean docker-size docker-up docker-down submit submission-update \
+	submission-test submission-result k6-smoke k6-full k6-results
 
 # ============================================================================
 # Variables
