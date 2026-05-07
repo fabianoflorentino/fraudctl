@@ -17,9 +17,12 @@ func TestDatasetVectorizerUsesConfiguredMCCRisk(t *testing.T) {
 		MaxKm:                100,
 		MaxTxCount24h:        20,
 		MaxMerchantAvgAmount: 1000,
-	}, model.MCCRisk{
-		"5411": 0.15,
-	})
+	}, func() model.MCCRisk {
+		var r model.MCCRisk
+		for i := range r { r[i] = 0.5 }
+		r[5411] = 0.15
+		return r
+	}())
 
 	v := ds.Vectorizer()
 	req := &model.FraudScoreRequest{
