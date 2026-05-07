@@ -16,10 +16,13 @@ func BenchmarkVectorize(b *testing.B) {
 		MaxTxCount24h:        20,
 		MaxMerchantAvgAmount: 10000,
 	}
-	mccRisk := model.MCCRisk{
-		"5411": 0.15,
-		"7995": 0.85,
-	}
+	mccRisk := func() model.MCCRisk {
+		var r model.MCCRisk
+		for i := range r { r[i] = 0.5 }
+		r[5411] = 0.15
+		r[7995] = 0.85
+		return r
+	}()
 
 	v := New(norm, mccRisk)
 
@@ -67,7 +70,11 @@ func BenchmarkVectorizeParallel(b *testing.B) {
 		MaxTxCount24h:        20,
 		MaxMerchantAvgAmount: 10000,
 	}
-	mccRisk := model.MCCRisk{}
+	mccRisk := func() model.MCCRisk {
+		var r model.MCCRisk
+		for i := range r { r[i] = 0.5 }
+		return r
+	}()
 
 	v := New(norm, mccRisk)
 
