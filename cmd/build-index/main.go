@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	resources := flag.String("resources", "/resources", "Path to resources directory")
+	resources := flag.String("resources", "./resources", "Path to resources directory")
 	nlist := flag.Int("nlist", 500, "Number of IVF clusters")
 	iterations := flag.Int("iterations", 20, "K-means iterations")
 	flag.Parse()
