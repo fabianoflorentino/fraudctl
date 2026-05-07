@@ -177,7 +177,7 @@ func BuildIVF(refsGz, outPath string, nlist, iterations int) error {
 func kmeansInit(flat []float32, n, k int) []float32 {
 	rng := rand.New(rand.NewSource(42))
 	centroids := make([]float32, k*14)
-	for ci := 0; ci < k; ci++ {
+	for ci := range k {
 		src := rng.Intn(n)
 		copy(centroids[ci*14:ci*14+14], flat[src*14:src*14+14])
 	}
@@ -354,7 +354,7 @@ func kmeansUpdate(flat []float32, n int, centroids []float32, k int, assign []in
 			continue
 		}
 		cb := ci * 14
-		for d := 0; d < 14; d++ {
+		for d := range 14 {
 			centroids[cb+d] = float32(sums[cb+d] / float64(counts[ci]))
 		}
 	}
@@ -405,8 +405,8 @@ func BuildBrute(refsGz, outPath string) error {
 	soa := make([]int16, N*DIM)
 	labels := make([]byte, N)
 
-	for i := 0; i < N; i++ {
-		for d := 0; d < DIM; d++ {
+	for i := range N {
+		for d := range DIM {
 			soa[d*N+i] = quantizeFloat32(vectors[i*DIM+d])
 		}
 		if fraudFlags[i] {
