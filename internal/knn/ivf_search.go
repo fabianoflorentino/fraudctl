@@ -26,10 +26,12 @@ import (
 )
 
 const (
-	fastNProbe = 8
-	fullNProbe = 32
+	fastNProbe = 12
+	fullNProbe = 48
 	blockSize  = 16 // vectors per scan block
 )
+
+const maxProbes = 64
 
 // topK5 is a fixed-size sorted array tracking the K=5 nearest neighbours.
 type topK5 struct {
@@ -78,8 +80,6 @@ func (h *topK5) fraudCount(labels []byte) int {
 	}
 	return n
 }
-
-const maxProbes = 32
 
 // bboxMayImprove returns true if the cluster's bounding box could contain a
 // vector closer than worstDist to the query. Fully unrolled in high-variance
