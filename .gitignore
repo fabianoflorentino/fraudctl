@@ -3,7 +3,7 @@ bin
 nginx.conf
 *.out
 *.html
-/test*
+test/
 **/*.test
 **/*.prof
 /api
