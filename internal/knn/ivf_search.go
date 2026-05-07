@@ -26,9 +26,9 @@ import (
 )
 
 const (
-	fastNProbe = 2
-	fullNProbe = 4
-	blockSize  = 8 // vectors per scan block
+	fastNProbe = 8
+	fullNProbe = 32
+	blockSize  = 16 // vectors per scan block
 )
 
 // topK5 is a fixed-size sorted array tracking the K=5 nearest neighbours.
