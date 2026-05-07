@@ -24,7 +24,7 @@ case "${1:-up}" in
         $DOCKER_COMPOSE up -d
         ;;
     down)
-        $DOCKER_COMPOSE down
+        $DOCKER_COMPOSE down --volumes --remove-orphans
         ;;
     logs)
         $DOCKER_COMPOSE logs -f
