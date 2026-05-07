@@ -11,3 +11,5 @@ nginx.conf
 third_party/**/*.o
 /build-index
 **/*.bin
+*.json
+*.log
