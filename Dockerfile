@@ -24,7 +24,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOAMD64=v3 \
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOAMD64=v3 \
     go build -ldflags="-s -w" -o build-index ./cmd/build-index
 
-# Build the IVF index from references.json.gz (nlist=4096, 32 iterations).
+# Build the IVF index from references.json.gz (nlist=4096, 24 iterations).
 # This runs at image build time so startup only needs to load the file.
 RUN ./build-index -resources ./resources -nlist 4096 -iterations 24
 
