@@ -33,8 +33,8 @@ RUN ./build-index -resources ./resources -nlist 4096 -iterations 32
 # ── Stage 2: production ────────────────────────────────────────────────────────
 FROM gcr.io/distroless/base-debian12 AS production
 
-COPY --from=builder /build/fraudctl  /fraudctl
-COPY --from=builder /build/resources /resources
+COPY --from=index-builder /build/fraudctl  /fraudctl
+COPY --from=index-builder /build/resources /resources
 
 EXPOSE 9999
 
