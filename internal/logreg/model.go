@@ -153,7 +153,7 @@ func (m *Model) Predict(v [dimInput]float32) float64 {
 	return sigmoid(dot)
 }
 
-func (m *Model) WriteTo(w io.Writer) error {
+func (m *Model) WriteTo(w io.Writer) (int64, error) {
 	buf := make([]byte, 0, 8+m.dim*8)
 	buf = binary.LittleEndian.AppendUint32(buf, 0x4C4F4752)
 	buf = binary.LittleEndian.AppendUint32(buf, 1)
@@ -162,8 +162,8 @@ func (m *Model) WriteTo(w io.Writer) error {
 	for i := 0; i < m.dim; i++ {
 		buf = binary.LittleEndian.AppendUint64(buf, math.Float64bits(m.weights[i]))
 	}
-	_, err := w.Write(buf)
-	return err
+	n, err := w.Write(buf)
+	return int64(n), err
 }
 
 func LoadFrom(r io.Reader) (*Model, error) {
@@ -190,9 +190,9 @@ func LoadFrom(r io.Reader) (*Model, error) {
 }
 
 func (m *Model) Evaluate(vectors []float32, labels []bool, n int) (tp, tn, fp, fn int) {
-	for i := 0; i < n; i++ {
+	for i := range n {
 		var v [dimInput]float32
-		for d := 0; d < dimInput; d++ {
+		for d := range dimInput {
 			v[d] = vectors[i*dimInput+d]
 		}
 		prob := m.Predict(v)
