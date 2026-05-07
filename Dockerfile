@@ -20,13 +20,15 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOAMD64=v3 \
     go build -ldflags="-s -w" -o fraudctl ./cmd/api
 
-# Compile the index builder.
+# ── Stage 1.5: build IVF index (cached separately) ────────────────────
+FROM builder AS index-builder
+# Build the index builder binary.
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOAMD64=v3 \
     go build -ldflags="-s -w" -o build-index ./cmd/build-index
 
-# Build the IVF index from references.json.gz (nlist=4096, 24 iterations).
-# This runs at image build time so startup only needs to load the file.
-RUN ./build-index -resources ./resources -nlist 4096 -iterations 24
+# Build the IVF index (nlist=4096, 32 iterations for quality).
+# Docker caches this layer; re-run only when resources change.
+RUN ./build-index -resources ./resources -nlist 4096 -iterations 32
 
 # ── Stage 2: production ────────────────────────────────────────────────────────
 FROM gcr.io/distroless/base-debian12 AS production
