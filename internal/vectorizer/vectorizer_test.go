@@ -43,7 +43,12 @@ func TestVectorizer_Vectorize(t *testing.T) {
 				},
 			},
 			norm:    model.NormalizationConstants{MaxAmount: 10000, MaxInstallments: 12, AmountVsAvgRatio: 10, MaxMinutes: 1440, MaxKm: 1000, MaxTxCount24h: 20, MaxMerchantAvgAmount: 10000},
-			mccRisk: model.MCCRisk{"5411": 0.15},
+			mccRisk: func() model.MCCRisk {
+				var r model.MCCRisk
+				for i := range r { r[i] = 0.5 }
+				r[5411] = 0.15
+				return r
+			}(),
 			wantLen: 14,
 			checkDim: func(t *testing.T, got model.Vector14) {
 				if len(got) != 14 {
@@ -77,7 +82,11 @@ func TestVectorizer_Vectorize(t *testing.T) {
 				LastTx: nil,
 			},
 			norm:    model.NormalizationConstants{MaxAmount: 10000, MaxInstallments: 12, AmountVsAvgRatio: 10, MaxMinutes: 1440, MaxKm: 1000, MaxTxCount24h: 20, MaxMerchantAvgAmount: 10000},
-			mccRisk: model.MCCRisk{},
+			mccRisk: func() model.MCCRisk {
+				var r model.MCCRisk
+				for i := range r { r[i] = 0.5 }
+				return r
+			}(),
 			wantLen: 14,
 			checkDim: func(t *testing.T, got model.Vector14) {
 				if got[5] != -1 || got[6] != -1 {
@@ -106,7 +115,11 @@ func TestVectorizer_Vectorize(t *testing.T) {
 				Terminal: model.TerminalData{KmFromHome: 5},
 			},
 			norm:    model.NormalizationConstants{MaxAmount: 10000, MaxInstallments: 12, AmountVsAvgRatio: 10, MaxMinutes: 1440, MaxKm: 1000, MaxTxCount24h: 20, MaxMerchantAvgAmount: 10000},
-			mccRisk: model.MCCRisk{},
+			mccRisk: func() model.MCCRisk {
+				var r model.MCCRisk
+				for i := range r { r[i] = 0.5 }
+				return r
+			}(),
 			wantLen: 14,
 			checkDim: func(t *testing.T, got model.Vector14) {
 				if math.IsNaN(float64(got[2])) {
