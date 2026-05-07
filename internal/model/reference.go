@@ -51,14 +51,20 @@ type NormalizationConstants struct {
 //   - 7801: Government lotteries (0.80)
 //   - 7802: Horse racing (0.75)
 //
-// Unknown MCCs default to 0.5 (medium risk).
-type MCCRisk map[string]float64
+// Uses fixed array of 10000 elements (4-digit MCC codes 0000-9999)
+// for O(1) access without hash map overhead.
+type MCCRisk [10000]float64
 
 // Get returns the risk score for a given MCC code.
-// Returns 0.5 (medium risk) if the MCC is not in the map.
+// Converts 4-character MCC string to array index.
+// Returns 0.5 (medium risk) if MCC is invalid or not found.
 func (m MCCRisk) Get(mcc string) float64 {
-	if val, ok := m[mcc]; ok {
-		return val
+	if len(mcc) != 4 {
+		return 0.5
 	}
-	return 0.5
+	idx := int(mcc[0]-'0')*1000 + int(mcc[1]-'0')*100 + int(mcc[2]-'0')*10 + int(mcc[3]-'0')
+	if idx < 0 || idx >= len(m) {
+		return 0.5
+	}
+	return m[idx]
 }
