@@ -88,10 +88,18 @@ func (l *Loader) LoadNormalization(path string) (model.NormalizationConstants, e
 // LoadMCCRisk loads the MCC risk scores from a JSON file.
 // If path is empty, it uses the basePath from the Loader.
 //
+// The JSON file should contain a map of 4-digit MCC codes to risk scores.
+// After loading, any MCC codes not in the map default to 0.5.
+//
 // Returns ErrReadFile if the file cannot be read.
 // Returns ErrDecodeJSON if the file contains invalid JSON.
 func (l *Loader) LoadMCCRisk(path string) (model.MCCRisk, error) {
 	var risk model.MCCRisk
+
+	// Initialize all entries to default 0.5
+	for i := range risk {
+		risk[i] = 0.5
+	}
 
 	if path == "" {
 		path = filepath.Join(l.basePath, "mcc_risk.json")
@@ -102,8 +110,20 @@ func (l *Loader) LoadMCCRisk(path string) (model.MCCRisk, error) {
 		return risk, fmt.Errorf("%w: %s", ErrReadFile, path)
 	}
 
-	if err := json.Unmarshal(data, &risk); err != nil {
+	// Load as map first, then convert to array
+	var tmp map[string]float64
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return risk, fmt.Errorf("%w: mcc_risk", ErrDecodeJSON)
+	}
+
+	for k, v := range tmp {
+		if len(k) != 4 {
+			continue
+		}
+		idx := int(k[0]-'0')*1000 + int(k[1]-'0')*100 + int(k[2]-'0')*10 + int(k[3]-'0')
+		if idx >= 0 && idx < len(risk) {
+			risk[idx] = v
+		}
 	}
 
 	return risk, nil
