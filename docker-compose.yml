@@ -22,7 +22,7 @@ x-api-healthcheck: &api-healthcheck
 x-api-resources: &api-resources
   resources:
     limits:
-      cpus: "0.33"
+      cpus: "0.40"
       memory: 150M
     reservations:
       cpus: "0.1"
@@ -70,7 +70,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.33"
+          cpus: "0.20"
           memory: 35M
         reservations:
           cpus: "0.05"
