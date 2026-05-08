@@ -23,7 +23,7 @@ x-api-resources: &api-resources
   resources:
     limits:
       cpus: "0.40"
-      memory: 160M
+      memory: 150M
     reservations:
       cpus: "0.1"
       memory: 120M
@@ -78,7 +78,7 @@ services:
       resources:
         limits:
           cpus: "0.20"
-          memory: 30M
+          memory: 50M
         reservations:
           cpus: "0.05"
           memory: 10M
