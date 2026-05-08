@@ -7,8 +7,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"runtime"
-	"runtime/debug"
 	"strconv"
 	"syscall"
 	"time"
@@ -42,10 +40,6 @@ func main() {
 		}
 	}
 	socketPath := os.Getenv("UNIX_SOCKET")
-
-	// Otimizações de runtime aprendidas: liberar memória após carregar dataset
-	runtime.GC()
-	debug.FreeOSMemory()
 
 	log.Printf("Loading dataset (IVF index) from %s ...", *resourcesPath)
 	ds, err := dataset.LoadDefault(*resourcesPath)
