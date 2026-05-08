@@ -2,7 +2,7 @@
 # fraudctl - Docker Compose
 # =============================================================================
 # nginx (round-robin) + 2 API instances
-# Total resources: ~1 CPU, 350 MB RAM
+# Total resources: ~1.0 CPU, 350 MB RAM
 # Unix Domain Sockets (tmpfs) replace TCP loopback — saves ~40-60µs/request.
 # =============================================================================
 x-api-env: &api-env
@@ -10,7 +10,7 @@ x-api-env: &api-env
   RESOURCES: /resources
   GOMAXPROCS: 1
   GOGC: off
-  GOMEMLIMIT: 140MiB
+  GOMEMLIMIT: 145MiB
 
 x-api-healthcheck: &api-healthcheck
   test: ["CMD", "/fraudctl", "-healthcheck"]
@@ -22,14 +22,14 @@ x-api-healthcheck: &api-healthcheck
 x-api-resources: &api-resources
   resources:
     limits:
-      cpus: "0.45"
+      cpus: "0.40"
       memory: 150M
     reservations:
       cpus: "0.1"
       memory: 110M
 
 x-api-defaults: &api-defaults
-  image: fabianoflorentino/fraudctl:v1.0.73
+  image: fabianoflorentino/fraudctl:v1.0.75
   volumes:
     - sockets:/sockets
   healthcheck: *api-healthcheck
@@ -70,7 +70,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.10"
+          cpus: "0.20"
           memory: 30M
         reservations:
           cpus: "0.05"
