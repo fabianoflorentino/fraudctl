@@ -1,7 +1,7 @@
 # =============================================================================
 # fraudctl - Docker Compose
 # =============================================================================
-# nginx (round-robin) + 2 API instances
+# HAProxy (round-robin) + 2 API instances
 # Total resources: ~1.0 CPU, 350 MB RAM
 # Unix Domain Sockets (tmpfs) replace TCP loopback — saves ~40-60µs/request.
 # =============================================================================
@@ -22,7 +22,7 @@ x-api-healthcheck: &api-healthcheck
 x-api-resources: &api-resources
   resources:
     limits:
-      cpus: "0.33"
+      cpus: "0.40"
       memory: 150M
     reservations:
       cpus: "0.1"
@@ -60,14 +60,14 @@ services:
       <<: *api-env
       UNIX_SOCKET: /sockets/api-2.sock
 
-  nginx:
-    image: nginx:alpine
-    container_name: fraudctl-nginx
-    hostname: nginx
+  haproxy:
+    image: haproxy:alpine
+    container_name: fraudctl-haproxy
+    hostname: haproxy
     ports:
       - "9999:9999"
     volumes:
-      - ./config/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./config/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
       - sockets:/sockets
     depends_on:
       api-1:
@@ -77,7 +77,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.33"
+          cpus: "0.20"
           memory: 50M
         reservations:
           cpus: "0.05"
