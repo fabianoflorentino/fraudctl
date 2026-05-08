@@ -29,8 +29,6 @@
 package vectorizer
 
 import (
-	"math"
-
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
 
@@ -126,6 +124,57 @@ func (v *Vectorizer) Vectorize(req *model.FraudScoreRequest) model.Vector14 {
 	return vec
 }
 
+// VectorizeRaw converts a RawRequest into a 14-dimensional normalized vector
+// without allocating strings.
+func (v *Vectorizer) VectorizeRaw(r *model.RawRequest) model.Vector14 {
+	var vec model.Vector14
+
+	vec[0] = round4(clampFloat32(float32(r.Amount) * v.invMaxAmount))
+	vec[1] = round4(clampFloat32(float32(r.Installments) * v.invMaxInstall))
+
+	var amountVsAvg float32
+	if r.AvgAmount > 0 {
+		amountVsAvg = r.Amount / r.AvgAmount
+	}
+	vec[2] = round4(clampFloat32(amountVsAvg * v.invAmountRatio))
+
+	hour, dayOfWeek := parseHourAndWeekdayBytes(r.RequestedAt)
+
+	vec[3] = round4(float32(hour) / 23.0)
+	vec[4] = round4(float32(dayOfWeek) / 6.0)
+
+	if r.HasLastTx {
+		reqSec := parseUnixSecondsBytes(r.RequestedAt)
+		lastSec := parseUnixSecondsBytes(r.LastTimestamp)
+		minutes := float32(reqSec-lastSec) / 60.0
+		vec[5] = round4(clampFloat32(minutes * v.invMaxMinutes))
+		vec[6] = round4(clampFloat32(float32(r.LastKmFromCur) * v.invMaxKm))
+	} else {
+		vec[5] = -1
+		vec[6] = -1
+	}
+
+	vec[7] = round4(clampFloat32(float32(r.KmFromHome) * v.invMaxKm))
+	vec[8] = round4(clampFloat32(float32(r.TxCount24h) * v.invMaxTxCount))
+
+	if r.IsOnline {
+		vec[9] = 1
+	}
+
+	if r.CardPresent {
+		vec[10] = 1
+	}
+
+	if !r.KnownMerchant {
+		vec[11] = 1
+	}
+
+	vec[12] = float32(v.mccRisk.Get(string(r.MerchantMCC)))
+	vec[13] = round4(clampFloat32(float32(r.MerchantAvg) * v.invMaxMerchantAvg))
+
+	return vec
+}
+
 // clampFloat32 restricts a value to the range [0.0, 1.0] for float32.
 func clampFloat32(val float32) float32 {
 	if val < 0 {
@@ -139,7 +188,7 @@ func clampFloat32(val float32) float32 {
 
 // round4 rounds a float32 to 4 decimal places, matching the reference dataset precision.
 func round4(v float32) float32 {
-	return float32(math.Round(float64(v)*10000) * 0.0001)
+	return float32(int(v*10000+0.5)) * 0.0001
 }
 
 // parseHourAndWeekday extracts UTC hour (0-23) and weekday (0=Sun..6=Sat)
@@ -183,17 +232,52 @@ func parseUnixSeconds(s string) int64 {
 	min := int64(s[14]-'0')*10 + int64(s[15]-'0')
 	sec := int64(s[17]-'0')*10 + int64(s[18]-'0')
 
-	// Days from epoch using Julian Day Number approach.
-	// Formula: days since 1970-01-01
-	y, m := year, month
-	if m <= 2 {
-		y--
-		m += 12
-	}
-	a := y / 100
-	b := 2 - a + a/4
-	jd := int64(365.25*float64(y+4716)) + int64(30.6001*float64(m+1)) + day + int64(b) - 1524
+	// Days since 1970-01-01 using integer Gregorian calendar.
+	// Formula: days from 0000-03-01 to given date, subtract offset to 1970-01-01.
+	a := (14 - month) / 12
+	y := year + 4800 - a
+	m := month + 12*a - 3
+	jd := day + (153*m+2)/5 + 365*y + y/4 - y/100 + y/400 - 32045
 	days := jd - 2440588 // 2440588 = Julian Day for 1970-01-01
+
+	return days*86400 + hour*3600 + min*60 + sec
+}
+
+func parseHourAndWeekdayBytes(s []byte) (hour, weekday int) {
+	if len(s) < 13 || s[10] != 'T' {
+		return 0, 0
+	}
+	h := int(s[11]-'0')*10 + int(s[12]-'0')
+	if len(s) < 10 {
+		return h, 0
+	}
+	year := int(s[0]-'0')*1000 + int(s[1]-'0')*100 + int(s[2]-'0')*10 + int(s[3]-'0')
+	month := int(s[5]-'0')*10 + int(s[6]-'0')
+	day := int(s[8]-'0')*10 + int(s[9]-'0')
+	t := [12]int{0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4}
+	if month < 3 {
+		year--
+	}
+	wd := (year + year/4 - year/100 + year/400 + t[month-1] + day) % 7
+	return h, (wd + 6) % 7
+}
+
+func parseUnixSecondsBytes(s []byte) int64 {
+	if len(s) < 19 || s[10] != 'T' {
+		return 0
+	}
+	year := int64(s[0]-'0')*1000 + int64(s[1]-'0')*100 + int64(s[2]-'0')*10 + int64(s[3]-'0')
+	month := int64(s[5]-'0')*10 + int64(s[6]-'0')
+	day := int64(s[8]-'0')*10 + int64(s[9]-'0')
+	hour := int64(s[11]-'0')*10 + int64(s[12]-'0')
+	min := int64(s[14]-'0')*10 + int64(s[15]-'0')
+	sec := int64(s[17]-'0')*10 + int64(s[18]-'0')
+
+	a := (14 - month) / 12
+	y := year + 4800 - a
+	m := month + 12*a - 3
+	jd := day + (153*m+2)/5 + 365*y + y/4 - y/100 + y/400 - 32045
+	days := jd - 2440588
 
 	return days*86400 + hour*3600 + min*60 + sec
 }
