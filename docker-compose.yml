@@ -3,7 +3,7 @@
 # =============================================================================
 # nginx (round-robin) + 2 API instances
 # Total resources: ~1.0 CPU, 350 MB RAM
-# TCP loopback between nginx and APIs (more portable than unix sockets in restricted envs).
+# Unix Domain Sockets (tmpfs) replace TCP loopback — saves ~40-60µs/request.
 # =============================================================================
 x-api-env: &api-env
   PORT: 9999
@@ -22,7 +22,7 @@ x-api-healthcheck: &api-healthcheck
 x-api-resources: &api-resources
   resources:
     limits:
-      cpus: "0.40"
+      cpus: "0.33"
       memory: 150M
     reservations:
       cpus: "0.1"
@@ -30,6 +30,8 @@ x-api-resources: &api-resources
 
 x-api-defaults: &api-defaults
   image: fabianoflorentino/fraudctl:v1.0.71
+  volumes:
+    - sockets:/sockets
   healthcheck: *api-healthcheck
   deploy: *api-resources
   restart: unless-stopped
@@ -41,6 +43,7 @@ services:
     hostname: api-1
     environment:
       <<: *api-env
+      UNIX_SOCKET: /sockets/api-1.sock
 
   api-2:
     <<: *api-defaults
@@ -48,6 +51,7 @@ services:
     hostname: api-2
     environment:
       <<: *api-env
+      UNIX_SOCKET: /sockets/api-2.sock
 
   nginx:
     image: nginx:alpine
@@ -57,6 +61,7 @@ services:
       - "9999:9999"
     volumes:
       - ./config/nginx.conf:/etc/nginx/nginx.conf:ro
+      - sockets:/sockets
     depends_on:
       api-1:
         condition: service_healthy
@@ -65,12 +70,20 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.20"
-          memory: 30M
+          cpus: "0.33"
+          memory: 35M
         reservations:
           cpus: "0.05"
           memory: 10M
     restart: unless-stopped
+
+volumes:
+  sockets:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "uid=65532,gid=65532"
 
 networks:
   default:
