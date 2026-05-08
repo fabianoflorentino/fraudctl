@@ -36,12 +36,6 @@ x-api-defaults: &api-defaults
   healthcheck: *api-healthcheck
   deploy: *api-resources
   restart: unless-stopped
-  ulimits:
-    nofile:
-      soft: 65536
-      hard: 65536
-  security_opt:
-    - seccomp:unconfined
 
 services:
   api-1:
@@ -83,16 +77,6 @@ services:
           cpus: "0.05"
           memory: 10M
     restart: unless-stopped
-    sysctls:
-      net.core.somaxconn: 4096
-      net.ipv4.tcp_fin_timeout: 15
-      net.ipv4.tcp_tw_reuse: 1
-    ulimits:
-      nofile:
-        soft: 65536
-        hard: 65536
-    security_opt:
-      - seccomp:unconfined
 
 volumes:
   sockets:
