@@ -10,7 +10,7 @@ x-api-env: &api-env
   RESOURCES: /resources
   GOMAXPROCS: 1
   GOGC: off
-  GOMEMLIMIT: 140MiB
+  GOMEMLIMIT: 145MiB
 
 x-api-healthcheck: &api-healthcheck
   test: ["CMD", "/fraudctl", "-healthcheck"]
