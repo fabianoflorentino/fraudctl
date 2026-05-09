@@ -172,6 +172,9 @@ func LoadFrom(r io.Reader) (*Model, error) {
 		return nil, err
 	}
 	m := &Model{}
+	if len(data) < 16 {
+		return nil, errInvalidMagic
+	}
 	magic := binary.LittleEndian.Uint32(data[0:])
 	if magic != 0x4C4F4752 {
 		return nil, errInvalidMagic
@@ -184,7 +187,7 @@ func LoadFrom(r io.Reader) (*Model, error) {
 	m.bias = math.Float64frombits(binary.LittleEndian.Uint64(data[12:]))
 	m.weights = make([]float64, m.dim)
 	for i := 0; i < m.dim; i++ {
-		m.weights[i] = math.Float64frombits(binary.LittleEndian.Uint64(data[16+i*8:]))
+		m.weights[i] = math.Float64frombits(binary.LittleEndian.Uint64(data[20+i*8:]))
 	}
 	return m, nil
 }
