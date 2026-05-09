@@ -131,7 +131,7 @@ func LoadDefault(path string) (*Dataset, error) {
 		if _, err := os.Stat(ivfPath); err == nil {
 			ivf, err := knn.LoadIVF(ivfPath)
 			if err == nil {
-				ivf.SetNProbe(24)
+				ivf.SetNProbe(48)
 				ivf.SetRetry(8, 2, 3)
 				idx = ivf
 			}

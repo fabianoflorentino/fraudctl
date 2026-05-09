@@ -114,7 +114,7 @@ func parseFraudRequest(body []byte) model.RawRequest {
 				if ctx == "customer" && key == "known_merchants" && len(merchantID) > 0 {
 					pos++
 					r.KnownMerchant = scanMerchantArray(body, &pos, merchantID)
-					// If found, scanMerchantArray already consumed the array
+					knownMerchant = true
 				} else {
 					for pos < len(body) && body[pos] != ']' {
 						pos++
