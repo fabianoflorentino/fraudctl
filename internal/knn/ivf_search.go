@@ -26,9 +26,9 @@ import (
 )
 
 const (
-	fastNProbe = 2
-	fullNProbe = 4
-	blockSize  = 8 // vectors per scan block
+	fastNProbe = 12
+	fullNProbe = 48
+	blockSize  = 16 // vectors per scan block
 )
 
 // topK5 is a fixed-size sorted array tracking the K=5 nearest neighbours.
@@ -79,7 +79,7 @@ func (h *topK5) fraudCount(labels []byte) int {
 	return n
 }
 
-const maxProbes = 32
+const maxProbes = 64
 
 // bboxMayImprove returns true if the cluster's bounding box could contain a
 // vector closer than worstDist to the query. Fully unrolled in high-variance
@@ -442,14 +442,24 @@ func quantizeQuery(query model.Vector14) [DIM]int16 {
 	return q
 }
 
-// PredictRaw uses two-pass adaptive IVF with bbox pruning:
+// PredictRaw uses two-pass adaptive IVF with bbox pruning.
 //
-//	selectProbes once with fullNProbe=24.
-//	Pass 1: scan fastNProbe=8 clusters (bbox pruning when worstDist is known).
-//	Pass 2: only if fraud ∈ {2,3} → scan remaining clusters with bbox pruning.
-func (idx *IVFIndex) PredictRaw(query model.Vector14, _ int) int {
+//	nprobe controls how many clusters to probe total.
+//	Pass 1: scans nprobe/3 clusters (~33% of probes).
+//	Pass 2: only if fraud ∈ {2,3} → scans remaining clusters.
+func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 	if len(idx.vectors) == 0 {
 		return 0
+	}
+
+	if nprobe < 1 {
+		nprobe = idx.nprobe
+	}
+	if nprobe < 1 {
+		nprobe = fullNProbe
+	}
+	if nprobe > idx.nlist {
+		nprobe = idx.nlist
 	}
 
 	var qf [DIM]float32
@@ -459,17 +469,16 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, _ int) int {
 	qi := quantizeQuery(query)
 
 	// Select all probes once — reused for both passes.
-	full := fullNProbe
-	if full > idx.nlist {
-		full = idx.nlist
+	fast := nprobe / 3
+	if fast < 1 {
+		fast = 1
 	}
-	fast := fastNProbe
-	if fast > full {
-		fast = full
+	if fast > nprobe {
+		fast = nprobe
 	}
 
 	var probesBuf [maxProbes]int
-	selectProbes(idx.centroids, idx.nlist, qf, full, probesBuf[:full])
+	selectProbes(idx.centroids, idx.nlist, qf, nprobe, probesBuf[:nprobe])
 
 	h := newTopK5()
 	hasBbox := len(idx.bboxMin) > 0
@@ -482,7 +491,6 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, _ int) int {
 		if start >= end {
 			continue
 		}
-		// bbox pruning only once we have a real worst distance.
 		if hasBbox && h.count == K {
 			if !bboxMayImprove(idx.bboxMin, idx.bboxMax, ci, qi, h.worstDist()) {
 				continue
@@ -495,7 +503,7 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, _ int) int {
 
 	// Pass 2: only if result is ambiguous (boundary zone 2 or 3 out of 5).
 	if fraud == 2 || fraud == 3 {
-		for pi := fast; pi < full; pi++ {
+		for pi := fast; pi < nprobe; pi++ {
 			ci := probesBuf[pi]
 			start := int(idx.offsets[ci])
 			end := int(idx.offsets[ci+1])
