@@ -115,6 +115,7 @@ func TestMCCRisk_Get(t *testing.T) {
 		{"known mcc high risk", "7995", 0.85},
 		{"unknown mcc should return default", "1234", 0.5},
 		{"empty mcc returns default", "", 0.5},
+		{"non-digit mcc returns default", "abcd", 0.5},
 	}
 
 	for _, tt := range tests {
