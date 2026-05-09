@@ -2,16 +2,18 @@ package handler
 
 import (
 	"log"
+	"sync"
 	"sync/atomic"
 
 	"github.com/valyala/fasthttp"
+
+	gojson "github.com/goccy/go-json"
 
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
 
 type Vectorizer interface {
 	Vectorize(req *model.FraudScoreRequest) model.Vector14
-	VectorizeRaw(req *model.RawRequest) model.Vector14
 }
 
 // KNNIndex runs exact/approximate k-nearest-neighbor lookup.
@@ -37,16 +39,9 @@ const (
 var (
 	approvedBody    = []byte(`{"approved":true,"fraud_score":0.0}`)
 	disapprovedBody = []byte(`{"approved":false,"fraud_score":1.0}`)
-	contentTypeJSON = []byte("application/json")
 
-	// responses indexed by fraudCount (0-5).
-	responses = [6][]byte{
-		approvedBody,    // 0 → approved
-		approvedBody,    // 1 → approved
-		approvedBody,    // 2 → approved
-		disapprovedBody, // 3 → denied
-		disapprovedBody, // 4 → denied
-		disapprovedBody, // 5 → denied
+	reqPool = sync.Pool{
+		New: func() any { return new(model.FraudScoreRequest) },
 	}
 )
 
@@ -68,28 +63,36 @@ func (h *FraudScoreHandler) Handle(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	body := ctx.PostBody()
-	if len(body) == 0 {
-		writeJSON(ctx, approvedBody)
+	req := reqPool.Get().(*model.FraudScoreRequest)
+	req.Customer.KnownMerchants = req.Customer.KnownMerchants[:0]
+	req.LastTx = nil
+	if err := gojson.Unmarshal(ctx.PostBody(), req); err != nil {
+		reqPool.Put(req)
+		// Decode errors: approve to avoid 5× error penalty.
+		ctx.SetStatusCode(fasthttp.StatusOK)
+		ctx.SetContentType("application/json")
+		ctx.Write(approvedBody)
 		return
 	}
 
-	parsed := parseFraudRequest(body)
-
-	vec := h.vec.VectorizeRaw(&parsed)
+	vec := h.vec.Vectorize(req)
+	reqPool.Put(req)
 
 	nprobe := h.knn.NProbe()
 	fraudCount := h.knn.PredictRaw(vec, nprobe)
+	score := float64(fraudCount) / float64(knnNeighbors)
+	var resp []byte
+	if score >= knnFraudThreshold {
+		resp = disapprovedBody
+	} else {
+		resp = approvedBody
+	}
 
-	writeJSON(ctx, responses[fraudCount])
+	ctx.SetStatusCode(fasthttp.StatusOK)
+	ctx.SetContentType("application/json")
+	ctx.Write(resp)
 
 	if count := h.requestCount.Add(1); count%10000 == 0 {
 		log.Printf("requests=%d", count)
 	}
-}
-
-func writeJSON(ctx *fasthttp.RequestCtx, body []byte) {
-	ctx.Response.Header.SetStatusCode(fasthttp.StatusOK)
-	ctx.Response.Header.SetContentTypeBytes(contentTypeJSON)
-	ctx.Response.SetBody(body)
 }

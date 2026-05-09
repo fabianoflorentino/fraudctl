@@ -16,10 +16,6 @@ func (m *mockVec) Vectorize(req *model.FraudScoreRequest) model.Vector14 {
 	return model.Vector14{0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 }
 
-func (m *mockVec) VectorizeRaw(req *model.RawRequest) model.Vector14 {
-	return model.Vector14{0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-}
-
 // mockKNN returns a fixed score regardless of the query vector.
 type mockKNN struct{ score float64 }
 

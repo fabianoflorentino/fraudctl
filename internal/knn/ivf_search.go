@@ -442,12 +442,24 @@ func quantizeQuery(query model.Vector14) [DIM]int16 {
 	return q
 }
 
-func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
+// PredictRaw uses two-pass adaptive IVF with bbox pruning:
+//
+//	selectProbes once with fullNProbe=24.
+//	Pass 1: scan fastNProbe=8 clusters (bbox pruning when worstDist is known).
+//	Pass 2: only if fraud ∈ {2,3} → scan remaining clusters with bbox pruning.
+func (idx *IVFIndex) PredictRaw(query model.Vector14, _ int) int {
 	if len(idx.vectors) == 0 {
 		return 0
 	}
 
-	full := nprobe
+	var qf [DIM]float32
+	for d := 0; d < DIM; d++ {
+		qf[d] = query[d]
+	}
+	qi := quantizeQuery(query)
+
+	// Select all probes once — reused for both passes.
+	full := fullNProbe
 	if full > idx.nlist {
 		full = idx.nlist
 	}
@@ -457,9 +469,8 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 	}
 
 	var probesBuf [maxProbes]int
-	selectProbes(idx.centroids, idx.nlist, [DIM]float32(query), full, probesBuf[:full])
+	selectProbes(idx.centroids, idx.nlist, qf, full, probesBuf[:full])
 
-	qi := quantizeQuery(query)
 	h := newTopK5()
 	hasBbox := len(idx.bboxMin) > 0
 
@@ -471,6 +482,7 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 		if start >= end {
 			continue
 		}
+		// bbox pruning only once we have a real worst distance.
 		if hasBbox && h.count == K {
 			if !bboxMayImprove(idx.bboxMin, idx.bboxMax, ci, qi, h.worstDist()) {
 				continue
