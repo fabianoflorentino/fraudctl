@@ -22,15 +22,14 @@ x-api-healthcheck: &api-healthcheck
 x-api-resources: &api-resources
   resources:
     limits:
-      cpus: "0.40"
+      cpus: "0.38"
       memory: 150M
     reservations:
       cpus: "0.1"
       memory: 120M
 
-
 x-api-defaults: &api-defaults
-  image: fabianoflorentino/fraudctl:v1.0.79
+  image: fabianoflorentino/fraudctl:v1.0.71
   volumes:
     - sockets:/sockets
   healthcheck: *api-healthcheck
@@ -77,8 +76,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.20"
-          memory: 50M
+          cpus: "0.24"
+          memory: 35M
         reservations:
           cpus: "0.05"
           memory: 10M
