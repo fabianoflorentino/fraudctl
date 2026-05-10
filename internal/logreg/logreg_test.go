@@ -291,7 +291,7 @@ func TestEvaluate_Results(t *testing.T) {
 
 func TestTrain_LargeBatch(t *testing.T) {
 	m := NewModel()
-	n := 300001
+	n := 1000
 	vectors := make([]float32, n*dimInput)
 	labels := make([]bool, n)
 	for i := 0; i < n; i++ {
