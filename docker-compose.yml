@@ -30,7 +30,7 @@ x-api-resources: &api-resources
 
 
 x-api-defaults: &api-defaults
-  image: fabianoflorentino/fraudctl:v1.0.85
+  image: fabianoflorentino/fraudctl:v1.0.81
   volumes:
     - sockets:/sockets
   healthcheck: *api-healthcheck
