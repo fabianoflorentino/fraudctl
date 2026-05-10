@@ -61,30 +61,37 @@ flowchart LR
     style I fill:#e8f5e8,color:#000000
 ```
 
-## ivf.bin Format (v4)
+## ivf.bin Format (v5)
 
 ```
 magic     uint32   0x49564649
-version   uint32   4
+version   uint32   5
 nlist     uint32   4096
 dim       uint32   14
 n         uint32   3000000
-centroids [nlist×DIM]float32   — cluster centroids
-offsets   [nlist+1]uint32      — cluster boundaries
-vectors   [n×DIM]int16         — AoS: vectors[i*DIM+d]
-labels    [ceil(n/8)]byte      — bit-packed: bit i%8 of byte i/8
+centroids [nlist×DIM]float32   — cluster centroids (SoA on load: dim-major for cache-friendly selectProbes)
+offsets   [nlist+1]uint32      — cluster boundaries (vector indices)
+bbox_min  [nlist×DIM]int16     — per-cluster per-dimension min (quantized)
+bbox_max  [nlist×DIM]int16     — per-cluster per-dimension max (quantized)
+vectors   [n×DIM]int16         — AoS: vectors[i*DIM+d] (int16 quantized, scale=10000)
+labels    [ceil(n/8)]byte      — bit-packed: bit i%8 of byte i/8 (1 = fraud)
 ```
+
+**v5 novidades (vs v4)**:
+- `bbox_min`/`bbox_max`: bounding boxes por cluster para bbox pruning
+- 32 iterações de k-means (vs 25)
+- Transposição de centroids para SoA (dim-major) no load para `selectProbes` mais eficiente
 
 ## Resource Allocation
 
 | Component | CPU | Memory | Env |
 |---|---|---|---|
-| nginx | 0.10 | 30MB | — |
-| api-1 | 0.45 | 150MB | `GOMAXPROCS=2`, `GOGC=off`, `GOMEMLIMIT=120MiB` |
-| api-2 | 0.45 | 150MB | `GOMAXPROCS=2`, `GOGC=off`, `GOMEMLIMIT=120MiB` |
-| **Total** | **1.00** | **330MB** | budget: 350MB |
+| haproxy | 0.20 | 50MB | — |
+| api-1 | 0.40 | 150MB | `GOMAXPROCS=1`, `GOGC=off`, `GOMEMLIMIT=145MiB` |
+| api-2 | 0.40 | 150MB | `GOMAXPROCS=1`, `GOGC=off`, `GOMEMLIMIT=145MiB` |
+| **Total** | **1.00** | **350MB** | budget: 350MB |
 
-Communication between nginx and API instances uses **Unix Domain Sockets** on a shared `tmpfs` volume — eliminates TCP loopback overhead (~40–60µs/request).
+Communication between haproxy and API instances uses **Unix Domain Sockets** on a shared `tmpfs` volume — eliminates TCP loopback overhead (~40–60µs/request).
 
 ## Performance
 
@@ -104,4 +111,5 @@ Communication between nginx and API instances uses **Unix Domain Sockets** on a 
 | v1.0.45 | 1650 | — | 112ms | nlist=300, CGo |
 | v1.0.51 | 3443 | — | — | nlist=1024, CGo AVX2 |
 | v1.0.52 | 3434 | — | 157ms | nlist=1024, CGo AVX2 (CPU throttled) |
-| v1.0.53+ | TBD | **3949** | 91ms | IVF v4, nlist=4096, pure Go, 0 allocs |
+| v1.0.53–v1.0.83 | ~3900–5636 | ~3949 | ~91ms–2.31ms | IVF v4/v5, nlist=4096, pure Go |
+| **v1.0.84+** | TBD | TBD | TBD | **IVF v5, nlist=4096, nprobe=48, bbox pruning, page-warming goroutine REMOVED (fixes p99 outliers)** |
