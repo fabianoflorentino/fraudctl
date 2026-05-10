@@ -157,10 +157,15 @@ docker-push: ## Push image to registry
 	@docker push $(REGISTRY):latest
 	@echo -e "$(GREEN)✓ Image pushed!$(NC)"
 
-docker-clean: ## Remove local Docker images
-	@echo -e "$(YELLOW)🧹 Removing Docker images...$(NC)"
+docker-clean: ## Remove local Docker images (fraudctl:latest only)
+	@echo -e "$(YELLOW)🧹 Removing Docker image $(IMAGE):latest...$(NC)"
 	@docker images $(IMAGE) -q | xargs -r docker rmi 2>/dev/null || true
 	@echo -e "$(GREEN)✓ Docker images cleaned!$(NC)"
+
+docker-clean-all: ## Remove ALL fraudctl Docker images (all tags, all registries)
+	@echo -e "$(YELLOW)🧹 Removing ALL fraudctl Docker images...$(NC)"
+	@docker images --format '{{.Repository}}:{{.Tag}} {{.ID}}' | grep -i fraudctl | awk '{print $$2}' | sort -u | xargs -r docker rmi -f 2>/dev/null || true
+	@echo -e "$(GREEN)✓ All fraudctl images removed!$(NC)"
 
 docker-up: ## Start services with docker compose
 	@echo -e "$(BLUE)🚀 Starting services...$(NC)"

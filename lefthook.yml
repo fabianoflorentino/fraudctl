@@ -56,10 +56,10 @@ pre-commit:
     test:
       exclude: *go-exclude
       run: |
-        go test -race -coverprofile=/tmp/fraudctl-coverage.out ./... &&
+        go test -race -coverprofile=/tmp/fraudctl-coverage.out ./internal/... &&
         go tool cover -func=/tmp/fraudctl-coverage.out &&
         COV=$(go tool cover -func=/tmp/fraudctl-coverage.out | grep "^total:" | awk '{gsub(/%/,"",$3); print $3}') &&
-        awk -v cov="$COV" "BEGIN {if (cov+0 < 75) {print \"FAIL: Coverage \" cov \"% is below the required 75%\"; exit 1} else {print \"PASS: Coverage \" cov \"% meets the 75% threshold\"}}"
+        awk -v cov="$COV" "BEGIN {if (cov+0 < 80) {print \"FAIL: Coverage \" cov \"% is below the required 80%\"; exit 1} else {print \"PASS: Coverage \" cov \"% meets the 80% threshold\"}}"
 
 pre-push:
   parallel: true
@@ -81,10 +81,10 @@ pre-push:
     test-cover:
       exclude: *go-exclude
       run: |
-        go test -race -coverprofile=/tmp/fraudctl-coverage.out ./... &&
+        go test -race -coverprofile=/tmp/fraudctl-coverage.out ./internal/... &&
         go tool cover -func=/tmp/fraudctl-coverage.out &&
         COV=$(go tool cover -func=/tmp/fraudctl-coverage.out | grep "^total:" | awk '{gsub(/%/,"",$3); print $3}') &&
-        awk -v cov="$COV" "BEGIN {if (cov+0 < 75) {print \"FAIL: Coverage \" cov \"% is below the required 75%\"; exit 1} else {print \"PASS: Coverage \" cov \"% meets the 75% threshold\"}}"
+        awk -v cov="$COV" "BEGIN {if (cov+0 < 80) {print \"FAIL: Coverage \" cov \"% is below the required 80%\"; exit 1} else {print \"PASS: Coverage \" cov \"% meets the 80% threshold\"}}"
 
     vuln:
       exclude: *go-exclude
