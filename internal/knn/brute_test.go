@@ -34,8 +34,9 @@ func BenchmarkIVFPredict(b *testing.B) {
 // buildSmallIVF creates a minimal IVF index in v4 format (AoS, bit-packed labels).
 //
 // 6 vectors total:
-//   cluster 0 (centroid ≈ [1,0,…]): indices 0-2, all fraud
-//   cluster 1 (centroid ≈ [0,0,…]): indices 3-5, all legit
+//
+//	cluster 0 (centroid ≈ [1,0,…]): indices 0-2, all fraud
+//	cluster 1 (centroid ≈ [0,0,…]): indices 3-5, all legit
 func buildSmallIVF() *IVFIndex {
 	const nlist = 2
 

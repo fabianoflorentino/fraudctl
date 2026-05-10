@@ -101,7 +101,9 @@ func TestLastTransactionData_TimestampTime(t *testing.T) {
 
 func TestMCCRisk_Get(t *testing.T) {
 	var risk MCCRisk
-	for i := range risk { risk[i] = 0.5 }
+	for i := range risk {
+		risk[i] = 0.5
+	}
 	risk[5411] = 0.15
 	risk[7995] = 0.85
 	risk[5912] = 0.20

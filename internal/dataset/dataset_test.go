@@ -19,7 +19,9 @@ func TestDatasetVectorizerUsesConfiguredMCCRisk(t *testing.T) {
 		MaxMerchantAvgAmount: 1000,
 	}, func() model.MCCRisk {
 		var r model.MCCRisk
-		for i := range r { r[i] = 0.5 }
+		for i := range r {
+			r[i] = 0.5
+		}
 		r[5411] = 0.15
 		return r
 	}())

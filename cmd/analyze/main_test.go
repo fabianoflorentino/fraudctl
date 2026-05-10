@@ -89,7 +89,7 @@ func TestWriteAndReadTestData(t *testing.T) {
 				Request: model.FraudScoreRequest{
 					ID: "tx-1",
 					Transaction: model.TransactionData{
-						Amount:      100,
+						Amount:       100,
 						Installments: 1,
 						RequestedAt:  "2026-03-11T10:00:00Z",
 					},

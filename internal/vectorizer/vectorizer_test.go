@@ -42,10 +42,12 @@ func TestVectorizer_Vectorize(t *testing.T) {
 					KmFromHome:  10,
 				},
 			},
-			norm:    model.NormalizationConstants{MaxAmount: 10000, MaxInstallments: 12, AmountVsAvgRatio: 10, MaxMinutes: 1440, MaxKm: 1000, MaxTxCount24h: 20, MaxMerchantAvgAmount: 10000},
+			norm: model.NormalizationConstants{MaxAmount: 10000, MaxInstallments: 12, AmountVsAvgRatio: 10, MaxMinutes: 1440, MaxKm: 1000, MaxTxCount24h: 20, MaxMerchantAvgAmount: 10000},
 			mccRisk: func() model.MCCRisk {
 				var r model.MCCRisk
-				for i := range r { r[i] = 0.5 }
+				for i := range r {
+					r[i] = 0.5
+				}
 				r[5411] = 0.15
 				return r
 			}(),
@@ -81,10 +83,12 @@ func TestVectorizer_Vectorize(t *testing.T) {
 				},
 				LastTx: nil,
 			},
-			norm:    model.NormalizationConstants{MaxAmount: 10000, MaxInstallments: 12, AmountVsAvgRatio: 10, MaxMinutes: 1440, MaxKm: 1000, MaxTxCount24h: 20, MaxMerchantAvgAmount: 10000},
+			norm: model.NormalizationConstants{MaxAmount: 10000, MaxInstallments: 12, AmountVsAvgRatio: 10, MaxMinutes: 1440, MaxKm: 1000, MaxTxCount24h: 20, MaxMerchantAvgAmount: 10000},
 			mccRisk: func() model.MCCRisk {
 				var r model.MCCRisk
-				for i := range r { r[i] = 0.5 }
+				for i := range r {
+					r[i] = 0.5
+				}
 				return r
 			}(),
 			wantLen: 14,
@@ -114,10 +118,12 @@ func TestVectorizer_Vectorize(t *testing.T) {
 				},
 				Terminal: model.TerminalData{KmFromHome: 5},
 			},
-			norm:    model.NormalizationConstants{MaxAmount: 10000, MaxInstallments: 12, AmountVsAvgRatio: 10, MaxMinutes: 1440, MaxKm: 1000, MaxTxCount24h: 20, MaxMerchantAvgAmount: 10000},
+			norm: model.NormalizationConstants{MaxAmount: 10000, MaxInstallments: 12, AmountVsAvgRatio: 10, MaxMinutes: 1440, MaxKm: 1000, MaxTxCount24h: 20, MaxMerchantAvgAmount: 10000},
 			mccRisk: func() model.MCCRisk {
 				var r model.MCCRisk
-				for i := range r { r[i] = 0.5 }
+				for i := range r {
+					r[i] = 0.5
+				}
 				return r
 			}(),
 			wantLen: 14,
@@ -173,8 +179,8 @@ func TestParseHourAndWeekday(t *testing.T) {
 		wantWeekday int
 		valid       bool
 	}{
-		{"valid UTC", "2026-03-11T20:23:35Z", 20, 2, true},  // 2026-03-11 is Wednesday=2 (0=Mon)
-		{"midnight", "2026-01-01T00:00:00Z", 0, 3, true},    // 2026-01-01 is Thursday=3 (0=Mon)
+		{"valid UTC", "2026-03-11T20:23:35Z", 20, 2, true}, // 2026-03-11 is Wednesday=2 (0=Mon)
+		{"midnight", "2026-01-01T00:00:00Z", 0, 3, true},   // 2026-01-01 is Thursday=3 (0=Mon)
 		{"invalid format", "2026-03-11", 0, 0, false},
 		{"empty string", "", 0, 0, false},
 	}

@@ -18,7 +18,9 @@ func BenchmarkVectorize(b *testing.B) {
 	}
 	mccRisk := func() model.MCCRisk {
 		var r model.MCCRisk
-		for i := range r { r[i] = 0.5 }
+		for i := range r {
+			r[i] = 0.5
+		}
 		r[5411] = 0.15
 		r[7995] = 0.85
 		return r
@@ -72,7 +74,9 @@ func BenchmarkVectorizeParallel(b *testing.B) {
 	}
 	mccRisk := func() model.MCCRisk {
 		var r model.MCCRisk
-		for i := range r { r[i] = 0.5 }
+		for i := range r {
+			r[i] = 0.5
+		}
 		return r
 	}()
 
