@@ -28,11 +28,7 @@
 //	vector := vec.Vectorize(request)
 package vectorizer
 
-import (
-	"math"
-
-	"github.com/fabianoflorentino/fraudctl/internal/model"
-)
+import "github.com/fabianoflorentino/fraudctl/internal/model"
 
 // Vectorizer normalizes transaction data into a 14-dimensional vector.
 type Vectorizer struct {
@@ -137,9 +133,16 @@ func clampFloat32(val float32) float32 {
 	return val
 }
 
-// round4 rounds a float32 to 4 decimal places, matching the reference dataset precision.
+const round4Scale = 10000.0
+const round4InvScale = 1.0 / 10000.0
+
+// round4 rounds a float32 to 4 decimal places using fast integer conversion.
+// Equivalent to math.Round(v*10000)/10000 but without float64 conversion overhead.
 func round4(v float32) float32 {
-	return float32(math.Round(float64(v)*10000) * 0.0001)
+	if v < 0 {
+		return float32(int32(v*round4Scale-0.5)) * round4InvScale
+	}
+	return float32(int32(v*round4Scale+0.5)) * round4InvScale
 }
 
 // parseHourAndWeekday extracts UTC hour (0-23) and weekday (0=Sun..6=Sat)
@@ -171,7 +174,7 @@ func parseHourAndWeekday(s string) (hour, weekday int) {
 }
 
 // parseUnixSeconds parses an RFC3339 string to seconds since Unix epoch.
-// Zero-alloc. Returns 0 on failure.
+// Zero-alloc. Pure integer arithmetic (no float64). Returns 0 on failure.
 func parseUnixSeconds(s string) int64 {
 	if len(s) < 19 || s[10] != 'T' {
 		return 0
@@ -183,17 +186,17 @@ func parseUnixSeconds(s string) int64 {
 	min := int64(s[14]-'0')*10 + int64(s[15]-'0')
 	sec := int64(s[17]-'0')*10 + int64(s[18]-'0')
 
-	// Days from epoch using Julian Day Number approach.
-	// Formula: days since 1970-01-01
+	// Days since 1970-01-01 using integer-only arithmetic.
+	// Algorithm: March-based (Mar=1, Feb=12 of previous year)
 	y, m := year, month
 	if m <= 2 {
 		y--
 		m += 12
 	}
-	a := y / 100
-	b := 2 - a + a/4
-	jd := int64(365.25*float64(y+4716)) + int64(30.6001*float64(m+1)) + day + int64(b) - 1524
-	days := jd - 2440588 // 2440588 = Julian Day for 1970-01-01
+	// Leap year rule: divisible by 4, not century unless divisible by 400
+	// Formula: y*365 + y/4 - y/100 + y/400 + (153*(m-3)+2)/5 + day - epoch_offset
+	// Epoch offset for 1970-01-01 = 719469 days
+	days := y*365 + y/4 - y/100 + y/400 + (153*(m-3)+2)/5 + day - 719469
 
 	return days*86400 + hour*3600 + min*60 + sec
 }

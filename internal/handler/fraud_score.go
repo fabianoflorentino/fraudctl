@@ -1,9 +1,7 @@
 package handler
 
 import (
-	"log"
 	"sync"
-	"sync/atomic"
 
 	"github.com/valyala/fasthttp"
 
@@ -31,10 +29,10 @@ const (
 
 	// knnFraudThreshold: fraction of fraud neighbors >= this → deny.
 	knnFraudThreshold = 0.6
-
-	// knnNeighbors matches C K_NEIGHBORS — number of neighbors C collects.
-	knnNeighbors = 5
 )
+
+// knnNeighbors matches K — number of neighbors collected.
+const knnNeighbors = knnK
 
 var (
 	approvedBody    = []byte(`{"approved":true,"fraud_score":0.0}`)
@@ -46,14 +44,11 @@ var (
 )
 
 type FraudScoreHandler struct {
-	vec          Vectorizer
-	knn          KNNIndex
-	requestCount atomic.Uint64
+	vec Vectorizer
+	knn KNNIndex
 }
 
 func NewFraudScoreHandler(vec Vectorizer, knn KNNIndex) *FraudScoreHandler {
-	log.Printf("KNN inference: k=%d fraud_threshold=%.1f (majority vote >=3/%d)",
-		knnK, knnFraudThreshold, knnK)
 	return &FraudScoreHandler{vec: vec, knn: knn}
 }
 
@@ -91,8 +86,4 @@ func (h *FraudScoreHandler) Handle(ctx *fasthttp.RequestCtx) {
 	ctx.SetStatusCode(fasthttp.StatusOK)
 	ctx.SetContentType("application/json")
 	_, _ = ctx.Write(resp)
-
-	if count := h.requestCount.Add(1); count%10000 == 0 {
-		log.Printf("requests=%d", count)
-	}
 }
