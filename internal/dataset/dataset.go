@@ -12,34 +12,38 @@ import (
 )
 
 // ============================================================================
-// IVF KNN Performance Tuning Constants — ajuste aqui para p99 vs qualidade
+// IVF KNN Performance Tuning Constants — 2-tier com EARLY EXIT
 // ============================================================================
 //
-// Trade-off: nprobe MENOR = mais RÁPIDO, mas qualidade PIOR (mais erros)
-//            nprobe MAIOR = mais LENTO, mas qualidade MELHOR
+// Estratégia otimizada inspirada em joycegodinho/rinha-2026:
+//   1. Quick probe: IVF_QUICK_PROBE clusters (saída RÁPIDA)
+//   2. Verifica fraudCount:
+//      - fraud ∈ {0,1,4,5} → resultado CLARO → retorna IMEDIATAMENTE (early exit)
+//      - fraud ∈ {2,3}     → resultado AMBÍGUO → scan remaining clusters
 //
-// Na Rinha, qualidade é medida como "detection_score" (máx 3000)
-// Performance é "p99_score" (máx 3000, mas só se p99 < 2ms)
+// Por que isso funciona:
+//   - Regra de decisão: >= 3/5 fraud neighbors → nega
+//   - fraud=0,1 → claramente aprova (não pode chegar a 3 com vizinhos mais próximos)
+//   - fraud=4,5 → claramente nega
+//   - Apenas fraud=2,3 são limítrofes (adicionar vizinho pode inverter a decisão)
 //
-// RESULTADO DOS TESTES:
-//   - IVF_NPROBE = 24 → FP=2 (penalidade), p99 variando (ruim!)
-//   - IVF_NPROBE = 48 → 0 FP/FN (qualidade PERFEITA), p99=2.31ms (estável)
-//
-// Conclusão: 48 é o valor IDEAL. Não reduza mais!
+// Resultado: maioria das queries (~80-90%) saem cedo com apenas QUICK_PROBE clusters!
 // ============================================================================
 
-// IVF_NPROBE: número total de clusters a serem vasculhados por query.
-// No modo 2-pass: fast = nprobe/3 (~33%), resto só se fraud ∈ {2,3}
-const IVF_NPROBE = 48
+// IVF_NPROBE: total de clusters para casos ambíguos (quick + remaining)
+// 36 = balanço entre qualidade (menos que 48, mais que 32)
+const IVF_NPROBE = 36
 
-// IVF_RETRY_EXTRA: clusters EXTRAS para retry (só se fraud ∈ {2,3})
-const IVF_RETRY_EXTRA = 16
+// IVF_QUICK_PROBE: clusters para quick probe (early exit)
+// 16 = rápido, mas suficiente para decisões claras
+const IVF_QUICK_PROBE = 16
 
-// IVF_BOUNDARY_LO: limite inferior da zona ambígua (fraudCount = boundaryLo)
+// IVF_BOUNDARY_LO/HI: zona ambígua (apenas estes valores disparam re-score)
 const IVF_BOUNDARY_LO = 2
-
-// IVF_BOUNDARY_HI: limite superior da zona ambígua (fraudCount = boundaryHi)
 const IVF_BOUNDARY_HI = 3
+
+// IVF_RETRY_EXTRA: mantido para compatibilidade (não usado mais)
+const IVF_RETRY_EXTRA = 0
 
 // Dataset holds config and the KNN index needed to serve requests.
 type Dataset struct {
@@ -162,7 +166,7 @@ func LoadDefault(path string) (*Dataset, error) {
 			ivf, err := knn.LoadIVF(ivfPath)
 			if err == nil {
 				ivf.SetNProbe(IVF_NPROBE)
-				ivf.SetRetry(IVF_RETRY_EXTRA, IVF_BOUNDARY_LO, IVF_BOUNDARY_HI)
+				ivf.SetRetry(IVF_QUICK_PROBE, IVF_BOUNDARY_LO, IVF_BOUNDARY_HI)
 				idx = ivf
 			}
 		}

@@ -188,8 +188,8 @@ func TestIVFIndex_PredictRaw_Empty(t *testing.T) {
 func TestIVFIndex_SetRetry(t *testing.T) {
 	idx := NewIVFIndex()
 	idx.SetRetry(16, 2, 3)
-	if idx.retryExtra != 16 {
-		t.Errorf("retryExtra = %d, want 16", idx.retryExtra)
+	if idx.quickProbe != 16 {
+		t.Errorf("quickProbe = %d, want 16", idx.quickProbe)
 	}
 	if idx.boundaryLo != 2 {
 		t.Errorf("boundaryLo = %d, want 2", idx.boundaryLo)

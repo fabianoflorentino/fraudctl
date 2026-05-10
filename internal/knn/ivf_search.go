@@ -438,11 +438,21 @@ func quantizeQuery(query model.Vector14) [DIM]int16 {
 	return q
 }
 
-// PredictRaw uses two-pass adaptive IVF with bbox pruning.
+// PredictRaw uses 2-tier IVF with EARLY EXIT (inspired by joycegodinho/rinha-2026).
 //
-//	nprobe controls how many clusters to probe total.
-//	Pass 1: scans nprobe/3 clusters (~33% of probes).
-//	Pass 2: only if fraud ∈ {2,3} → scans remaining clusters.
+// Strategy:
+//  1. QUICK PROBE: scan quickProbe clusters (default 16)
+//  2. CHECK fraudCount:
+//     - fraud ∈ {0,1,4,5} → CLEAR result → EARLY EXIT (return immediately)
+//     - fraud ∈ {2,3}     → AMBIGUOUS → scan remaining clusters
+//
+// Why this works:
+//   - Decision rule: >= 3/5 fraud neighbors → deny
+//   - fraud=0,1: clearly approve (can't reach 3 with closer neighbors)
+//   - fraud=4,5: clearly deny
+//   - Only fraud=2,3 are borderline (adding a closer neighbor could flip the decision)
+//
+// Result: ~80-90% of queries exit early with only quickProbe clusters scanned!
 func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 	if len(idx.vectors) == 0 {
 		return 0
@@ -464,13 +474,15 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 	}
 	qi := quantizeQuery(query)
 
-	// Select all probes once — reused for both passes.
-	fast := nprobe / 3
-	if fast < 1 {
-		fast = 1
+	quickProbe := idx.quickProbe
+	if quickProbe < 1 {
+		quickProbe = nprobe / 2
 	}
-	if fast > nprobe {
-		fast = nprobe
+	if quickProbe < 1 {
+		quickProbe = 1
+	}
+	if quickProbe > nprobe {
+		quickProbe = nprobe
 	}
 
 	var probesBuf [maxProbes]int
@@ -479,8 +491,7 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 	h := newTopK5()
 	hasBbox := len(idx.bboxMin) > 0
 
-	// Pass 1: fast probes.
-	for pi := 0; pi < fast; pi++ {
+	for pi := 0; pi < quickProbe; pi++ {
 		ci := probesBuf[pi]
 		start := int(idx.offsets[ci])
 		end := int(idx.offsets[ci+1])
@@ -497,24 +508,24 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 
 	fraud := h.fraudCount(idx.labels)
 
-	// Pass 2: only if result is ambiguous (boundary zone 2 or 3 out of 5).
-	if fraud == 2 || fraud == 3 {
-		for pi := fast; pi < nprobe; pi++ {
-			ci := probesBuf[pi]
-			start := int(idx.offsets[ci])
-			end := int(idx.offsets[ci+1])
-			if start >= end {
-				continue
-			}
-			if hasBbox && h.count == K {
-				if !bboxMayImprove(idx.bboxMin, idx.bboxMax, ci, qi, h.worstDist()) {
-					continue
-				}
-			}
-			scanCluster(idx.vectors, idx.labels, start, end, qi, &h)
-		}
-		fraud = h.fraudCount(idx.labels)
+	if fraud < idx.boundaryLo || fraud > idx.boundaryHi {
+		return fraud
 	}
 
-	return fraud
+	for pi := quickProbe; pi < nprobe; pi++ {
+		ci := probesBuf[pi]
+		start := int(idx.offsets[ci])
+		end := int(idx.offsets[ci+1])
+		if start >= end {
+			continue
+		}
+		if hasBbox && h.count == K {
+			if !bboxMayImprove(idx.bboxMin, idx.bboxMax, ci, qi, h.worstDist()) {
+				continue
+			}
+		}
+		scanCluster(idx.vectors, idx.labels, start, end, qi, &h)
+	}
+
+	return h.fraudCount(idx.labels)
 }

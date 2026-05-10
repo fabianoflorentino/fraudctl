@@ -28,7 +28,7 @@ type IVFIndex struct {
 	bboxMax    []int16 // AoI: [nlist * DIM]
 	nlist      int
 	nprobe     int
-	retryExtra int
+	quickProbe int
 	boundaryLo int
 	boundaryHi int
 }
@@ -42,9 +42,12 @@ func (idx *IVFIndex) SetNProbe(n int) {
 
 func (idx *IVFIndex) NProbe() int { return idx.nprobe }
 
-// SetRetry configures the incremental boundary retry.
-func (idx *IVFIndex) SetRetry(retryExtra, lo, hi int) {
-	idx.retryExtra = retryExtra
+// SetRetry configures 2-tier early exit strategy.
+//
+//	quick: number of clusters for quick probe (early exit if clear)
+//	lo, hi: ambiguous zone (fraud count in [lo, hi] triggers full scan)
+func (idx *IVFIndex) SetRetry(quick, lo, hi int) {
+	idx.quickProbe = quick
 	idx.boundaryLo = lo
 	idx.boundaryHi = hi
 }
