@@ -19,7 +19,6 @@ type Reference struct {
 	Label  string   `json:"label"`
 }
 
-
 // NormalizationConstants contains the maximum values used for feature normalization.
 // These values are loaded from normalization.json and used to scale raw transaction
 // data into the [0.0, 1.0] range for the 14-dimensional vector.
