@@ -69,33 +69,33 @@ func New(norm model.NormalizationConstants, mccRisk model.MCCRisk) *Vectorizer {
 func (v *Vectorizer) Vectorize(req *model.FraudScoreRequest) model.Vector14 {
 	var vec model.Vector14
 
-	vec[0] = round4(clampFloat32(float32(req.Transaction.Amount) * v.invMaxAmount))
-	vec[1] = round4(clampFloat32(float32(req.Transaction.Installments) * v.invMaxInstall))
+	vec[0] = clampFloat32(float32(req.Transaction.Amount) * v.invMaxAmount)
+	vec[1] = clampFloat32(float32(req.Transaction.Installments) * v.invMaxInstall)
 
 	var amountVsAvg float64
 	if req.Customer.AvgAmount > 0 {
 		amountVsAvg = req.Transaction.Amount / req.Customer.AvgAmount
 	}
-	vec[2] = round4(clampFloat32(float32(amountVsAvg) * v.invAmountRatio))
+	vec[2] = clampFloat32(float32(amountVsAvg) * v.invAmountRatio)
 
 	hour, dayOfWeek := parseHourAndWeekday(req.Transaction.RequestedAt)
 
-	vec[3] = round4(float32(hour) / 23.0)
-	vec[4] = round4(float32(dayOfWeek) / 6.0)
+	vec[3] = float32(hour) / 23.0
+	vec[4] = float32(dayOfWeek) / 6.0
 
 	if req.LastTx != nil {
 		reqSec := parseUnixSeconds(req.Transaction.RequestedAt)
 		lastSec := parseUnixSeconds(req.LastTx.Timestamp)
 		minutes := float32(reqSec-lastSec) / 60.0
-		vec[5] = round4(clampFloat32(minutes * v.invMaxMinutes))
-		vec[6] = round4(clampFloat32(float32(req.LastTx.KmFromCurrent) * v.invMaxKm))
+		vec[5] = clampFloat32(minutes * v.invMaxMinutes)
+		vec[6] = clampFloat32(float32(req.LastTx.KmFromCurrent) * v.invMaxKm)
 	} else {
 		vec[5] = -1
 		vec[6] = -1
 	}
 
-	vec[7] = round4(clampFloat32(float32(req.Terminal.KmFromHome) * v.invMaxKm))
-	vec[8] = round4(clampFloat32(float32(req.Customer.TxCount24h) * v.invMaxTxCount))
+	vec[7] = clampFloat32(float32(req.Terminal.KmFromHome) * v.invMaxKm)
+	vec[8] = clampFloat32(float32(req.Customer.TxCount24h) * v.invMaxTxCount)
 
 	if req.Terminal.IsOnline {
 		vec[9] = 1
@@ -117,7 +117,7 @@ func (v *Vectorizer) Vectorize(req *model.FraudScoreRequest) model.Vector14 {
 	}
 
 	vec[12] = float32(v.mccRisk.Get(req.Merchant.MCC))
-	vec[13] = round4(clampFloat32(float32(req.Merchant.AvgAmount) * v.invMaxMerchantAvg))
+	vec[13] = clampFloat32(float32(req.Merchant.AvgAmount) * v.invMaxMerchantAvg)
 
 	return vec
 }

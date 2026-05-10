@@ -21,24 +21,19 @@ import (
 // Na Rinha, qualidade é medida como "detection_score" (máx 3000)
 // Performance é "p99_score" (máx 3000, mas só se p99 < 2ms)
 //
-// Valores ORIGINAIS (melhor qualidade):
-//   - IVF_NPROBE = 48
-//   - IVF_RETRY_EXTRA = 16
+// RESULTADO DOS TESTES:
+//   - IVF_NPROBE = 24 → FP=2 (penalidade), p99 variando (ruim!)
+//   - IVF_NPROBE = 48 → 0 FP/FN (qualidade PERFEITA), p99=2.31ms (estável)
 //
-// Valores ATUAIS (trade-off agressivo para performance):
-//   - IVF_NPROBE = 24 (50% do original = busca 50% mais rápida)
-//   - IVF_RETRY_EXTRA = 8
-//
-// Se cair qualidade (detection_score < 3000), aumente para 32 → 40 → 48
+// Conclusão: 48 é o valor IDEAL. Não reduza mais!
 // ============================================================================
 
 // IVF_NPROBE: número total de clusters a serem vasculhados por query.
 // No modo 2-pass: fast = nprobe/3 (~33%), resto só se fraud ∈ {2,3}
-const IVF_NPROBE = 24
+const IVF_NPROBE = 48
 
 // IVF_RETRY_EXTRA: clusters EXTRAS para retry (só se fraud ∈ {2,3})
-// Atualmente não usado diretamente — o 2-pass usa fast = nprobe/3
-const IVF_RETRY_EXTRA = 8
+const IVF_RETRY_EXTRA = 16
 
 // IVF_BOUNDARY_LO: limite inferior da zona ambígua (fraudCount = boundaryLo)
 const IVF_BOUNDARY_LO = 2

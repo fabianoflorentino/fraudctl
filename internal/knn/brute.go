@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
@@ -138,6 +139,21 @@ func LoadIVF(path string) (*IVFIndex, error) {
 	for i := 0; i < len(labels); i += 4096 {
 		_ = labels[i]
 	}
+
+	// Keep pages hot to prevent swapping under memory pressure.
+	// This is CRITICAL for stable p99 latency — without this, the OS may
+	// page out inactive portions of the index, causing random page faults.
+	// Interval: 10s (original) — this is frequent enough to keep pages hot
+	// but infrequent enough to not compete with request handling.
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			for i := 0; i < len(vectors); i += 2048 {
+				_ = vectors[i]
+			}
+		}
+	}()
 
 	return idx, nil
 }
