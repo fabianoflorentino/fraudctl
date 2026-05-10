@@ -18,7 +18,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "open: %v\n", err)
 		os.Exit(1)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	data, err := io.ReadAll(f)
 	if err != nil {
@@ -55,8 +55,8 @@ func main() {
 			Approved   bool    `json:"approved"`
 			FraudScore float64 `json:"fraud_score"`
 		}
-		json.NewDecoder(resp.Body).Decode(&result)
-		resp.Body.Close()
+		_ = json.NewDecoder(resp.Body).Decode(&result)
+		_ = resp.Body.Close()
 
 		s := result.FraudScore
 		scoreTotal[s]++

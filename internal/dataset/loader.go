@@ -151,13 +151,13 @@ func (l *Loader) LoadReferences(path string) ([]model.Reference, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrOpenGzip, path)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	gz, err := gzip.NewReader(file)
 	if err != nil {
 		return nil, fmt.Errorf("%w: create reader", ErrOpenGzip)
 	}
-	defer gz.Close()
+	defer func() { _ = gz.Close() }()
 
 	// Use streaming JSON decoder to avoid loading entire file into memory
 	dec := json.NewDecoder(gz)

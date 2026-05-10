@@ -15,7 +15,6 @@ import (
 const K = 5
 const DIM = 14
 const int16Scale = 10000
-const int16Pad = math.MaxInt16
 const ivfMagic uint32 = 0x49564649
 const bruteMagic uint32 = 0x42525554
 
@@ -51,12 +50,12 @@ func BuildIVF(refsGz, outPath string, nlist, iterations int) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	gz, err := gzip.NewReader(f)
 	if err != nil {
 		return err
 	}
-	defer gz.Close()
+	defer func() { _ = gz.Close() }()
 
 	var flat []float32
 	var fraudFlags []bool
@@ -154,21 +153,42 @@ func BuildIVF(refsGz, outPath string, nlist, iterations int) error {
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 
-	write32 := func(v uint32) { binary.Write(out, binary.LittleEndian, v) }
-	write32(ivfMagic)
-	write32(5) // version
-	write32(uint32(nlist))
-	write32(DIM)
-	write32(uint32(n))
-
-	binary.Write(out, binary.LittleEndian, centroids)
-	binary.Write(out, binary.LittleEndian, offsets)
-	binary.Write(out, binary.LittleEndian, bboxMin)
-	binary.Write(out, binary.LittleEndian, bboxMax)
-	binary.Write(out, binary.LittleEndian, aosVectors)
-	out.Write(bitLabels)
+	write32 := func(v uint32) error { return binary.Write(out, binary.LittleEndian, v) }
+	if err := write32(ivfMagic); err != nil {
+		return err
+	}
+	if err := write32(5); err != nil {
+		return err
+	}
+	if err := write32(uint32(nlist)); err != nil {
+		return err
+	}
+	if err := write32(DIM); err != nil {
+		return err
+	}
+	if err := write32(uint32(n)); err != nil {
+		return err
+	}
+	if err := binary.Write(out, binary.LittleEndian, centroids); err != nil {
+		return err
+	}
+	if err := binary.Write(out, binary.LittleEndian, offsets); err != nil {
+		return err
+	}
+	if err := binary.Write(out, binary.LittleEndian, bboxMin); err != nil {
+		return err
+	}
+	if err := binary.Write(out, binary.LittleEndian, bboxMax); err != nil {
+		return err
+	}
+	if err := binary.Write(out, binary.LittleEndian, aosVectors); err != nil {
+		return err
+	}
+	if _, err := out.Write(bitLabels); err != nil {
+		return err
+	}
 
 	fmt.Printf("BuildIVF: done. n=%d nlist=%d\n", n, nlist)
 	return nil
@@ -367,12 +387,12 @@ func BuildBrute(refsGz, outPath string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	gz, err := gzip.NewReader(f)
 	if err != nil {
 		return err
 	}
-	defer gz.Close()
+	defer func() { _ = gz.Close() }()
 
 	var vectors []float32
 	var fraudFlags []bool
@@ -419,15 +439,27 @@ func BuildBrute(refsGz, outPath string) error {
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 
-	write32 := func(v uint32) { binary.Write(out, binary.LittleEndian, v) }
-	write32(bruteMagic)
-	write32(1)
-	write32(uint32(N))
-	write32(DIM)
-	binary.Write(out, binary.LittleEndian, soa)
-	out.Write(labels)
+	write32 := func(v uint32) error { return binary.Write(out, binary.LittleEndian, v) }
+	if err := write32(bruteMagic); err != nil {
+		return err
+	}
+	if err := write32(1); err != nil {
+		return err
+	}
+	if err := write32(uint32(N)); err != nil {
+		return err
+	}
+	if err := write32(DIM); err != nil {
+		return err
+	}
+	if err := binary.Write(out, binary.LittleEndian, soa); err != nil {
+		return err
+	}
+	if _, err := out.Write(labels); err != nil {
+		return err
+	}
 
 	fmt.Printf("BuildBrute: done. N=%d\n", N)
 	return nil

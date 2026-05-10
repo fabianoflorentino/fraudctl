@@ -34,12 +34,12 @@ func (b *BruteIndex) BuildFromGzip(path string, capacity int) error {
 	if err != nil {
 		return fmt.Errorf("open gzip: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	gz, err := gzip.NewReader(f)
 	if err != nil {
 		return fmt.Errorf("gzip reader: %w", err)
 	}
-	defer gz.Close()
+	defer func() { _ = gz.Close() }()
 
 	b.flat = make([]float32, 0, capacity*14)
 	b.fraudFlags = make([]bool, 0, capacity)

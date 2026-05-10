@@ -6,5 +6,5 @@ import (
 
 func Ready(ctx *fasthttp.RequestCtx) {
 	ctx.SetStatusCode(fasthttp.StatusOK)
-	ctx.WriteString("OK")
+	_, _ = ctx.WriteString("OK")
 }

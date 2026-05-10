@@ -239,11 +239,7 @@ func bboxMayImprove(bboxMin, bboxMax []int16, ci int, q [DIM]int16, worstDist ui
 		diff = int32(q[4]) - int32(bboxMax[base+4])
 	}
 	d += uint64(diff * diff)
-	if d >= worstDist {
-		return false
-	}
-
-	return true
+	return d < worstDist
 }
 
 // selectProbes uses SoA centroid layout: centroids[d*nlist + ci].

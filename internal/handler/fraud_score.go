@@ -71,7 +71,7 @@ func (h *FraudScoreHandler) Handle(ctx *fasthttp.RequestCtx) {
 		// Decode errors: approve to avoid 5× error penalty.
 		ctx.SetStatusCode(fasthttp.StatusOK)
 		ctx.SetContentType("application/json")
-		ctx.Write(approvedBody)
+		_, _ = ctx.Write(approvedBody)
 		return
 	}
 
@@ -90,7 +90,7 @@ func (h *FraudScoreHandler) Handle(ctx *fasthttp.RequestCtx) {
 
 	ctx.SetStatusCode(fasthttp.StatusOK)
 	ctx.SetContentType("application/json")
-	ctx.Write(resp)
+	_, _ = ctx.Write(resp)
 
 	if count := h.requestCount.Add(1); count%10000 == 0 {
 		log.Printf("requests=%d", count)

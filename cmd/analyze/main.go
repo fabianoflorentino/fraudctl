@@ -30,10 +30,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	f, _ := os.Open("/tmp/rinha-2026/rinha-2026-xgboost/test/test-data.json")
-	defer f.Close()
+	f, err := os.Open("/tmp/rinha-2026/rinha-2026-xgboost/test/test-data.json")
+	if err != nil {
+		panic(err)
+	}
+	defer func() { _ = f.Close() }()
 	var td TestData
-	json.NewDecoder(f).Decode(&td)
+	if err := json.NewDecoder(f).Decode(&td); err != nil {
+		panic(err)
+	}
 
 	scores := make([]float64, len(td.Entries))
 	labels := make([]bool, len(td.Entries)) // true=fraud (should deny)

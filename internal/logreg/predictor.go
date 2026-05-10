@@ -15,7 +15,7 @@ func LoadPredictor(path string) (*Predictor, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	m, err := LoadFrom(f)
 	if err != nil {
 		return nil, err
@@ -32,7 +32,7 @@ func (p *Predictor) Predict(v model.Vector14, k int) float64 {
 	return p.model.Predict(arr)
 }
 
-func (p *Predictor) Count() int     { return 0 }
+func (p *Predictor) Count() int      { return 0 }
 func (p *Predictor) FraudCount() int { return 0 }
 
 func Exists(path string) bool {

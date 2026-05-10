@@ -25,7 +25,7 @@ func LoadBruteAVX2(path string) (*BruteAVX2Index, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var magic, version, N, dim uint32
 	if err := binary.Read(f, binary.LittleEndian, &magic); err != nil || magic != bruteLoadMagic {
@@ -34,8 +34,12 @@ func LoadBruteAVX2(path string) (*BruteAVX2Index, error) {
 	if err := binary.Read(f, binary.LittleEndian, &version); err != nil || version != 1 {
 		return nil, fmt.Errorf("unsupported brute version")
 	}
-	binary.Read(f, binary.LittleEndian, &N)
-	binary.Read(f, binary.LittleEndian, &dim)
+	if err := binary.Read(f, binary.LittleEndian, &N); err != nil {
+		return nil, fmt.Errorf("read N: %w", err)
+	}
+	if err := binary.Read(f, binary.LittleEndian, &dim); err != nil {
+		return nil, fmt.Errorf("read dim: %w", err)
+	}
 	if dim != DIM {
 		return nil, fmt.Errorf("expected dim=%d, got %d", DIM, dim)
 	}

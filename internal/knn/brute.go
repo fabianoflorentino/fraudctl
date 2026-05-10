@@ -12,12 +12,13 @@ import (
 )
 
 // IVFIndex holds the IVF index in format v5:
-//   centroids: SoA — centroids[d*nlist + ci] (transposed on load for cache-friendly selectProbes)
-//   vectors:   AoS int16, layout vectors[i*DIM + d]
-//   labels:    bit-packed, labels[i/8] bit (i%8) == 1 → fraud
-//   offsets:   offsets[ci]..offsets[ci+1] are the global vector indices for cluster ci
-//   bboxMin:   AoI int16 — bboxMin[ci*DIM+d] = min quantized value in dim d for cluster ci
-//   bboxMax:   AoI int16 — bboxMax[ci*DIM+d] = max quantized value in dim d for cluster ci
+//
+//	centroids: SoA — centroids[d*nlist + ci] (transposed on load for cache-friendly selectProbes)
+//	vectors:   AoS int16, layout vectors[i*DIM + d]
+//	labels:    bit-packed, labels[i/8] bit (i%8) == 1 → fraud
+//	offsets:   offsets[ci]..offsets[ci+1] are the global vector indices for cluster ci
+//	bboxMin:   AoI int16 — bboxMin[ci*DIM+d] = min quantized value in dim d for cluster ci
+//	bboxMax:   AoI int16 — bboxMax[ci*DIM+d] = max quantized value in dim d for cluster ci
 type IVFIndex struct {
 	centroids  []float32 // SoA: [DIM * nlist], indexed as centroids[d*nlist + ci]
 	vectors    []int16   // AoS: [N * DIM]
@@ -56,7 +57,7 @@ func LoadIVF(path string) (*IVFIndex, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open ivf: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var magic, version, nlist, dim uint32
 	if err := binary.Read(f, binary.LittleEndian, &magic); err != nil || magic != ivfMagic {
@@ -174,6 +175,6 @@ func (idx *IVFIndex) FraudCount() int {
 	return n
 }
 
-func (idx *IVFIndex) DebugNList() int        { return idx.nlist }
-func (idx *IVFIndex) DebugOffsets() []uint32 { return idx.offsets }
+func (idx *IVFIndex) DebugNList() int           { return idx.nlist }
+func (idx *IVFIndex) DebugOffsets() []uint32    { return idx.offsets }
 func (idx *IVFIndex) DebugCentroids() []float32 { return idx.centroids }

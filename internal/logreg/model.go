@@ -139,7 +139,7 @@ func (m *Model) Train(vectors []float32, labels []bool, n int) {
 
 		acc := float64(correct) / float64(sampleN)
 		avgLoss := totalLoss / float64(sampleN)
-		printf("  iter %d: loss=%.4f acc=%.4f\n", iter+1, avgLoss, acc)
+		_, _ = printf("  iter %d: loss=%.4f acc=%.4f\n", iter+1, avgLoss, acc)
 	}
 }
 
