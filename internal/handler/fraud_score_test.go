@@ -16,6 +16,24 @@ func (m *mockVec) Vectorize(req *model.FraudScoreRequest) model.Vector14 {
 	return model.Vector14{0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 }
 
+func (m *mockVec) VectorizeJSON(data []byte) (model.Vector14, error) {
+	for _, b := range data {
+		if b == '{' {
+			return model.Vector14{0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, nil
+		}
+		if b != ' ' && b != '\t' && b != '\n' && b != '\r' {
+			break
+		}
+	}
+	return model.Vector14{}, ErrInvalidJSON
+}
+
+var ErrInvalidJSON = &invalidJSONError{}
+
+type invalidJSONError struct{}
+
+func (e *invalidJSONError) Error() string { return "invalid json" }
+
 // mockKNN returns a fixed score regardless of the query vector.
 type mockKNN struct{ score float64 }
 
