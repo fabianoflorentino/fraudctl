@@ -11,6 +11,41 @@ import (
 	"github.com/fabianoflorentino/fraudctl/internal/vectorizer"
 )
 
+// ============================================================================
+// IVF KNN Performance Tuning Constants — ajuste aqui para p99 vs qualidade
+// ============================================================================
+//
+// Trade-off: nprobe MENOR = mais RÁPIDO, mas qualidade PIOR (mais erros)
+//            nprobe MAIOR = mais LENTO, mas qualidade MELHOR
+//
+// Na Rinha, qualidade é medida como "detection_score" (máx 3000)
+// Performance é "p99_score" (máx 3000, mas só se p99 < 2ms)
+//
+// Valores ORIGINAIS (melhor qualidade):
+//   - IVF_NPROBE = 48
+//   - IVF_RETRY_EXTRA = 16
+//
+// Valores ATUAIS (trade-off agressivo para performance):
+//   - IVF_NPROBE = 24 (50% do original = busca 50% mais rápida)
+//   - IVF_RETRY_EXTRA = 8
+//
+// Se cair qualidade (detection_score < 3000), aumente para 32 → 40 → 48
+// ============================================================================
+
+// IVF_NPROBE: número total de clusters a serem vasculhados por query.
+// No modo 2-pass: fast = nprobe/3 (~33%), resto só se fraud ∈ {2,3}
+const IVF_NPROBE = 24
+
+// IVF_RETRY_EXTRA: clusters EXTRAS para retry (só se fraud ∈ {2,3})
+// Atualmente não usado diretamente — o 2-pass usa fast = nprobe/3
+const IVF_RETRY_EXTRA = 8
+
+// IVF_BOUNDARY_LO: limite inferior da zona ambígua (fraudCount = boundaryLo)
+const IVF_BOUNDARY_LO = 2
+
+// IVF_BOUNDARY_HI: limite superior da zona ambígua (fraudCount = boundaryHi)
+const IVF_BOUNDARY_HI = 3
+
 // Dataset holds config and the KNN index needed to serve requests.
 type Dataset struct {
 	norm    model.NormalizationConstants
@@ -131,8 +166,8 @@ func LoadDefault(path string) (*Dataset, error) {
 		if _, err := os.Stat(ivfPath); err == nil {
 			ivf, err := knn.LoadIVF(ivfPath)
 			if err == nil {
-				ivf.SetNProbe(48)
-				ivf.SetRetry(16, 2, 3)
+				ivf.SetNProbe(IVF_NPROBE)
+				ivf.SetRetry(IVF_RETRY_EXTRA, IVF_BOUNDARY_LO, IVF_BOUNDARY_HI)
 				idx = ivf
 			}
 		}
