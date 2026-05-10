@@ -36,6 +36,10 @@ FROM gcr.io/distroless/base-debian12 AS production
 COPY --from=index-builder /build/fraudctl  /fraudctl
 COPY --from=index-builder /build/resources /resources
 
+ENV GOMAXPROCS=1
+ENV GOGC=off
+ENV GOMEMLIMIT=145MiB
+
 EXPOSE 9999
 
 ENTRYPOINT ["/fraudctl"]
