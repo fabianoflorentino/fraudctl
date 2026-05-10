@@ -27,6 +27,8 @@ var (
 func main() {
 	flag.Parse()
 
+	debug.SetGCPercent(-1)
+
 	if *healthCheck {
 		if err := checkHealth(); err != nil {
 			log.Fatalf("Healthcheck failed: %v", err)
