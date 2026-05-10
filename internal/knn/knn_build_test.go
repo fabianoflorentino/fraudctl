@@ -13,18 +13,30 @@ func createTestRefsGz(t *testing.T, entries []map[string]interface{}) string {
 	t.Helper()
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
-	gz.Write([]byte(`[`))
+	if _, err := gz.Write([]byte(`[`)); err != nil {
+		t.Fatal(err)
+	}
 	for i, e := range entries {
 		if i > 0 {
-			gz.Write([]byte(`,`))
+			if _, err := gz.Write([]byte(`,`)); err != nil {
+				t.Fatal(err)
+			}
 		}
-		json.NewEncoder(gz).Encode(e)
+		if err := json.NewEncoder(gz).Encode(e); err != nil {
+			t.Fatal(err)
+		}
 	}
-	gz.Write([]byte(`]`))
-	gz.Close()
+	if _, err := gz.Write([]byte(`]`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	path := filepath.Join(t.TempDir(), "references.json.gz")
-	os.WriteFile(path, buf.Bytes(), 0644)
+	if err := os.WriteFile(path, buf.Bytes(), 0644); err != nil {
+		t.Fatal(err)
+	}
 	return path
 }
 

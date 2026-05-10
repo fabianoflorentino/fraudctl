@@ -123,7 +123,9 @@ func TestLoadBruteAVX2_InvalidMagic(t *testing.T) {
 	path := t.TempDir() + "/bad_magic.bin"
 	data := make([]byte, 16)
 	binary.LittleEndian.PutUint32(data[0:], 0xDEADBEEF)
-	os.WriteFile(path, data, 0644)
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	_, err := LoadBruteAVX2(path)
 	if err == nil {
@@ -133,14 +135,27 @@ func TestLoadBruteAVX2_InvalidMagic(t *testing.T) {
 
 func TestLoadBruteAVX2_InvalidVersion(t *testing.T) {
 	path := t.TempDir() + "/bad_version.bin"
-	f, _ := os.Create(path)
-	binary.Write(f, binary.LittleEndian, bruteLoadMagic)
-	binary.Write(f, binary.LittleEndian, uint32(99))
-	binary.Write(f, binary.LittleEndian, uint32(10))
-	binary.Write(f, binary.LittleEndian, uint32(14))
-	f.Close()
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := binary.Write(f, binary.LittleEndian, bruteLoadMagic); err != nil {
+		t.Fatal(err)
+	}
+	if err := binary.Write(f, binary.LittleEndian, uint32(99)); err != nil {
+		t.Fatal(err)
+	}
+	if err := binary.Write(f, binary.LittleEndian, uint32(10)); err != nil {
+		t.Fatal(err)
+	}
+	if err := binary.Write(f, binary.LittleEndian, uint32(14)); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
 
-	_, err := LoadBruteAVX2(path)
+	_, err = LoadBruteAVX2(path)
 	if err == nil {
 		t.Fatal("expected error for invalid version")
 	}
@@ -148,16 +163,31 @@ func TestLoadBruteAVX2_InvalidVersion(t *testing.T) {
 
 func TestLoadBruteAVX2_WrongDim(t *testing.T) {
 	path := t.TempDir() + "/bad_dim.bin"
-	f, _ := os.Create(path)
-	binary.Write(f, binary.LittleEndian, bruteLoadMagic)
-	binary.Write(f, binary.LittleEndian, uint32(1))
-	binary.Write(f, binary.LittleEndian, uint32(10))
-	binary.Write(f, binary.LittleEndian, uint32(7))
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := binary.Write(f, binary.LittleEndian, bruteLoadMagic); err != nil {
+		t.Fatal(err)
+	}
+	if err := binary.Write(f, binary.LittleEndian, uint32(1)); err != nil {
+		t.Fatal(err)
+	}
+	if err := binary.Write(f, binary.LittleEndian, uint32(10)); err != nil {
+		t.Fatal(err)
+	}
+	if err := binary.Write(f, binary.LittleEndian, uint32(7)); err != nil {
+		t.Fatal(err)
+	}
 	soa := make([]int16, 10*7)
-	binary.Write(f, binary.LittleEndian, soa)
-	f.Close()
+	if err := binary.Write(f, binary.LittleEndian, soa); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
 
-	_, err := LoadBruteAVX2(path)
+	_, err = LoadBruteAVX2(path)
 	if err == nil {
 		t.Fatal("expected error for wrong dim")
 	}
@@ -258,10 +288,14 @@ func TestBruteIndex_BuildFromGzip(t *testing.T) {
 
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
-	gz.Write([]byte(`[`))
+	if _, err := gz.Write([]byte(`[`)); err != nil {
+		t.Fatal(err)
+	}
 	for i, r := range refs {
 		if i > 0 {
-			gz.Write([]byte(`,`))
+			if _, err := gz.Write([]byte(`,`)); err != nil {
+				t.Fatal(err)
+			}
 		}
 		vec := make([]float64, 14)
 		for d := 0; d < 14; d++ {
@@ -271,13 +305,21 @@ func TestBruteIndex_BuildFromGzip(t *testing.T) {
 			"vector": vec,
 			"label":  r.Label,
 		}
-		json.NewEncoder(gz).Encode(entry)
+		if err := json.NewEncoder(gz).Encode(entry); err != nil {
+			t.Fatal(err)
+		}
 	}
-	gz.Write([]byte(`]`))
-	gz.Close()
+	if _, err := gz.Write([]byte(`]`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	tmpFile := t.TempDir() + "/test_refs.json.gz"
-	os.WriteFile(tmpFile, buf.Bytes(), 0644)
+	if err := os.WriteFile(tmpFile, buf.Bytes(), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	bi := NewBruteIndex()
 	err := bi.BuildFromGzip(tmpFile, 10)
@@ -303,7 +345,9 @@ func TestBruteIndex_BuildFromGzip_InvalidFile(t *testing.T) {
 
 func TestBruteIndex_BuildFromGzip_InvalidGzip(t *testing.T) {
 	tmpFile := t.TempDir() + "/invalid.gz"
-	os.WriteFile(tmpFile, []byte("not gzip"), 0644)
+	if err := os.WriteFile(tmpFile, []byte("not gzip"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	bi := NewBruteIndex()
 	err := bi.BuildFromGzip(tmpFile, 10)

@@ -11,7 +11,9 @@ func TestBuildIndexFlags(t *testing.T) {
 	nlist := fs.Int("nlist", 500, "")
 	iterations := fs.Int("iterations", 20, "")
 
-	fs.Parse([]string{"-resources", "/data/resources", "-nlist", "100", "-iterations", "10"})
+	if err := fs.Parse([]string{"-resources", "/data/resources", "-nlist", "100", "-iterations", "10"}); err != nil {
+		t.Fatal(err)
+	}
 
 	if *resources != "/data/resources" {
 		t.Errorf("resources = %q, want /data/resources", *resources)
@@ -30,7 +32,9 @@ func TestBuildIndexDefaultFlags(t *testing.T) {
 	nlist := fs.Int("nlist", 500, "")
 	iterations := fs.Int("iterations", 20, "")
 
-	fs.Parse(nil)
+	if err := fs.Parse(nil); err != nil {
+		t.Fatal(err)
+	}
 
 	if *resources != "./resources" {
 		t.Errorf("default resources = %q, want ./resources", *resources)

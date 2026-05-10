@@ -104,7 +104,7 @@ func TestBBoxMayImprove_Dim3AloneSaves(t *testing.T) {
 	qi[4] = 50
 
 	if bboxMayImprove(bboxMin, bboxMax, 0, qi, 10000) {
-		// Should still fail because first few dims already exceed worstDist
+		t.Error("bboxMayImprove should return false when early dims exceed worstDist")
 	}
 
 	qi[5] = 50

@@ -66,7 +66,9 @@ func TestDebug_FileNotFound(t *testing.T) {
 
 func TestDebug_InvalidJSON(t *testing.T) {
 	tmpFile := t.TempDir() + "/invalid.json"
-	os.WriteFile(tmpFile, []byte("{invalid}"), 0644)
+	if err := os.WriteFile(tmpFile, []byte("{invalid}"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
 
 	data, err := os.ReadFile(tmpFile)
 	if err != nil {
@@ -87,7 +89,9 @@ func TestDebug_InvalidJSON(t *testing.T) {
 
 func TestDebug_EmptyFile(t *testing.T) {
 	tmpFile := t.TempDir() + "/empty.json"
-	os.WriteFile(tmpFile, []byte("{}"), 0644)
+	if err := os.WriteFile(tmpFile, []byte("{}"), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
 
 	data, err := os.ReadFile(tmpFile)
 	if err != nil {
@@ -104,7 +108,7 @@ func TestDebug_EmptyFile(t *testing.T) {
 	if err := json.Unmarshal(data, &td); err != nil {
 		t.Fatalf("Unmarshal failed: %v", err)
 	}
-	if td.Entries != nil && len(td.Entries) != 0 {
+	if len(td.Entries) != 0 {
 		t.Errorf("entries = %d, want 0", len(td.Entries))
 	}
 }

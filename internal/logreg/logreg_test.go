@@ -119,12 +119,12 @@ func TestLoadFrom_InvalidMagic(t *testing.T) {
 
 func TestLoadFrom_InvalidVersion(t *testing.T) {
 	data := make([]byte, 20)
-	data[0] = 0x52  // magic byte 0
-	data[1] = 0x47  // magic byte 1
-	data[2] = 0x4F  // magic byte 2
-	data[3] = 0x4C  // magic byte 3 -> 0x4C4F4752 = "LOGR"
-	data[4] = 99    // version = 99 (invalid)
-	data[8] = 14    // dim = 14
+	data[0] = 0x52 // magic byte 0
+	data[1] = 0x47 // magic byte 1
+	data[2] = 0x4F // magic byte 2
+	data[3] = 0x4C // magic byte 3 -> 0x4C4F4752 = "LOGR"
+	data[4] = 99   // version = 99 (invalid)
+	data[8] = 14   // dim = 14
 	buf := bytes.NewReader(data)
 	_, err := LoadFrom(buf)
 	if err != errInvalidVersion {
@@ -159,7 +159,9 @@ func TestLoadPredictor_NotFound(t *testing.T) {
 
 func TestLoadPredictor_InvalidFile(t *testing.T) {
 	path := t.TempDir() + "/invalid.bin"
-	os.WriteFile(path, []byte("invalid"), 0644)
+	if err := os.WriteFile(path, []byte("invalid"), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
 	_, err := LoadPredictor(path)
 	if err == nil {
 		t.Fatal("expected error for invalid file")
@@ -172,10 +174,14 @@ func TestLoadPredictor_RoundTrip(t *testing.T) {
 	m.weights[0] = 0.5
 
 	var buf bytes.Buffer
-	m.WriteTo(&buf)
+	if _, err := m.WriteTo(&buf); err != nil {
+		t.Fatalf("WriteTo: %v", err)
+	}
 
 	path := t.TempDir() + "/predictor.bin"
-	os.WriteFile(path, buf.Bytes(), 0644)
+	if err := os.WriteFile(path, buf.Bytes(), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
 
 	p, err := LoadPredictor(path)
 	if err != nil {
@@ -217,7 +223,9 @@ func TestExists(t *testing.T) {
 	}
 
 	path := t.TempDir() + "/exists.bin"
-	os.WriteFile(path, []byte("test"), 0644)
+	if err := os.WriteFile(path, []byte("test"), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
 	if !Exists(path) {
 		t.Error("Exists should return true for existing path")
 	}

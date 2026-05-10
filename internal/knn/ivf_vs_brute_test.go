@@ -10,11 +10,11 @@ import (
 
 type testEntry struct {
 	Request struct {
-		ID              string `json:"id"`
-		Transaction     struct {
-			Amount      float64 `json:"amount"`
-			Installments int    `json:"installments"`
-			RequestedAt string  `json:"requested_at"`
+		ID          string `json:"id"`
+		Transaction struct {
+			Amount       float64 `json:"amount"`
+			Installments int     `json:"installments"`
+			RequestedAt  string  `json:"requested_at"`
 		} `json:"transaction"`
 		Customer struct {
 			AvgAmount      float64  `json:"avg_amount"`
@@ -22,9 +22,9 @@ type testEntry struct {
 			KnownMerchants []string `json:"known_merchants"`
 		} `json:"customer"`
 		Merchant struct {
-			ID         string  `json:"id"`
-			MCC        string  `json:"mcc"`
-			AvgAmount  float64 `json:"avg_amount"`
+			ID        string  `json:"id"`
+			MCC       string  `json:"mcc"`
+			AvgAmount float64 `json:"avg_amount"`
 		} `json:"merchant"`
 		Terminal struct {
 			IsOnline    bool    `json:"is_online"`
@@ -32,7 +32,7 @@ type testEntry struct {
 			KmFromHome  float64 `json:"km_from_home"`
 		} `json:"terminal"`
 		LastTransaction *struct {
-			Timestamp    string  `json:"timestamp"`
+			Timestamp     string  `json:"timestamp"`
 			KmFromCurrent float64 `json:"km_from_current"`
 		} `json:"last_transaction"`
 	} `json:"request"`
@@ -58,7 +58,7 @@ func TestIVFVsBrute(t *testing.T) {
 	if err != nil {
 		t.Skipf("test data not found: %v", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var testData struct {
 		Entries []testEntry `json:"entries"`
@@ -79,9 +79,9 @@ func TestIVFVsBrute(t *testing.T) {
 		req := model.FraudScoreRequest{
 			ID: entry.Request.ID,
 			Transaction: model.TransactionData{
-				Amount:      entry.Request.Transaction.Amount,
+				Amount:       entry.Request.Transaction.Amount,
 				Installments: entry.Request.Transaction.Installments,
-				RequestedAt: entry.Request.Transaction.RequestedAt,
+				RequestedAt:  entry.Request.Transaction.RequestedAt,
 			},
 			Customer: model.CustomerData{
 				AvgAmount:      entry.Request.Customer.AvgAmount,

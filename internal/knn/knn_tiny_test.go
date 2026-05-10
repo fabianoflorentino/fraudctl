@@ -24,7 +24,7 @@ func TestBBoxMayImprove_LastDimExceeds(t *testing.T) {
 	qi[4] = 100
 
 	if bboxMayImprove(bboxMin, bboxMax, 0, qi, 1000) {
-		// Should be false if dim 4 alone exceeds worstDist
+		t.Error("bboxMayImprove should return false when dim 4 alone exceeds worstDist")
 	}
 }
 

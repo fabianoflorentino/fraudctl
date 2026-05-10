@@ -18,11 +18,11 @@ func writeV2Model(t *testing.T, path string, trees []struct {
 	t.Helper()
 	data := make([]byte, 0, 1024)
 	data = append(data, []byte("GBDT")...)
-	data = append(data, byte(2), 0, 0, 0) // version
+	data = append(data, byte(2), 0, 0, 0)          // version
 	data = append(data, byte(len(trees)), 0, 0, 0) // numTrees
-	data = append(data, byte(14), 0, 0, 0) // numFeatures
-	data = append(data, 0, 0, 0, 0) // initPred = 0
-	data = append(data, 1, 0, 0, 0) // sigmoid=1, pad
+	data = append(data, byte(14), 0, 0, 0)         // numFeatures
+	data = append(data, 0, 0, 0, 0)                // initPred = 0
+	data = append(data, 1, 0, 0, 0)                // sigmoid=1, pad
 
 	for _, tr := range trees {
 		data = append(data, byte(len(tr.nodes)), 0, 0, 0)
@@ -44,7 +44,9 @@ func writeV2Model(t *testing.T, path string, trees []struct {
 
 func TestLoad_InvalidMagic(t *testing.T) {
 	path := t.TempDir() + "/badmagic.bin"
-	os.WriteFile(path, []byte("XXXX"), 0644)
+	if err := os.WriteFile(path, []byte("XXXX"), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
 	_, err := Load(path)
 	if err == nil {
 		t.Fatal("expected error for invalid magic")
@@ -53,7 +55,9 @@ func TestLoad_InvalidMagic(t *testing.T) {
 
 func TestLoad_ShortFile(t *testing.T) {
 	path := t.TempDir() + "/short.bin"
-	os.WriteFile(path, []byte("G"), 0644)
+	if err := os.WriteFile(path, []byte("G"), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
 	_, err := Load(path)
 	if err == nil {
 		t.Fatal("expected error for short file")
@@ -71,7 +75,9 @@ func TestLoadV1_ShortFile(t *testing.T) {
 	path := t.TempDir() + "/v1short.bin"
 	data := make([]byte, 10)
 	copy(data, "GBDT")
-	os.WriteFile(path, data, 0644)
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
 	_, err := Load(path)
 	if err == nil {
 		t.Fatal("expected error for short v1 file")
@@ -82,12 +88,14 @@ func TestLoadV1_TruncatedNode(t *testing.T) {
 	path := t.TempDir() + "/v1trunc.bin"
 	data := make([]byte, 32)
 	copy(data, "GBDT")
-	data[8] = 1 // numTrees = 1
+	data[8] = 1     // numTrees = 1
 	data[12] = 0x40 // lr = 0.1 (approx)
-	data[20] = 0 // initPred = 0
+	data[20] = 0    // initPred = 0
 	// numNodes = 1 but not enough bytes
 	data[28] = 1
-	os.WriteFile(path, data, 0644)
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
 	_, err := Load(path)
 	if err == nil {
 		t.Fatal("expected error for truncated v1 node")
@@ -99,7 +107,9 @@ func TestLoadV2_ShortFile(t *testing.T) {
 	data := make([]byte, 20)
 	copy(data, "GBDT")
 	data[4] = 2 // version
-	os.WriteFile(path, data, 0644)
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
 	_, err := Load(path)
 	if err == nil {
 		t.Fatal("expected error for short v2 file")
@@ -110,12 +120,14 @@ func TestLoadV2_TruncatedNode(t *testing.T) {
 	path := t.TempDir() + "/v2trunc.bin"
 	data := make([]byte, 28)
 	copy(data, "GBDT")
-	data[4] = 2 // version
-	data[8] = 1 // numTrees = 1
+	data[4] = 2   // version
+	data[8] = 1   // numTrees = 1
 	data[12] = 14 // numFeatures
 	// numNodes = 1 but no node data
 	data[24] = 1
-	os.WriteFile(path, data, 0644)
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
 	_, err := Load(path)
 	if err == nil {
 		t.Fatal("expected error for truncated v2 node")
@@ -204,17 +216,17 @@ func TestGBDT_Predict_NoSigmoid(t *testing.T) {
 	data := make([]byte, 0, 256)
 	data = append(data, []byte("GBDT")...)
 	data = append(data, byte(2), 0, 0, 0)
-	data = append(data, byte(1), 0, 0, 0) // 1 tree
+	data = append(data, byte(1), 0, 0, 0)  // 1 tree
 	data = append(data, byte(14), 0, 0, 0) // numFeatures
-	data = append(data, 0, 0, 0, 0) // initPred = 0
-	data = append(data, 0, 0, 0, 0) // sigmoid=0, pad
-	data = append(data, byte(1), 0, 0, 0) // 1 node
-	data = append(data, 0) // feat=0
-	data = append(data, 0) // pad
-	data = append(data, 0, 0) // left=0
-	data = append(data, 0, 0) // right=0
-	data = append(data, 1) // leaf=1
-	data = append(data, 0) // pad
+	data = append(data, 0, 0, 0, 0)        // initPred = 0
+	data = append(data, 0, 0, 0, 0)        // sigmoid=0, pad
+	data = append(data, byte(1), 0, 0, 0)  // 1 node
+	data = append(data, 0)                 // feat=0
+	data = append(data, 0)                 // pad
+	data = append(data, 0, 0)              // left=0
+	data = append(data, 0, 0)              // right=0
+	data = append(data, 1)                 // leaf=1
+	data = append(data, 0)                 // pad
 	v := math.Float32bits(0.75)
 	data = append(data, byte(v), byte(v>>8), byte(v>>16), byte(v>>24))
 	if err := os.WriteFile(path, data, 0644); err != nil {
@@ -322,7 +334,7 @@ func TestGBDT_LoadV1(t *testing.T) {
 	path := t.TempDir() + "/v1_model.bin"
 	data := make([]byte, 0, 256)
 	data = append(data, []byte("GBDT")...)
-	data = append(data, 0, 0, 0, 0) // version=0 → triggers loadV1
+	data = append(data, 0, 0, 0, 0)       // version=0 → triggers loadV1
 	data = append(data, byte(1), 0, 0, 0) // 1 tree
 	// lr = 0.5 as float64
 	lr := math.Float64bits(0.5)
@@ -371,7 +383,9 @@ func TestLoadV1_TruncatedTree(t *testing.T) {
 	data[28] = 1 // tree 0: 1 node
 	// need 18 bytes for that node
 	copy(data[32:], []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})
-	os.WriteFile(path, data, 50)
+	if err := os.WriteFile(path, data, 50); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
 	_, err := Load(path)
 	if err == nil {
 		t.Fatal("expected error for truncated v1 tree")
