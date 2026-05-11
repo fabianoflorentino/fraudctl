@@ -423,18 +423,161 @@ func scanCluster(vectors []int16, labels []byte, start, end int, q [DIM]int16, h
 
 func quantizeQuery(query model.Vector14) [DIM]int16 {
 	var q [DIM]int16
-	for d := 0; d < DIM; d++ {
-		v := query[d]
-		if v > 1.0 {
-			q[d] = int16Scale
-		} else if v < -1.0 {
-			q[d] = -int16Scale
-		} else if v < 0 {
-			q[d] = int16(v*int16Scale - 0.5)
-		} else {
-			q[d] = int16(v*int16Scale + 0.5)
-		}
+
+	v := query[0]
+	if v > 1.0 {
+		q[0] = int16Scale
+	} else if v < -1.0 {
+		q[0] = -int16Scale
+	} else if v < 0 {
+		q[0] = int16(v*int16Scale - 0.5)
+	} else {
+		q[0] = int16(v*int16Scale + 0.5)
 	}
+
+	v = query[1]
+	if v > 1.0 {
+		q[1] = int16Scale
+	} else if v < -1.0 {
+		q[1] = -int16Scale
+	} else if v < 0 {
+		q[1] = int16(v*int16Scale - 0.5)
+	} else {
+		q[1] = int16(v*int16Scale + 0.5)
+	}
+
+	v = query[2]
+	if v > 1.0 {
+		q[2] = int16Scale
+	} else if v < -1.0 {
+		q[2] = -int16Scale
+	} else if v < 0 {
+		q[2] = int16(v*int16Scale - 0.5)
+	} else {
+		q[2] = int16(v*int16Scale + 0.5)
+	}
+
+	v = query[3]
+	if v > 1.0 {
+		q[3] = int16Scale
+	} else if v < -1.0 {
+		q[3] = -int16Scale
+	} else if v < 0 {
+		q[3] = int16(v*int16Scale - 0.5)
+	} else {
+		q[3] = int16(v*int16Scale + 0.5)
+	}
+
+	v = query[4]
+	if v > 1.0 {
+		q[4] = int16Scale
+	} else if v < -1.0 {
+		q[4] = -int16Scale
+	} else if v < 0 {
+		q[4] = int16(v*int16Scale - 0.5)
+	} else {
+		q[4] = int16(v*int16Scale + 0.5)
+	}
+
+	v = query[5]
+	if v > 1.0 {
+		q[5] = int16Scale
+	} else if v < -1.0 {
+		q[5] = -int16Scale
+	} else if v < 0 {
+		q[5] = int16(v*int16Scale - 0.5)
+	} else {
+		q[5] = int16(v*int16Scale + 0.5)
+	}
+
+	v = query[6]
+	if v > 1.0 {
+		q[6] = int16Scale
+	} else if v < -1.0 {
+		q[6] = -int16Scale
+	} else if v < 0 {
+		q[6] = int16(v*int16Scale - 0.5)
+	} else {
+		q[6] = int16(v*int16Scale + 0.5)
+	}
+
+	v = query[7]
+	if v > 1.0 {
+		q[7] = int16Scale
+	} else if v < -1.0 {
+		q[7] = -int16Scale
+	} else if v < 0 {
+		q[7] = int16(v*int16Scale - 0.5)
+	} else {
+		q[7] = int16(v*int16Scale + 0.5)
+	}
+
+	v = query[8]
+	if v > 1.0 {
+		q[8] = int16Scale
+	} else if v < -1.0 {
+		q[8] = -int16Scale
+	} else if v < 0 {
+		q[8] = int16(v*int16Scale - 0.5)
+	} else {
+		q[8] = int16(v*int16Scale + 0.5)
+	}
+
+	v = query[9]
+	if v > 1.0 {
+		q[9] = int16Scale
+	} else if v < -1.0 {
+		q[9] = -int16Scale
+	} else if v < 0 {
+		q[9] = int16(v*int16Scale - 0.5)
+	} else {
+		q[9] = int16(v*int16Scale + 0.5)
+	}
+
+	v = query[10]
+	if v > 1.0 {
+		q[10] = int16Scale
+	} else if v < -1.0 {
+		q[10] = -int16Scale
+	} else if v < 0 {
+		q[10] = int16(v*int16Scale - 0.5)
+	} else {
+		q[10] = int16(v*int16Scale + 0.5)
+	}
+
+	v = query[11]
+	if v > 1.0 {
+		q[11] = int16Scale
+	} else if v < -1.0 {
+		q[11] = -int16Scale
+	} else if v < 0 {
+		q[11] = int16(v*int16Scale - 0.5)
+	} else {
+		q[11] = int16(v*int16Scale + 0.5)
+	}
+
+	v = query[12]
+	if v > 1.0 {
+		q[12] = int16Scale
+	} else if v < -1.0 {
+		q[12] = -int16Scale
+	} else if v < 0 {
+		q[12] = int16(v*int16Scale - 0.5)
+	} else {
+		q[12] = int16(v*int16Scale + 0.5)
+	}
+
+	v = query[13]
+	if v > 1.0 {
+		q[13] = int16Scale
+	} else if v < -1.0 {
+		q[13] = -int16Scale
+	} else if v < 0 {
+		q[13] = int16(v*int16Scale - 0.5)
+	} else {
+		q[13] = int16(v*int16Scale + 0.5)
+	}
+
 	return q
 }
 
@@ -468,10 +611,9 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 		nprobe = idx.nlist
 	}
 
-	var qf [DIM]float32
-	for d := 0; d < DIM; d++ {
-		qf[d] = query[d]
-	}
+	var probesBuf [maxProbes]int
+	selectProbes(idx.centroids, idx.nlist, ([DIM]float32)(query), nprobe, probesBuf[:nprobe])
+
 	qi := quantizeQuery(query)
 
 	quickProbe := idx.quickProbe
@@ -484,9 +626,6 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 	if quickProbe > nprobe {
 		quickProbe = nprobe
 	}
-
-	var probesBuf [maxProbes]int
-	selectProbes(idx.centroids, idx.nlist, qf, nprobe, probesBuf[:nprobe])
 
 	h := newTopK5()
 	hasBbox := len(idx.bboxMin) > 0
