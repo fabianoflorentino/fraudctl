@@ -8,9 +8,9 @@ fraudctl is a pure-Go API that scores credit card transactions for fraud using a
 
 ### Key Features
 
-- **IVF KNN v5**: `nlist=4096` clusters, `nprobe=48`, `retryExtra=16`, bbox pruning — AoS int16 vectors + bit-packed labels + cluster bounding boxes
-- **2-stage early exit**: dims 0–7 screened first; skip vector if partial distance ≥ worst-K
-- **Zero allocations per query**: `0 B/op, 0 allocs/op` (stack-allocated probe arrays)
+- **IVF KNN v5**: `nlist=4096` clusters, `nprobe=36`, `quickProbe=16` early exit, bbox pruning — AoS int16 vectors + bit-packed labels + cluster bounding boxes
+- **2-tier early exit**: quick probe (16 clusters) → re-score only if fraud ∈ {2,3}; ~80-90% of queries exit early
+- **Zero-allocation JSON parser**: manual one-pass JSON parse + vectorize (96 B/op vs 697 B/op with gojson)
 - **14D Vectorization**: transaction features normalized to float32[14], quantized to int16 at index time
 - **Pure Go**: `CGO_ENABLED=0`, `distroless/base-debian12` image, no C dependencies
 - **Resource budget**: 2× API (150MB, 0.40 CPU) + haproxy (50MB, 0.20 CPU) = 1 CPU / 350MB total
