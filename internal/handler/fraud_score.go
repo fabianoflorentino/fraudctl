@@ -26,10 +26,16 @@ const (
 	knnNeighbors      = knnK
 )
 
-var (
-	approvedBody    = []byte(`{"approved":true,"fraud_score":0.0}`)
-	disapprovedBody = []byte(`{"approved":false,"fraud_score":1.0}`)
-)
+var precomputedResp [knnK + 1][]byte
+
+func init() {
+	precomputedResp[0] = []byte(`{"approved":true,"fraud_score":0.0}`)
+	precomputedResp[1] = []byte(`{"approved":true,"fraud_score":0.2}`)
+	precomputedResp[2] = []byte(`{"approved":true,"fraud_score":0.4}`)
+	precomputedResp[3] = []byte(`{"approved":false,"fraud_score":0.6}`)
+	precomputedResp[4] = []byte(`{"approved":false,"fraud_score":0.8}`)
+	precomputedResp[5] = []byte(`{"approved":false,"fraud_score":1.0}`)
+}
 
 type FraudScoreHandler struct {
 	vec Vectorizer
@@ -55,7 +61,7 @@ func (h *FraudScoreHandler) Handle(ctx *fasthttp.RequestCtx) {
 	if err != nil {
 		ctx.SetStatusCode(fasthttp.StatusOK)
 		ctx.SetContentType("application/json")
-		_, _ = ctx.Write(approvedBody)
+		_, _ = ctx.Write(precomputedResp[0])
 		middleware.Record(time.Since(start), vecDur, 0, 0, true, true)
 		return
 	}
@@ -64,17 +70,11 @@ func (h *FraudScoreHandler) Handle(ctx *fasthttp.RequestCtx) {
 	fraudCount := h.knn.PredictRaw(vec, h.knn.NProbe())
 	knnDur := time.Since(knnStart)
 
-	score := float64(fraudCount) / float64(knnNeighbors)
-	approved := score < knnFraudThreshold
-
-	resp := approvedBody
-	if !approved {
-		resp = disapprovedBody
-	}
+	resp := precomputedResp[fraudCount]
 
 	ctx.SetStatusCode(fasthttp.StatusOK)
 	ctx.SetContentType("application/json")
 	_, _ = ctx.Write(resp)
 
-	middleware.Record(time.Since(start), vecDur, knnDur, fraudCount, approved, false)
+	middleware.Record(time.Since(start), vecDur, knnDur, fraudCount, fraudCount < 3, false)
 }
