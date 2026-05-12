@@ -47,7 +47,9 @@ func TestIVFVsBrute(t *testing.T) {
 	if err != nil {
 		t.Skipf("ivf.bin not found: %v", err)
 	}
+
 	ivf.SetNProbe(24)
+	ivf.SetRetry(8, 2, 3)
 
 	brute := NewBruteIndex()
 	if err := brute.BuildFromGzip(refsGz, 3_000_000); err != nil {
@@ -121,7 +123,7 @@ func TestIVFVsBrute(t *testing.T) {
 		}
 	}
 
-	t.Logf("First %d entries: IVF vs Brute mismatches=%d", limit, mismatch)
+	t.Logf("First %d entries: IVF (nprobe=24, quick=8, boundary=[2,3]) vs Brute mismatches=%d", limit, mismatch)
 
 	if mismatch > 10 {
 		t.Errorf("Too many mismatches between IVF and brute force: %d", mismatch)
