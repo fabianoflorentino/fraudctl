@@ -687,50 +687,5 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 		scanCluster(idx.vectors, idx.labels, start, end, qi, &h)
 	}
 
-	fraud = h.fraudCount(idx.labels)
-
-	// Asymmetric retry for borderline deny decisions (fraud=3 out of 5).
-	// This targets false positives with minimal p99 impact: only boundary cases
-	// pay the extra probe expansion, and only when we would deny.
-	if fraud == idx.boundaryHi {
-		extraProbe := idx.nlist
-		if extraProbe > maxProbes {
-			extraProbe = maxProbes
-		}
-		if extraProbe > nprobe {
-			var extraProbes [maxProbes]int
-			selectProbes(idx.centroids, idx.nlist, ([DIM]float32)(query), extraProbe, extraProbes[:extraProbe])
-
-			for pi := 0; pi < extraProbe; pi++ {
-				ci := extraProbes[pi]
-
-				alreadyScanned := false
-				for fj := 0; fj < nprobe; fj++ {
-					if fullProbes[fj] == ci {
-						alreadyScanned = true
-						break
-					}
-				}
-				if alreadyScanned {
-					continue
-				}
-
-				start := int(idx.offsets[ci])
-				end := int(idx.offsets[ci+1])
-				if start >= end {
-					continue
-				}
-				if hasBbox && h.count == K {
-					if !bboxMayImprove(idx.bboxMin, idx.bboxMax, ci, qi, h.worstDist()) {
-						continue
-					}
-				}
-				scanCluster(idx.vectors, idx.labels, start, end, qi, &h)
-			}
-
-			fraud = h.fraudCount(idx.labels)
-		}
-	}
-
-	return fraud
+	return h.fraudCount(idx.labels)
 }
