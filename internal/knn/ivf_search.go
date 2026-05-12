@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	fastNProbe = 8  // fallback: same as IVF_QUICK_PROBE
+	fastNProbe = 5  // fallback: same as IVF_QUICK_PROBE
 	fullNProbe = 24 // fallback: same as IVF_NPROBE
 	blockSize  = 16 // vectors per scan block
 )

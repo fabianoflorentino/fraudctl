@@ -36,9 +36,9 @@ import (
 const IVF_NPROBE = 24
 
 // IVF_QUICK_PROBE: clusters para quick probe (early exit)
-// 8 = mais agressivo que 16, mas ainda seguro
-// jairoblatt usa 5, mas começamos com 8 para ser conservador
-const IVF_QUICK_PROBE = 8
+// 5 = mesmo que jairoblatt/rinha-2026-rust (muito agressivo)
+// ~80-90% das queries saem cedo com apenas 5 clusters!
+const IVF_QUICK_PROBE = 5
 
 // IVF_BOUNDARY_LO/HI: zona ambígua (apenas estes valores disparam re-score)
 const IVF_BOUNDARY_LO = 2
