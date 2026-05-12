@@ -17,6 +17,7 @@ import (
 
 	"github.com/fabianoflorentino/fraudctl/internal/dataset"
 	"github.com/fabianoflorentino/fraudctl/internal/handler"
+	"github.com/fabianoflorentino/fraudctl/internal/middleware"
 )
 
 var (
@@ -26,8 +27,6 @@ var (
 
 func main() {
 	flag.Parse()
-
-	debug.SetGCPercent(-1)
 
 	if *healthCheck {
 		if err := checkHealth(); err != nil {
@@ -43,6 +42,8 @@ func main() {
 			port = parsed
 		}
 	}
+	telemetryEnabled := os.Getenv("TELEMETRY_ENABLED") != "false"
+	middleware.SetEnabled(telemetryEnabled)
 	socketPath := os.Getenv("UNIX_SOCKET")
 
 	log.Printf("Loading dataset (IVF index) from %s ...", *resourcesPath)
@@ -57,6 +58,13 @@ func main() {
 	debug.FreeOSMemory()
 
 	fraudHandler := handler.NewFraudScoreHandler(ds.Vectorizer(), ds.KNN())
+
+	if telemetryEnabled {
+		middleware.StartReporter(10 * time.Second)
+		log.Printf("Telemetry enabled (stats every 10s)")
+	} else {
+		log.Printf("Telemetry disabled")
+	}
 
 	requestHandler := func(ctx *fasthttp.RequestCtx) {
 		path := ctx.Path()

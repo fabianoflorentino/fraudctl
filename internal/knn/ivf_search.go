@@ -255,6 +255,8 @@ func selectProbes(centroids []float32, nlist int, query [DIM]float32, nprobe int
 	}
 
 	// Accumulate squared distance dim by dim (SoA: centroids[d*nlist + ci]).
+	// Array sized for nlist ≤ 4096; at nlist=2048 only half the slots are used
+	// but the loop iterates exactly nlist times — no wasted work.
 	var acc [4096]float32 // stack — nlist ≤ 4096
 	for ci := 0; ci < nlist; ci++ {
 		acc[ci] = 0
@@ -584,10 +586,10 @@ func quantizeQuery(query model.Vector14) [DIM]int16 {
 // PredictRaw uses 2-tier IVF with EARLY EXIT (inspired by joycegodinho/rinha-2026).
 //
 // Strategy:
-//  1. QUICK PROBE: scan quickProbe clusters (default 16)
+//  1. QUICK PROBE: select+scan only quickProbe clusters (default 16)
 //  2. CHECK fraudCount:
 //     - fraud ∈ {0,1,4,5} → CLEAR result → EARLY EXIT (return immediately)
-//     - fraud ∈ {2,3}     → AMBIGUOUS → scan remaining clusters
+//     - fraud ∈ {2,3}     → AMBIGUOUS → select full nprobe and scan remaining
 //
 // Why this works:
 //   - Decision rule: >= 3/5 fraud neighbors → deny
@@ -595,7 +597,8 @@ func quantizeQuery(query model.Vector14) [DIM]int16 {
 //   - fraud=4,5: clearly deny
 //   - Only fraud=2,3 are borderline (adding a closer neighbor could flip the decision)
 //
-// Result: ~80-90% of queries exit early with only quickProbe clusters scanned!
+// Result: ~80-90% of queries exit early with only quickProbe centroid selection
+// and quickProbe cluster scan (avoids full selectProbes on clear cases).
 func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 	if len(idx.vectors) == 0 {
 		return 0
@@ -611,11 +614,6 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 		nprobe = idx.nlist
 	}
 
-	var probesBuf [maxProbes]int
-	selectProbes(idx.centroids, idx.nlist, ([DIM]float32)(query), nprobe, probesBuf[:nprobe])
-
-	qi := quantizeQuery(query)
-
 	quickProbe := idx.quickProbe
 	if quickProbe < 1 {
 		quickProbe = nprobe / 2
@@ -627,11 +625,16 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 		quickProbe = nprobe
 	}
 
+	var quickProbes [maxProbes]int
+	selectProbes(idx.centroids, idx.nlist, ([DIM]float32)(query), quickProbe, quickProbes[:quickProbe])
+
+	qi := quantizeQuery(query)
+
 	h := newTopK5()
 	hasBbox := len(idx.bboxMin) > 0
 
 	for pi := 0; pi < quickProbe; pi++ {
-		ci := probesBuf[pi]
+		ci := quickProbes[pi]
 		start := int(idx.offsets[ci])
 		end := int(idx.offsets[ci+1])
 		if start >= end {
@@ -650,9 +653,27 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 	if fraud < idx.boundaryLo || fraud > idx.boundaryHi {
 		return fraud
 	}
+	if quickProbe == nprobe {
+		return fraud
+	}
 
-	for pi := quickProbe; pi < nprobe; pi++ {
-		ci := probesBuf[pi]
+	var fullProbes [maxProbes]int
+	selectProbes(idx.centroids, idx.nlist, ([DIM]float32)(query), nprobe, fullProbes[:nprobe])
+
+	for pi := 0; pi < nprobe; pi++ {
+		ci := fullProbes[pi]
+
+		alreadyScanned := false
+		for qi := 0; qi < quickProbe; qi++ {
+			if quickProbes[qi] == ci {
+				alreadyScanned = true
+				break
+			}
+		}
+		if alreadyScanned {
+			continue
+		}
+
 		start := int(idx.offsets[ci])
 		end := int(idx.offsets[ci+1])
 		if start >= end {

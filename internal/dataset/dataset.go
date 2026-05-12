@@ -31,13 +31,11 @@ import (
 // ============================================================================
 
 // IVF_NPROBE: total de clusters para casos ambíguos (quick + remaining)
-// 36 = valor original que garantia detecção perfeita
-// Reduzir para 24 causou risco de falsos positivos
+// Com nlist=4096: nprobe=36 cobre 0.88% dos clusters.
 const IVF_NPROBE = 36
 
 // IVF_QUICK_PROBE: clusters para quick probe (early exit)
-// 16 = valor original que garantia detecção perfeita
-// Reduzir para 8/5 causou 1 falso positivo no CI
+// Com nlist=4096: quickProbe=16 cobre 0.39% dos clusters.
 const IVF_QUICK_PROBE = 16
 
 // IVF_BOUNDARY_LO/HI: zona ambígua (apenas estes valores disparam re-score)

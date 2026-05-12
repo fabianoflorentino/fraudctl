@@ -1,8 +1,11 @@
 package handler
 
 import (
+	"time"
+
 	"github.com/valyala/fasthttp"
 
+	"github.com/fabianoflorentino/fraudctl/internal/middleware"
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
 
@@ -38,28 +41,40 @@ func NewFraudScoreHandler(vec Vectorizer, knn KNNIndex) *FraudScoreHandler {
 }
 
 func (h *FraudScoreHandler) Handle(ctx *fasthttp.RequestCtx) {
+	start := time.Now()
+
 	if !ctx.IsPost() {
 		ctx.SetStatusCode(fasthttp.StatusMethodNotAllowed)
 		return
 	}
 
+	vecStart := time.Now()
 	vec, err := h.vec.VectorizeJSON(ctx.PostBody())
+	vecDur := time.Since(vecStart)
+
 	if err != nil {
 		ctx.SetStatusCode(fasthttp.StatusOK)
 		ctx.SetContentType("application/json")
 		_, _ = ctx.Write(approvedBody)
+		middleware.Record(time.Since(start), vecDur, 0, 0, true, true)
 		return
 	}
 
+	knnStart := time.Now()
 	fraudCount := h.knn.PredictRaw(vec, h.knn.NProbe())
+	knnDur := time.Since(knnStart)
+
 	score := float64(fraudCount) / float64(knnNeighbors)
+	approved := score < knnFraudThreshold
 
 	resp := approvedBody
-	if score >= knnFraudThreshold {
+	if !approved {
 		resp = disapprovedBody
 	}
 
 	ctx.SetStatusCode(fasthttp.StatusOK)
 	ctx.SetContentType("application/json")
 	_, _ = ctx.Write(resp)
+
+	middleware.Record(time.Since(start), vecDur, knnDur, fraudCount, approved, false)
 }
