@@ -31,14 +31,14 @@ import (
 // ============================================================================
 
 // IVF_NPROBE: total de clusters para casos ambíguos (quick + remaining)
-// 24 = mesmo que jairoblatt/rinha-2026-rust (menos clusters = mais rápido)
-// Testado e aprovado: sem perda de qualidade vs nprobe=36
-const IVF_NPROBE = 24
+// 36 = valor original que garantia detecção perfeita
+// Reduzir para 24 causou risco de falsos positivos
+const IVF_NPROBE = 36
 
 // IVF_QUICK_PROBE: clusters para quick probe (early exit)
-// 5 = mesmo que jairoblatt/rinha-2026-rust (muito agressivo)
-// ~80-90% das queries saem cedo com apenas 5 clusters!
-const IVF_QUICK_PROBE = 5
+// 16 = valor original que garantia detecção perfeita
+// Reduzir para 8/5 causou 1 falso positivo no CI
+const IVF_QUICK_PROBE = 16
 
 // IVF_BOUNDARY_LO/HI: zona ambígua (apenas estes valores disparam re-score)
 const IVF_BOUNDARY_LO = 2
