@@ -9,8 +9,8 @@ x-api-env: &api-env
   PORT: 9999
   RESOURCES: /resources
   GOMAXPROCS: 1
-  GOGC: off
   GOMEMLIMIT: 145MiB
+  TELEMETRY_ENABLED: "false"
 
 x-api-healthcheck: &api-healthcheck
   test: ["CMD", "/fraudctl", "-healthcheck"]
@@ -29,7 +29,7 @@ x-api-resources: &api-resources
       memory: 110M
 
 x-api-defaults: &api-defaults
-  image: fabianoflorentino/fraudctl:v1.0.83
+  image: fraudctl:latest
   volumes:
     - sockets:/sockets
   healthcheck: *api-healthcheck
@@ -50,6 +50,7 @@ services:
     hostname: api-1
     environment:
       <<: *api-env
+      GOGC: "250"
       UNIX_SOCKET: /sockets/api-1.sock
 
   api-2:
@@ -58,6 +59,7 @@ services:
     hostname: api-2
     environment:
       <<: *api-env
+      GOGC: "350"
       UNIX_SOCKET: /sockets/api-2.sock
 
   haproxy:
