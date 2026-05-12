@@ -2,7 +2,6 @@ package vectorizer
 
 import (
 	"bytes"
-	"strconv"
 
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
@@ -70,42 +69,7 @@ func findJSONObject(data []byte, field []byte) []byte {
 	return nil
 }
 
-func parseJSONString(obj []byte, field []byte) string {
-	idx := bytes.Index(obj, field)
-	if idx == -1 {
-		return ""
-	}
-	rest := obj[idx+len(field):]
-
-	colonIdx := bytes.IndexByte(rest, ':')
-	if colonIdx == -1 {
-		return ""
-	}
-	rest = rest[colonIdx+1:]
-
-	quoteStart := -1
-	for i, b := range rest {
-		if b == '"' {
-			quoteStart = i
-			break
-		}
-		if b != ' ' && b != '\t' && b != '\n' && b != '\r' {
-			return ""
-		}
-	}
-	if quoteStart == -1 {
-		return ""
-	}
-
-	for i := quoteStart + 1; i < len(rest); i++ {
-		if rest[i] == '"' && rest[i-1] != '\\' {
-			return string(rest[quoteStart+1 : i])
-		}
-	}
-	return ""
-}
-
-func parseJSONFloat64(obj []byte, field []byte) float64 {
+func parseJSONFloat64Fast(obj []byte, field []byte) float64 {
 	idx := bytes.Index(obj, field)
 	if idx == -1 {
 		return 0
@@ -142,14 +106,65 @@ func parseJSONFloat64(obj []byte, field []byte) float64 {
 		}
 	}
 
-	val, err := strconv.ParseFloat(string(rest[start:end+1]), 64)
-	if err != nil {
+	return parseFloatFast(rest[start : end+1])
+}
+
+func parseFloatFast(b []byte) float64 {
+	if len(b) == 0 {
 		return 0
+	}
+	neg := false
+	switch b[0] {
+	case '-':
+		neg = true
+		fallthrough
+	case '+':
+		b = b[1:]
+	}
+
+	var intPart int64
+	var fracPart int64
+	var fracDiv int64 = 1
+	dotIdx := -1
+	for i := 0; i < len(b); i++ {
+		c := b[i]
+		if c == '.' {
+			dotIdx = i
+			break
+		}
+		if c < '0' || c > '9' {
+			break
+		}
+		intPart = intPart*10 + int64(c-'0')
+	}
+
+	if dotIdx >= 0 {
+		for i := dotIdx + 1; i < len(b); i++ {
+			c := b[i]
+			if c < '0' || c > '9' {
+				break
+			}
+			fracPart = fracPart*10 + int64(c-'0')
+			fracDiv *= 10
+		}
+		if intPart == 0 && fracPart == 0 {
+			return 0
+		}
+		val := float64(intPart) + float64(fracPart)/float64(fracDiv)
+		if neg {
+			val = -val
+		}
+		return val
+	}
+
+	val := float64(intPart)
+	if neg {
+		val = -val
 	}
 	return val
 }
 
-func parseJSONInt(obj []byte, field []byte) int {
+func parseJSONIntFast(obj []byte, field []byte) int {
 	idx := bytes.Index(obj, field)
 	if idx == -1 {
 		return 0
@@ -186,14 +201,45 @@ func parseJSONInt(obj []byte, field []byte) int {
 		}
 	}
 
-	val, err := strconv.Atoi(string(rest[start : end+1]))
-	if err != nil {
-		return 0
-	}
-	return val
+	return int(parseFloatFast(rest[start : end+1]))
 }
 
-func parseJSONBool(obj []byte, field []byte) bool {
+func parseJSONStringFast(obj []byte, field []byte) string {
+	idx := bytes.Index(obj, field)
+	if idx == -1 {
+		return ""
+	}
+	rest := obj[idx+len(field):]
+
+	colonIdx := bytes.IndexByte(rest, ':')
+	if colonIdx == -1 {
+		return ""
+	}
+	rest = rest[colonIdx+1:]
+
+	quoteStart := -1
+	for i, b := range rest {
+		if b == '"' {
+			quoteStart = i
+			break
+		}
+		if b != ' ' && b != '\t' && b != '\n' && b != '\r' {
+			return ""
+		}
+	}
+	if quoteStart == -1 {
+		return ""
+	}
+
+	for i := quoteStart + 1; i < len(rest); i++ {
+		if rest[i] == '"' && rest[i-1] != '\\' {
+			return string(rest[quoteStart+1 : i])
+		}
+	}
+	return ""
+}
+
+func parseJSONBoolFast(obj []byte, field []byte) bool {
 	idx := bytes.Index(obj, field)
 	if idx == -1 {
 		return false
@@ -219,7 +265,7 @@ func parseJSONBool(obj []byte, field []byte) bool {
 	return false
 }
 
-func parseJSONStringArray(obj []byte, field []byte) []string {
+func parseJSONStringArrayFast(obj []byte, field []byte) []string {
 	idx := bytes.Index(obj, field)
 	if idx == -1 {
 		return nil
@@ -292,13 +338,15 @@ func parseJSONStringArray(obj []byte, field []byte) []string {
 	return result
 }
 
-func merchantIDInArray(merchID string, knownMerchants []string) bool {
-	for _, m := range knownMerchants {
-		if m == merchID {
-			return true
-		}
+func buildKnownMerchMap(arr []string) map[string]struct{} {
+	if arr == nil {
+		return nil
 	}
-	return false
+	m := make(map[string]struct{}, len(arr))
+	for _, s := range arr {
+		m[s] = struct{}{}
+	}
+	return m
 }
 
 var errInvalidJSON = &invalidJSONError{}
@@ -310,17 +358,7 @@ func (e *invalidJSONError) Error() string { return "invalid json" }
 func (v *Vectorizer) VectorizeJSON(data []byte) (model.Vector14, error) {
 	var vec model.Vector14
 
-	hasOpening := false
-	for _, b := range data {
-		if b == '{' {
-			hasOpening = true
-			break
-		}
-		if b != ' ' && b != '\t' && b != '\n' && b != '\r' {
-			return vec, errInvalidJSON
-		}
-	}
-	if !hasOpening {
+	if len(data) < 2 || data[0] != '{' {
 		return vec, errInvalidJSON
 	}
 
@@ -329,18 +367,19 @@ func (v *Vectorizer) VectorizeJSON(data []byte) (model.Vector14, error) {
 		return vec, nil
 	}
 
-	txAmount := parseJSONFloat64(txObj, jsonFieldAmount)
-	txInstallments := parseJSONInt(txObj, jsonFieldInstallments)
-	txRequestedAt := parseJSONString(txObj, jsonFieldRequestedAt)
+	txAmount := parseJSONFloat64Fast(txObj, jsonFieldAmount)
+	txInstallments := parseJSONIntFast(txObj, jsonFieldInstallments)
+	txRequestedAt := parseJSONStringFast(txObj, jsonFieldRequestedAt)
 
 	vec[0] = clampFloat32(float32(txAmount) * v.invMaxAmount)
 	vec[1] = clampFloat32(float32(txInstallments) * v.invMaxInstall)
 
 	custObj := findJSONObject(data, jsonFieldCust)
 	if custObj != nil {
-		custAvgAmount := parseJSONFloat64(custObj, jsonFieldAvgAmount)
-		custTxCount24h := parseJSONInt(custObj, jsonFieldTxCount24h)
-		custKnownMerchants := parseJSONStringArray(custObj, jsonFieldKnownMerch)
+		custAvgAmount := parseJSONFloat64Fast(custObj, jsonFieldAvgAmount)
+		custTxCount24h := parseJSONIntFast(custObj, jsonFieldTxCount24h)
+		custKnownArr := parseJSONStringArrayFast(custObj, jsonFieldKnownMerch)
+		custKnownMerch := buildKnownMerchMap(custKnownArr)
 
 		var amountVsAvg float64
 		if custAvgAmount > 0 {
@@ -351,11 +390,15 @@ func (v *Vectorizer) VectorizeJSON(data []byte) (model.Vector14, error) {
 
 		merchObj := findJSONObject(data, jsonFieldMerch)
 		if merchObj != nil {
-			merchID := parseJSONString(merchObj, jsonFieldID)
-			merchMCC := parseJSONString(merchObj, jsonFieldMCC)
-			merchAvg := parseJSONFloat64(merchObj, jsonFieldAvgAmount)
+			merchID := parseJSONStringFast(merchObj, jsonFieldID)
+			merchMCC := parseJSONStringFast(merchObj, jsonFieldMCC)
+			merchAvg := parseJSONFloat64Fast(merchObj, jsonFieldAvgAmount)
 
-			if !merchantIDInArray(merchID, custKnownMerchants) {
+			isKnown := false
+			if custKnownMerch != nil && merchID != "" {
+				_, isKnown = custKnownMerch[merchID]
+			}
+			if merchID != "" && !isKnown {
 				vec[11] = 1
 			}
 
@@ -370,8 +413,8 @@ func (v *Vectorizer) VectorizeJSON(data []byte) (model.Vector14, error) {
 
 	lastTxObj := findJSONObject(data, jsonFieldLastTx)
 	if lastTxObj != nil {
-		lastTxTime := parseJSONString(lastTxObj, jsonFieldTimestamp)
-		lastTxKm := parseJSONFloat64(lastTxObj, jsonFieldKmFromCurr)
+		lastTxTime := parseJSONStringFast(lastTxObj, jsonFieldTimestamp)
+		lastTxKm := parseJSONFloat64Fast(lastTxObj, jsonFieldKmFromCurr)
 
 		reqSec := parseUnixSeconds(txRequestedAt)
 		lastSec := parseUnixSeconds(lastTxTime)
@@ -385,9 +428,9 @@ func (v *Vectorizer) VectorizeJSON(data []byte) (model.Vector14, error) {
 
 	termObj := findJSONObject(data, jsonFieldTerm)
 	if termObj != nil {
-		termIsOnline := parseJSONBool(termObj, jsonFieldIsOnline)
-		termCardPresent := parseJSONBool(termObj, jsonFieldCardPresent)
-		termKmFromHome := parseJSONFloat64(termObj, jsonFieldKmFromHome)
+		termIsOnline := parseJSONBoolFast(termObj, jsonFieldIsOnline)
+		termCardPresent := parseJSONBoolFast(termObj, jsonFieldCardPresent)
+		termKmFromHome := parseJSONFloat64Fast(termObj, jsonFieldKmFromHome)
 
 		vec[7] = clampFloat32(float32(termKmFromHome) * v.invMaxKm)
 
