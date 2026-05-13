@@ -47,28 +47,42 @@ func NewFraudScoreHandler(vec Vectorizer, knn KNNIndex) *FraudScoreHandler {
 }
 
 func (h *FraudScoreHandler) Handle(ctx *fasthttp.RequestCtx) {
-	start := time.Now()
+	var start, vecStart, knnStart time.Time
+	var vecDur, knnDur time.Duration
+
+	telemetry := middleware.IsEnabled()
 
 	if !ctx.IsPost() {
 		ctx.SetStatusCode(fasthttp.StatusMethodNotAllowed)
 		return
 	}
 
-	vecStart := time.Now()
+	if telemetry {
+		start = time.Now()
+		vecStart = time.Now()
+	}
 	vec, err := h.vec.VectorizeJSON(ctx.PostBody())
-	vecDur := time.Since(vecStart)
+	if telemetry {
+		vecDur = time.Since(vecStart)
+	}
 
 	if err != nil {
 		ctx.SetStatusCode(fasthttp.StatusOK)
 		ctx.SetContentType("application/json")
 		_, _ = ctx.Write(precomputedResp[0])
-		middleware.Record(time.Since(start), vecDur, 0, 0, true, true)
+		if telemetry {
+			middleware.Record(time.Since(start), vecDur, 0, 0, true, true)
+		}
 		return
 	}
 
-	knnStart := time.Now()
+	if telemetry {
+		knnStart = time.Now()
+	}
 	fraudCount := h.knn.PredictRaw(vec, h.knn.NProbe())
-	knnDur := time.Since(knnStart)
+	if telemetry {
+		knnDur = time.Since(knnStart)
+	}
 
 	resp := precomputedResp[fraudCount]
 
@@ -76,5 +90,7 @@ func (h *FraudScoreHandler) Handle(ctx *fasthttp.RequestCtx) {
 	ctx.SetContentType("application/json")
 	_, _ = ctx.Write(resp)
 
-	middleware.Record(time.Since(start), vecDur, knnDur, fraudCount, fraudCount < 3, false)
+	if telemetry {
+		middleware.Record(time.Since(start), vecDur, knnDur, fraudCount, fraudCount < 3, false)
+	}
 }

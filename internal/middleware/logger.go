@@ -29,6 +29,11 @@ func SetEnabled(enabled bool) {
 	atomic.StoreUint32(&telemetryEnabled, 0)
 }
 
+// IsEnabled returns whether telemetry collection is active.
+func IsEnabled() bool {
+	return atomic.LoadUint32(&telemetryEnabled) != 0
+}
+
 // outlierThresholdUs — requests above this value are captured in the ring buffer.
 const outlierThresholdUs = 2000 // 2ms
 
