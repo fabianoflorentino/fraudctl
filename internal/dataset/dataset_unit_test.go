@@ -67,8 +67,8 @@ func TestDataset_SetConfig(t *testing.T) {
 	if ds.norm.MaxAmount != 5000 {
 		t.Errorf("norm.MaxAmount = %v, want 5000", ds.norm.MaxAmount)
 	}
-	if ds.mccRisk.Get("5411") != 0.15 {
-		t.Errorf("mccRisk.Get(5411) = %v, want 0.15", ds.mccRisk.Get("5411"))
+	if ds.mccRisk.Get([]byte("5411")) != 0.15 {
+		t.Errorf("mccRisk.Get(5411) = %v, want 0.15", ds.mccRisk.Get([]byte("5411")))
 	}
 }
 
@@ -234,8 +234,8 @@ func TestLoader_LoadMCCRisk_InvalidCode(t *testing.T) {
 		t.Fatalf("LoadMCCRisk failed: %v", err)
 	}
 
-	if risk.Get("0012") != 0.5 {
-		t.Errorf("MCCRisk.Get(0012) = %v, want 0.5", risk.Get("0012"))
+	if risk.Get([]byte("0012")) != 0.5 {
+		t.Errorf("MCCRisk.Get(0012) = %v, want 0.5", risk.Get([]byte("0012")))
 	}
 }
 
@@ -252,7 +252,7 @@ func TestLoader_LoadMCCRisk_DefaultValues(t *testing.T) {
 		t.Fatalf("LoadMCCRisk failed: %v", err)
 	}
 
-	if risk.Get("9999") != 0.5 {
-		t.Errorf("MCCRisk.Get(9999) = %v, want 0.5 (default)", risk.Get("9999"))
+	if risk.Get([]byte("9999")) != 0.5 {
+		t.Errorf("MCCRisk.Get(9999) = %v, want 0.5 (default)", risk.Get([]byte("9999")))
 	}
 }

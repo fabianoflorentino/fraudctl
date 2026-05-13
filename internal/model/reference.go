@@ -57,7 +57,7 @@ type MCCRisk [10000]float64
 // Get returns the risk score for a given MCC code.
 // Converts 4-character MCC string to array index.
 // Returns 0.5 (medium risk) if MCC is invalid or not found.
-func (m MCCRisk) Get(mcc string) float64 {
+func (m MCCRisk) Get(mcc []byte) float64 {
 	if len(mcc) != 4 {
 		return 0.5
 	}

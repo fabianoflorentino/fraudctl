@@ -116,7 +116,7 @@ func (v *Vectorizer) Vectorize(req *model.FraudScoreRequest) model.Vector14 {
 		vec[11] = 1
 	}
 
-	vec[12] = float32(v.mccRisk.Get(req.Merchant.MCC))
+	vec[12] = float32(v.mccRisk.Get([]byte(req.Merchant.MCC)))
 	vec[13] = clampFloat32(float32(req.Merchant.AvgAmount) * v.invMaxMerchantAvg)
 
 	return vec

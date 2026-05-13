@@ -122,7 +122,7 @@ func TestMCCRisk_Get(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := risk.Get(tt.mcc); got != tt.want {
+			if got := risk.Get([]byte(tt.mcc)); got != tt.want {
 				t.Errorf("MCCRisk.Get(%q) = %v, want %v", tt.mcc, got, tt.want)
 			}
 		})

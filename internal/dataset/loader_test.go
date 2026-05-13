@@ -100,14 +100,14 @@ func TestLoader_LoadMCCRisk(t *testing.T) {
 			path:    "../../resources/mcc_risk.json",
 			wantErr: false,
 			check: func(t *testing.T, got model.MCCRisk) {
-				if got.Get("5411") != 0.15 {
-					t.Errorf("MCCRisk.Get(5411) = %v, want 0.15", got.Get("5411"))
+				if got.Get([]byte("5411")) != 0.15 {
+					t.Errorf("MCCRisk.Get(5411) = %v, want 0.15", got.Get([]byte("5411")))
 				}
-				if got.Get("7995") != 0.85 {
-					t.Errorf("MCCRisk.Get(7995) = %v, want 0.85", got.Get("7995"))
+				if got.Get([]byte("7995")) != 0.85 {
+					t.Errorf("MCCRisk.Get(7995) = %v, want 0.85", got.Get([]byte("7995")))
 				}
-				if got.Get("UNKNOWN") != 0.5 {
-					t.Errorf("MCCRisk.Get(UNKNOWN) = %v, want 0.5 (default)", got.Get("UNKNOWN"))
+				if got.Get([]byte("UNKNOWN")) != 0.5 {
+					t.Errorf("MCCRisk.Get(UNKNOWN) = %v, want 0.5 (default)", got.Get([]byte("UNKNOWN")))
 				}
 			},
 		},
@@ -214,8 +214,8 @@ func TestLoader_LoadAll(t *testing.T) {
 				if ds.norm.MaxAmount != 10000 {
 					t.Errorf("Dataset.norm.MaxAmount = %v, want 10000", ds.norm.MaxAmount)
 				}
-				if ds.mccRisk.Get("5411") != 0.15 {
-					t.Errorf("Dataset.mccRisk.Get(5411) = %v, want 0.15", ds.mccRisk.Get("5411"))
+				if ds.mccRisk.Get([]byte("5411")) != 0.15 {
+					t.Errorf("Dataset.mccRisk.Get(5411) = %v, want 0.15", ds.mccRisk.Get([]byte("5411")))
 				}
 			},
 		},

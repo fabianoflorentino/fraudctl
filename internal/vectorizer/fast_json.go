@@ -204,16 +204,16 @@ func parseJSONIntFast(obj []byte, field []byte) int {
 	return int(parseFloatFast(rest[start : end+1]))
 }
 
-func parseJSONStringFast(obj []byte, field []byte) string {
+func parseJSONStringBytes(obj []byte, field []byte) []byte {
 	idx := bytes.Index(obj, field)
 	if idx == -1 {
-		return ""
+		return nil
 	}
 	rest := obj[idx+len(field):]
 
 	colonIdx := bytes.IndexByte(rest, ':')
 	if colonIdx == -1 {
-		return ""
+		return nil
 	}
 	rest = rest[colonIdx+1:]
 
@@ -224,19 +224,19 @@ func parseJSONStringFast(obj []byte, field []byte) string {
 			break
 		}
 		if b != ' ' && b != '\t' && b != '\n' && b != '\r' {
-			return ""
+			return nil
 		}
 	}
 	if quoteStart == -1 {
-		return ""
+		return nil
 	}
 
 	for i := quoteStart + 1; i < len(rest); i++ {
 		if rest[i] == '"' && rest[i-1] != '\\' {
-			return string(rest[quoteStart+1 : i])
+			return rest[quoteStart+1 : i]
 		}
 	}
-	return ""
+	return nil
 }
 
 func parseJSONBoolFast(obj []byte, field []byte) bool {
@@ -265,16 +265,16 @@ func parseJSONBoolFast(obj []byte, field []byte) bool {
 	return false
 }
 
-func parseJSONStringArrayFast(obj []byte, field []byte) []string {
+func merchantIDInArray(obj []byte, field []byte, target []byte) bool {
 	idx := bytes.Index(obj, field)
 	if idx == -1 {
-		return nil
+		return false
 	}
 	rest := obj[idx+len(field):]
 
 	colonIdx := bytes.IndexByte(rest, ':')
 	if colonIdx == -1 {
-		return nil
+		return false
 	}
 	rest = rest[colonIdx+1:]
 
@@ -285,68 +285,32 @@ func parseJSONStringArrayFast(obj []byte, field []byte) []string {
 			break
 		}
 		if b != ' ' && b != '\t' && b != '\n' && b != '\r' {
-			return nil
+			return false
 		}
 	}
 	if bracketStart == -1 {
-		return nil
+		return false
 	}
-
-	depth := 1
-	bracketEnd := -1
-	inString := false
-	for i := bracketStart + 1; i < len(rest); i++ {
-		if rest[i] == '"' && (i == 0 || rest[i-1] != '\\') {
-			inString = !inString
-			continue
-		}
-		if inString {
-			continue
-		}
-		if rest[i] == '[' {
-			depth++
-		} else if rest[i] == ']' {
-			depth--
-			if depth == 0 {
-				bracketEnd = i
-				break
-			}
-		}
-	}
-	if bracketEnd == -1 {
-		return nil
-	}
-
-	arrayContent := rest[bracketStart+1 : bracketEnd]
-	var result []string
 
 	inStr := false
-	strStart := -1
-	for i := 0; i < len(arrayContent); i++ {
-		b := arrayContent[i]
-		if b == '"' && (i == 0 || arrayContent[i-1] != '\\') {
+	var strStart int
+	for i := bracketStart + 1; i < len(rest); i++ {
+		b := rest[i]
+		if b == '"' && (i == 0 || rest[i-1] != '\\') {
 			if !inStr {
 				inStr = true
-				strStart = i
+				strStart = i + 1
 			} else {
+				if bytes.Equal(rest[strStart:i], target) {
+					return true
+				}
 				inStr = false
-				result = append(result, string(arrayContent[strStart+1:i]))
 			}
+		} else if b == ']' && !inStr {
+			return false
 		}
 	}
-
-	return result
-}
-
-func buildKnownMerchMap(arr []string) map[string]struct{} {
-	if arr == nil {
-		return nil
-	}
-	m := make(map[string]struct{}, len(arr))
-	for _, s := range arr {
-		m[s] = struct{}{}
-	}
-	return m
+	return false
 }
 
 var errInvalidJSON = &invalidJSONError{}
@@ -354,6 +318,45 @@ var errInvalidJSON = &invalidJSONError{}
 type invalidJSONError struct{}
 
 func (e *invalidJSONError) Error() string { return "invalid json" }
+
+func parseHourAndWeekdayBytes(b []byte) (hour, weekday int) {
+	if len(b) < 13 || b[10] != 'T' {
+		return 0, 0
+	}
+	h := int(b[11]-'0')*10 + int(b[12]-'0')
+	if len(b) < 10 {
+		return h, 0
+	}
+	year := int(b[0]-'0')*1000 + int(b[1]-'0')*100 + int(b[2]-'0')*10 + int(b[3]-'0')
+	month := int(b[5]-'0')*10 + int(b[6]-'0')
+	day := int(b[8]-'0')*10 + int(b[9]-'0')
+	t := [12]int{0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4}
+	if month < 3 {
+		year--
+	}
+	wd := (year + year/4 - year/100 + year/400 + t[month-1] + day) % 7
+	return h, (wd + 6) % 7
+}
+
+func parseUnixSecondsBytes(b []byte) int64 {
+	if len(b) < 19 || b[10] != 'T' {
+		return 0
+	}
+	year := int64(b[0]-'0')*1000 + int64(b[1]-'0')*100 + int64(b[2]-'0')*10 + int64(b[3]-'0')
+	month := int64(b[5]-'0')*10 + int64(b[6]-'0')
+	day := int64(b[8]-'0')*10 + int64(b[9]-'0')
+	hour := int64(b[11]-'0')*10 + int64(b[12]-'0')
+	min := int64(b[14]-'0')*10 + int64(b[15]-'0')
+	sec := int64(b[17]-'0')*10 + int64(b[18]-'0')
+
+	y, m := year, month
+	if m <= 2 {
+		y--
+		m += 12
+	}
+	days := y*365 + y/4 - y/100 + y/400 + (153*(m-3)+2)/5 + day - 719469
+	return days*86400 + hour*3600 + min*60 + sec
+}
 
 func (v *Vectorizer) VectorizeJSON(data []byte) (model.Vector14, error) {
 	var vec model.Vector14
@@ -369,7 +372,7 @@ func (v *Vectorizer) VectorizeJSON(data []byte) (model.Vector14, error) {
 
 	txAmount := parseJSONFloat64Fast(txObj, jsonFieldAmount)
 	txInstallments := parseJSONIntFast(txObj, jsonFieldInstallments)
-	txRequestedAt := parseJSONStringFast(txObj, jsonFieldRequestedAt)
+	txRequestedAt := parseJSONStringBytes(txObj, jsonFieldRequestedAt)
 
 	vec[0] = clampFloat32(float32(txAmount) * v.invMaxAmount)
 	vec[1] = clampFloat32(float32(txInstallments) * v.invMaxInstall)
@@ -378,8 +381,6 @@ func (v *Vectorizer) VectorizeJSON(data []byte) (model.Vector14, error) {
 	if custObj != nil {
 		custAvgAmount := parseJSONFloat64Fast(custObj, jsonFieldAvgAmount)
 		custTxCount24h := parseJSONIntFast(custObj, jsonFieldTxCount24h)
-		custKnownArr := parseJSONStringArrayFast(custObj, jsonFieldKnownMerch)
-		custKnownMerch := buildKnownMerchMap(custKnownArr)
 
 		var amountVsAvg float64
 		if custAvgAmount > 0 {
@@ -390,15 +391,11 @@ func (v *Vectorizer) VectorizeJSON(data []byte) (model.Vector14, error) {
 
 		merchObj := findJSONObject(data, jsonFieldMerch)
 		if merchObj != nil {
-			merchID := parseJSONStringFast(merchObj, jsonFieldID)
-			merchMCC := parseJSONStringFast(merchObj, jsonFieldMCC)
+			merchID := parseJSONStringBytes(merchObj, jsonFieldID)
+			merchMCC := parseJSONStringBytes(merchObj, jsonFieldMCC)
 			merchAvg := parseJSONFloat64Fast(merchObj, jsonFieldAvgAmount)
 
-			isKnown := false
-			if custKnownMerch != nil && merchID != "" {
-				_, isKnown = custKnownMerch[merchID]
-			}
-			if merchID != "" && !isKnown {
+			if len(merchID) > 0 && !merchantIDInArray(custObj, jsonFieldKnownMerch, merchID) {
 				vec[11] = 1
 			}
 
@@ -407,17 +404,17 @@ func (v *Vectorizer) VectorizeJSON(data []byte) (model.Vector14, error) {
 		}
 	}
 
-	hour, dayOfWeek := parseHourAndWeekday(txRequestedAt)
+	hour, dayOfWeek := parseHourAndWeekdayBytes(txRequestedAt)
 	vec[3] = float32(hour) / 23.0
 	vec[4] = float32(dayOfWeek) / 6.0
 
 	lastTxObj := findJSONObject(data, jsonFieldLastTx)
 	if lastTxObj != nil {
-		lastTxTime := parseJSONStringFast(lastTxObj, jsonFieldTimestamp)
+		lastTxTime := parseJSONStringBytes(lastTxObj, jsonFieldTimestamp)
 		lastTxKm := parseJSONFloat64Fast(lastTxObj, jsonFieldKmFromCurr)
 
-		reqSec := parseUnixSeconds(txRequestedAt)
-		lastSec := parseUnixSeconds(lastTxTime)
+		reqSec := parseUnixSecondsBytes(txRequestedAt)
+		lastSec := parseUnixSecondsBytes(lastTxTime)
 		minutes := float32(reqSec-lastSec) / 60.0
 		vec[5] = clampFloat32(minutes * v.invMaxMinutes)
 		vec[6] = clampFloat32(float32(lastTxKm) * v.invMaxKm)
