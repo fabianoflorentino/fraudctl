@@ -16,7 +16,6 @@ const K = 5
 const DIM = 14
 const int16Scale = 10000
 const ivfMagic uint32 = 0x49564649
-const bruteMagic uint32 = 0x42525554
 
 func quantizeFloat32(v float32) int16 {
 	if v > 1.0 {
@@ -378,89 +377,4 @@ func kmeansUpdate(flat []float32, n int, centroids []float32, k int, assign []in
 			centroids[cb+d] = float32(sums[cb+d] / float64(counts[ci]))
 		}
 	}
-}
-
-func BuildBrute(refsGz, outPath string) error {
-	fmt.Printf("BuildBrute: loading %s ...\n", refsGz)
-
-	f, err := os.Open(refsGz)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = f.Close() }()
-	gz, err := gzip.NewReader(f)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = gz.Close() }()
-
-	var vectors []float32
-	var fraudFlags []bool
-
-	dec := json.NewDecoder(gz)
-	if _, err := dec.Token(); err != nil {
-		return err
-	}
-	var entry struct {
-		Vector []float64 `json:"vector"`
-		Label  string    `json:"label"`
-	}
-	for dec.More() {
-		entry.Vector = entry.Vector[:0]
-		if err := dec.Decode(&entry); err != nil {
-			break
-		}
-		for i := 0; i < 14; i++ {
-			if i < len(entry.Vector) {
-				vectors = append(vectors, float32(entry.Vector[i]))
-			} else {
-				vectors = append(vectors, 0)
-			}
-		}
-		fraudFlags = append(fraudFlags, entry.Label == "fraud")
-	}
-	N := len(fraudFlags)
-	fmt.Printf("BuildBrute: loaded %d vectors\n", N)
-
-	soa := make([]int16, N*DIM)
-	labels := make([]byte, N)
-
-	for i := range N {
-		for d := range DIM {
-			soa[d*N+i] = quantizeFloat32(vectors[i*DIM+d])
-		}
-		if fraudFlags[i] {
-			labels[i] = 1
-		}
-	}
-
-	fmt.Printf("BuildBrute: writing %s ...\n", outPath)
-	out, err := os.Create(outPath)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = out.Close() }()
-
-	write32 := func(v uint32) error { return binary.Write(out, binary.LittleEndian, v) }
-	if err := write32(bruteMagic); err != nil {
-		return err
-	}
-	if err := write32(1); err != nil {
-		return err
-	}
-	if err := write32(uint32(N)); err != nil {
-		return err
-	}
-	if err := write32(DIM); err != nil {
-		return err
-	}
-	if err := binary.Write(out, binary.LittleEndian, soa); err != nil {
-		return err
-	}
-	if _, err := out.Write(labels); err != nil {
-		return err
-	}
-
-	fmt.Printf("BuildBrute: done. N=%d\n", N)
-	return nil
 }

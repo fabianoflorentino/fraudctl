@@ -152,31 +152,6 @@ func TestBruteIndex_Predict_Empty(t *testing.T) {
 	}
 }
 
-func TestBruteAVX2Index_Empty(t *testing.T) {
-	idx := NewBruteAVX2Index()
-	score := idx.Predict(model.Vector14{}, 5)
-	if score != 0 {
-		t.Errorf("Predict empty = %v, want 0", score)
-	}
-	if idx.Count() != 0 {
-		t.Errorf("Count = %d, want 0", idx.Count())
-	}
-	if idx.NProbe() != 0 {
-		t.Errorf("NProbe = %d, want 0", idx.NProbe())
-	}
-	if idx.FraudCount() != 0 {
-		t.Errorf("FraudCount = %d, want 0", idx.FraudCount())
-	}
-}
-
-func TestBruteAVX2Index_PredictRaw(t *testing.T) {
-	idx := NewBruteAVX2Index()
-	raw := idx.PredictRaw(model.Vector14{}, 0)
-	if raw != 0 {
-		t.Errorf("PredictRaw empty = %d, want 0", raw)
-	}
-}
-
 func TestIVFIndex_PredictRaw_Empty(t *testing.T) {
 	idx := &IVFIndex{}
 	raw := idx.PredictRaw(model.Vector14{}, 0)
@@ -213,13 +188,6 @@ func TestNewIVFIndex(t *testing.T) {
 	idx := NewIVFIndex()
 	if idx == nil {
 		t.Fatal("NewIVFIndex returned nil")
-	}
-}
-
-func TestNewBruteAVX2Index(t *testing.T) {
-	idx := NewBruteAVX2Index()
-	if idx == nil {
-		t.Fatal("NewBruteAVX2Index returned nil")
 	}
 }
 
@@ -383,19 +351,6 @@ func TestIVFIndex_DebugCentroids(t *testing.T) {
 	c := idx.DebugCentroids()
 	if c != nil {
 		t.Errorf("DebugCentroids on new index = %v, want nil", c)
-	}
-}
-
-func TestExistsBrute(t *testing.T) {
-	if ExistsBrute("/nonexistent") {
-		t.Error("ExistsBrute false positive")
-	}
-}
-
-func TestBuildBrute_NoFile(t *testing.T) {
-	err := BuildBrute("/nonexistent/references.json.gz", "/tmp/out.bin")
-	if err == nil {
-		t.Fatal("expected error for nonexistent input")
 	}
 }
 

@@ -98,26 +98,6 @@ func TestBuildIVF_LargerNlist(t *testing.T) {
 	}
 }
 
-func TestBuildBrute_Small(t *testing.T) {
-	entries := []map[string]interface{}{
-		{"vector": makeRefVector(0.1), "label": "fraud"},
-		{"vector": makeRefVector(0.5), "label": "legit"},
-		{"vector": makeRefVector(0.9), "label": "fraud"},
-	}
-
-	gzPath := createTestRefsGz(t, entries)
-	outPath := filepath.Join(t.TempDir(), "brute.bin")
-
-	err := BuildBrute(gzPath, outPath)
-	if err != nil {
-		t.Fatalf("BuildBrute failed: %v", err)
-	}
-
-	if _, err := os.Stat(outPath); err != nil {
-		t.Fatalf("output file not created: %v", err)
-	}
-}
-
 func TestBuildIVF_LoadAndPredict(t *testing.T) {
 	entries := []map[string]interface{}{
 		{"vector": makeRefVector(0.1), "label": "fraud"},
@@ -145,32 +125,5 @@ func TestBuildIVF_LoadAndPredict(t *testing.T) {
 	}
 	if idx.Count() != 6 {
 		t.Errorf("Count = %d, want 6", idx.Count())
-	}
-}
-
-func TestBuildBrute_LoadAndPredict(t *testing.T) {
-	entries := []map[string]interface{}{
-		{"vector": makeRefVector(0.1), "label": "fraud"},
-		{"vector": makeRefVector(0.5), "label": "legit"},
-		{"vector": makeRefVector(0.9), "label": "fraud"},
-	}
-
-	gzPath := createTestRefsGz(t, entries)
-	outPath := filepath.Join(t.TempDir(), "brute_roundtrip.bin")
-
-	err := BuildBrute(gzPath, outPath)
-	if err != nil {
-		t.Fatalf("BuildBrute failed: %v", err)
-	}
-
-	idx, err := LoadBruteAVX2(outPath)
-	if err != nil {
-		t.Fatalf("LoadBruteAVX2 failed: %v", err)
-	}
-	if idx == nil {
-		t.Fatal("LoadBruteAVX2 returned nil")
-	}
-	if idx.Count() != 3 {
-		t.Errorf("Count = %d, want 3", idx.Count())
 	}
 }

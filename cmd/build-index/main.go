@@ -1,4 +1,4 @@
-// build-index pre-computes IVF and brute-force indexes from references.json.gz.
+// build-index pre-computes IVF indexes from references.json.gz.
 // Runs at docker build time so the API startup only needs to load the files.
 //
 // Usage: build-index -resources /path/to/resources -nlist 500 -iterations 20

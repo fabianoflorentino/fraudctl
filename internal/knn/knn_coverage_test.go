@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"container/heap"
-	"encoding/binary"
 	"encoding/json"
 	"math"
 	"os"
@@ -68,128 +67,6 @@ func TestIVFIndex_FraudCount_Empty(t *testing.T) {
 	}
 	if idx.FraudCount() != 0 {
 		t.Errorf("FraudCount empty = %d, want 0", idx.FraudCount())
-	}
-}
-
-func TestBruteAVX2Index_Predict_WithData(t *testing.T) {
-	idx := createSmallBruteAVX2(t)
-
-	var query model.Vector14
-	query[0] = 0.5
-	score := idx.Predict(query, 3)
-	if score < 0 || score > 1 {
-		t.Errorf("Predict score = %v, want [0,1]", score)
-	}
-}
-
-func TestBruteAVX2Index_PredictRaw_WithData(t *testing.T) {
-	idx := createSmallBruteAVX2(t)
-	raw := idx.PredictRaw(model.Vector14{}, 0)
-	if raw < 0 || raw > 3 {
-		t.Errorf("PredictRaw = %d, want [0,3]", raw)
-	}
-}
-
-func TestBruteAVX2Index_FraudCount_Zero(t *testing.T) {
-	idx := NewBruteAVX2Index()
-	if idx.FraudCount() != 0 {
-		t.Errorf("FraudCount = %d, want 0", idx.FraudCount())
-	}
-}
-
-func createSmallBruteAVX2(t *testing.T) *BruteAVX2Index {
-	t.Helper()
-	N := 3
-	data := make([]int16, N*DIM)
-	data[0] = 1000
-	data[DIM] = 5000
-	data[2*DIM] = 9000
-	labels := []byte{0, 1, 0}
-	return &BruteAVX2Index{
-		data:   data,
-		labels: labels,
-		N:      N,
-	}
-}
-
-func TestLoadBruteAVX2_InvalidFile(t *testing.T) {
-	_, err := LoadBruteAVX2("/nonexistent/file.bin")
-	if err == nil {
-		t.Fatal("expected error for nonexistent file")
-	}
-}
-
-func TestLoadBruteAVX2_InvalidMagic(t *testing.T) {
-	path := t.TempDir() + "/bad_magic.bin"
-	data := make([]byte, 16)
-	binary.LittleEndian.PutUint32(data[0:], 0xDEADBEEF)
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	_, err := LoadBruteAVX2(path)
-	if err == nil {
-		t.Fatal("expected error for invalid magic")
-	}
-}
-
-func TestLoadBruteAVX2_InvalidVersion(t *testing.T) {
-	path := t.TempDir() + "/bad_version.bin"
-	f, err := os.Create(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := binary.Write(f, binary.LittleEndian, bruteLoadMagic); err != nil {
-		t.Fatal(err)
-	}
-	if err := binary.Write(f, binary.LittleEndian, uint32(99)); err != nil {
-		t.Fatal(err)
-	}
-	if err := binary.Write(f, binary.LittleEndian, uint32(10)); err != nil {
-		t.Fatal(err)
-	}
-	if err := binary.Write(f, binary.LittleEndian, uint32(14)); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = LoadBruteAVX2(path)
-	if err == nil {
-		t.Fatal("expected error for invalid version")
-	}
-}
-
-func TestLoadBruteAVX2_WrongDim(t *testing.T) {
-	path := t.TempDir() + "/bad_dim.bin"
-	f, err := os.Create(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := binary.Write(f, binary.LittleEndian, bruteLoadMagic); err != nil {
-		t.Fatal(err)
-	}
-	if err := binary.Write(f, binary.LittleEndian, uint32(1)); err != nil {
-		t.Fatal(err)
-	}
-	if err := binary.Write(f, binary.LittleEndian, uint32(10)); err != nil {
-		t.Fatal(err)
-	}
-	if err := binary.Write(f, binary.LittleEndian, uint32(7)); err != nil {
-		t.Fatal(err)
-	}
-	soa := make([]int16, 10*7)
-	if err := binary.Write(f, binary.LittleEndian, soa); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = LoadBruteAVX2(path)
-	if err == nil {
-		t.Fatal("expected error for wrong dim")
 	}
 }
 
@@ -487,16 +364,6 @@ func TestQuantizeQuery_ExtremeValues(t *testing.T) {
 	}
 	if qi[1] != -int16Scale {
 		t.Errorf("qi[1] for -1.5 = %d, want %d", qi[1], -int16Scale)
-	}
-}
-
-func TestBruteAVX2Index_Predict_ExactMatch(t *testing.T) {
-	idx := createSmallBruteAVX2(t)
-
-	matchingQuery := model.Vector14{0.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-	raw := idx.PredictRaw(matchingQuery, 0)
-	if raw < 0 || raw > 3 {
-		t.Errorf("PredictRaw = %d, want [0,3]", raw)
 	}
 }
 

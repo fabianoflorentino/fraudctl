@@ -8,19 +8,6 @@ import (
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
 
-func TestBruteAVX2Index_FraudCount_HalfFraud(t *testing.T) {
-	N := 4
-	data := make([]int16, N*DIM)
-	for i := 0; i < N; i++ {
-		data[i*DIM] = int16(i * 2500)
-	}
-	labels := []byte{0, 1, 1, 0}
-	idx := &BruteAVX2Index{data: data, labels: labels, N: N}
-	if idx.FraudCount() != 2 {
-		t.Errorf("FraudCount = %d, want 2", idx.FraudCount())
-	}
-}
-
 func TestPredictRaw_EmptyVectors(t *testing.T) {
 	idx := &IVFIndex{
 		centroids: make([]float32, DIM),

@@ -7,16 +7,6 @@ import (
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
 
-func TestBruteAVX2Index_FraudCount_NilLabels(t *testing.T) {
-	idx := &BruteAVX2Index{
-		N:    0,
-		data: nil,
-	}
-	if idx.FraudCount() != 0 {
-		t.Errorf("FraudCount = %d, want 0", idx.FraudCount())
-	}
-}
-
 func TestBBoxMayImprove_Dim3Far(t *testing.T) {
 	bboxMin := make([]int16, DIM)
 	bboxMax := make([]int16, DIM)
@@ -53,36 +43,6 @@ func TestBBoxMayImprove_SomeDimsInside(t *testing.T) {
 	// Some dims inside, some outside - should still return true with large worstDist
 	if !bboxMayImprove(bboxMin, bboxMax, 0, qi, 10000000) {
 		t.Error("should return true when some dims are inside bbox")
-	}
-}
-
-func TestBruteAVX2Index_Predict_KEqualsZero(t *testing.T) {
-	idx := createSmallBruteAVX2(t)
-	score := idx.Predict(model.Vector14{0.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0)
-	if score < 0 || score > 1 {
-		t.Errorf("Predict with k=0 = %v, want [0,1]", score)
-	}
-}
-
-func TestBruteAVX2Index_Predict_AllFar(t *testing.T) {
-	N := 3
-	data := make([]int16, N*DIM)
-	for i := 0; i < N; i++ {
-		for d := 0; d < DIM; d++ {
-			data[i*DIM+d] = 10000
-		}
-	}
-	labels := []byte{0, 1, 0}
-	idx := &BruteAVX2Index{data: data, labels: labels, N: N}
-
-	var query model.Vector14
-	for d := 0; d < DIM; d++ {
-		query[d] = 0
-	}
-
-	score := idx.Predict(query, 3)
-	if score < 0 || score > 1 {
-		t.Errorf("Predict = %v, want [0,1]", score)
 	}
 }
 
