@@ -133,7 +133,7 @@ bench-dataset: ## Run dataset benchmarks only
 
 docker-build: ## Build Docker image (latest + version tag)
 	@echo -e "$(BLUE)🔨 Building Docker image...$(NC)"
-	@docker build -t $(IMAGE):latest -t $(IMAGE):$(VERSION) .
+	@docker build -t $(IMAGE):latest -t $(IMAGE):$(VERSION) . --no-cache
 	@echo -e "$(GREEN)✓ Image $(IMAGE):$(VERSION) created!$(NC)"
 	@$(MAKE) docker-size
 
