@@ -58,22 +58,25 @@ func main() {
 
 		wi := atomic.AddUint64(&rr, 1) % uint64(len(cons))
 
-		f, err := tcpConn.(*net.TCPConn).File()
+		raw, err := tcpConn.(*net.TCPConn).SyscallConn()
 		if err != nil {
 			tcpConn.Close()
 			continue
 		}
-		fd := f.Fd()
 
-		rights := syscall.UnixRights(int(fd))
+		var fd int
+		if err := raw.Control(func(f uintptr) {
+			fd = int(f)
+		}); err != nil {
+			tcpConn.Close()
+			continue
+		}
+
+		rights := syscall.UnixRights(fd)
 		cons[wi].SetWriteDeadline(time.Now().Add(50 * time.Millisecond))
-		_, _, err = cons[wi].WriteMsgUnix(nil, rights, nil)
-
-		f.Close()
-		tcpConn.Close()
-
-		if err != nil {
+		if _, _, err = cons[wi].WriteMsgUnix(nil, rights, nil); err != nil {
 			log.Printf("write to worker %d: %v", wi, err)
 		}
+		tcpConn.Close()
 	}
 }

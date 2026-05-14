@@ -105,6 +105,8 @@ func main() {
 		}
 	}()
 
+	startWorkerPool(srv)
+
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
@@ -112,6 +114,18 @@ func main() {
 	log.Println("shutting down")
 	_ = ctrlLn.Close()
 	_ = srv.Shutdown()
+}
+
+var workerCh = make(chan net.Conn, 64)
+
+func startWorkerPool(srv *fasthttp.Server) {
+	for i := 0; i < runtime.GOMAXPROCS(0)*4; i++ {
+		go func() {
+			for conn := range workerCh {
+				_ = srv.ServeConn(conn)
+			}
+		}()
+	}
 }
 
 func serveControl(ctrlConn net.Conn, srv *fasthttp.Server) {
@@ -138,7 +152,11 @@ func serveControl(ctrlConn net.Conn, srv *fasthttp.Server) {
 			continue
 		}
 
-		go func() { _ = srv.ServeConn(conn) }()
+		select {
+		case workerCh <- conn:
+		default:
+			go func() { _ = srv.ServeConn(conn) }()
+		}
 	}
 }
 
