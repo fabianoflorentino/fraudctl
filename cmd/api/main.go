@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"runtime"
@@ -22,6 +24,7 @@ import (
 var (
 	resourcesPath = flag.String("resources", "/resources", "path to resources directory")
 	healthCheck   = flag.Bool("healthcheck", false, "run healthcheck and exit")
+	pprofAddr     = flag.String("pprof", "", "pprof listen address (e.g. :6060)")
 )
 
 func main() {
@@ -54,6 +57,15 @@ func main() {
 		middleware.StartReporter(10 * time.Second)
 	} else {
 		log.Print("telemetry disabled")
+	}
+
+	if *pprofAddr != "" {
+		go func() {
+			log.Printf("pprof on %s", *pprofAddr)
+			if err := http.ListenAndServe(*pprofAddr, nil); err != nil {
+				log.Printf("pprof: %v", err)
+			}
+		}()
 	}
 
 	srv := &fasthttp.Server{
@@ -116,7 +128,7 @@ func main() {
 	_ = srv.Shutdown()
 }
 
-var workerCh = make(chan net.Conn, 64)
+var workerCh = make(chan net.Conn)
 
 func startWorkerPool(srv *fasthttp.Server) {
 	for i := 0; i < runtime.GOMAXPROCS(0)*4; i++ {
