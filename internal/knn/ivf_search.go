@@ -242,9 +242,18 @@ func bboxMayImprove(bboxMin, bboxMax []int16, ci int, q [DIM]int16, worstDist ui
 	return d < worstDist
 }
 
-// computeCentroidDistances computes squared L2 distance from query to every centroid.
+// computeQueryNorm computes sum(q²) for the query vector.
+func computeQueryNorm(query [DIM]float32) float32 {
+	var s float32
+	for d := 0; d < DIM; d++ {
+		s += query[d] * query[d]
+	}
+	return s
+}
+
+// accumulateDotProducts computes dot(q, centroid[ci]) for every centroid.
 // Uses SoA layout: centroids[d*nlist + ci] — dim-by-dim for cache-friendly stride-1 access.
-func computeCentroidDistances(centroids []float32, nlist int, query [DIM]float32, out []float32) {
+func accumulateDotProducts(centroids []float32, nlist int, query [DIM]float32, out []float32) {
 	for ci := 0; ci < nlist; ci++ {
 		out[ci] = 0
 	}
@@ -252,9 +261,16 @@ func computeCentroidDistances(centroids []float32, nlist int, query [DIM]float32
 		qd := query[d]
 		base := d * nlist
 		for ci := 0; ci < nlist; ci++ {
-			diff := qd - centroids[base+ci]
-			out[ci] += diff * diff
+			out[ci] += qd * centroids[base+ci]
 		}
+	}
+}
+
+// dotToDist converts dot products to squared L2 distances using pre-computed norms.
+// out[ci] = queryNorm + centroidNorms[ci] - 2*out[ci]
+func dotToDist(out []float32, nlist int, queryNorm float32, centroidNorms []float32) {
+	for ci := 0; ci < nlist; ci++ {
+		out[ci] = queryNorm + centroidNorms[ci] - 2*out[ci]
 	}
 }
 
@@ -483,8 +499,12 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 		quickProbe = nprobe
 	}
 
+	idx.ensureCentroidNorms()
+
 	var centroidDist [4096]float32
-	computeCentroidDistances(idx.centroids, idx.nlist, ([DIM]float32)(query), centroidDist[:])
+	accumulateDotProducts(idx.centroids, idx.nlist, ([DIM]float32)(query), centroidDist[:])
+	qn := computeQueryNorm(([DIM]float32)(query))
+	dotToDist(centroidDist[:], idx.nlist, qn, idx.centroidNorms)
 
 	var quickProbes [maxProbes]int
 	selectTopN(centroidDist[:], idx.nlist, quickProbe, quickProbes[:quickProbe])

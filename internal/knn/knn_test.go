@@ -264,7 +264,20 @@ func TestSelectProbes(t *testing.T) {
 
 	var query [DIM]float32
 	var dist [4096]float32
-	computeCentroidDistances(centroids, nlist, query, dist[:nlist])
+	accumulateDotProducts(centroids, nlist, query, dist[:nlist])
+	{ // convert dot products to L2 distances
+		var norms [4]float32
+		for ci := 0; ci < nlist; ci++ {
+			var s float32
+			for d := 0; d < DIM; d++ {
+				v := centroids[d*nlist+ci]
+				s += v * v
+			}
+			norms[ci] = s
+		}
+		qn := computeQueryNorm(query)
+		dotToDist(dist[:nlist], nlist, qn, norms[:nlist])
+	}
 	out := make([]int, nlist)
 
 	selectTopN(dist[:nlist], nlist, 2, out[:2])
@@ -279,7 +292,20 @@ func TestSelectProbes_NprobeGreaterThanNlist(t *testing.T) {
 	centroids := make([]float32, nlist*DIM)
 	var query [DIM]float32
 	var dist [4096]float32
-	computeCentroidDistances(centroids, nlist, query, dist[:nlist])
+	accumulateDotProducts(centroids, nlist, query, dist[:nlist])
+	{ // convert dot products to L2 distances
+		var norms [3]float32
+		for ci := 0; ci < nlist; ci++ {
+			var s float32
+			for d := 0; d < DIM; d++ {
+				v := centroids[d*nlist+ci]
+				s += v * v
+			}
+			norms[ci] = s
+		}
+		qn := computeQueryNorm(query)
+		dotToDist(dist[:nlist], nlist, qn, norms[:nlist])
+	}
 	out := make([]int, nlist+2)
 
 	selectTopN(dist[:nlist], nlist, 10, out)

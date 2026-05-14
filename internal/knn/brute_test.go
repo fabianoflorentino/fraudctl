@@ -70,13 +70,25 @@ func buildSmallIVF() *IVFIndex {
 	// offsets: cluster 0 → [0,3), cluster 1 → [3,6)
 	offsets := []uint32{0, 3, 6}
 
+	// Pre-compute centroid norms for dot-to-L2 conversion
+	norms := make([]float32, nlist)
+	for ci := 0; ci < nlist; ci++ {
+		var s float32
+		for d := 0; d < DIM; d++ {
+			v := centroids[d*nlist+ci]
+			s += v * v
+		}
+		norms[ci] = s
+	}
+
 	return &IVFIndex{
-		nlist:     nlist,
-		nprobe:    2,
-		centroids: centroids,
-		vectors:   vectors,
-		labels:    bitLabels,
-		offsets:   offsets,
+		nlist:         nlist,
+		nprobe:        2,
+		centroids:     centroids,
+		centroidNorms: norms,
+		vectors:       vectors,
+		labels:        bitLabels,
+		offsets:       offsets,
 	}
 }
 

@@ -20,17 +20,18 @@ import (
 //	bboxMin:   AoI int16 — bboxMin[ci*DIM+d] = min quantized value in dim d for cluster ci
 //	bboxMax:   AoI int16 — bboxMax[ci*DIM+d] = max quantized value in dim d for cluster ci
 type IVFIndex struct {
-	centroids  []float32 // SoA: [DIM * nlist], indexed as centroids[d*nlist + ci]
-	vectors    []int16   // AoS: [N * DIM]
-	labels     []byte    // bit-packed: [ceil(N/8)]
-	offsets    []uint32
-	bboxMin    []int16 // AoI: [nlist * DIM]
-	bboxMax    []int16 // AoI: [nlist * DIM]
-	nlist      int
-	nprobe     int
-	quickProbe int
-	boundaryLo int
-	boundaryHi int
+	centroids     []float32 // SoA: [DIM * nlist], indexed as centroids[d*nlist + ci]
+	centroidNorms []float32 // pre-computed sum(c²) per centroid for dot-to-L2 conversion
+	vectors       []int16   // AoS: [N * DIM]
+	labels        []byte    // bit-packed: [ceil(N/8)]
+	offsets       []uint32
+	bboxMin       []int16 // AoI: [nlist * DIM]
+	bboxMax       []int16 // AoI: [nlist * DIM]
+	nlist         int
+	nprobe        int
+	quickProbe    int
+	boundaryLo    int
+	boundaryHi    int
 }
 
 func (idx *IVFIndex) SetNProbe(n int) {
@@ -124,15 +125,27 @@ func LoadIVF(path string) (*IVFIndex, error) {
 		return nil, fmt.Errorf("read labels: %w", err)
 	}
 
+	// Pre-compute centroid norms for dot-to-L2 conversion: sum(c²) per centroid.
+	centroidNorms := make([]float32, nlist)
+	for ci := 0; ci < int(nlist); ci++ {
+		var sum float32
+		for d := 0; d < int(dim); d++ {
+			v := centroids[d*int(nlist)+ci]
+			sum += v * v
+		}
+		centroidNorms[ci] = sum
+	}
+
 	idx := &IVFIndex{
-		nlist:     int(nlist),
-		nprobe:    16,
-		centroids: centroids,
-		vectors:   vectors,
-		labels:    labels,
-		offsets:   offsets,
-		bboxMin:   bboxMin,
-		bboxMax:   bboxMax,
+		nlist:         int(nlist),
+		nprobe:        16,
+		centroids:     centroids,
+		centroidNorms: centroidNorms,
+		vectors:       vectors,
+		labels:        labels,
+		offsets:       offsets,
+		bboxMin:       bboxMin,
+		bboxMax:       bboxMax,
 	}
 
 	// Pre-touch all pages to avoid page faults during queries.
@@ -185,3 +198,21 @@ func (idx *IVFIndex) FraudCount() int {
 func (idx *IVFIndex) DebugNList() int           { return idx.nlist }
 func (idx *IVFIndex) DebugOffsets() []uint32    { return idx.offsets }
 func (idx *IVFIndex) DebugCentroids() []float32 { return idx.centroids }
+
+// ensureCentroidNorms lazily computes centroid norms if not already set.
+// Production path always has norms (set in LoadIVF); this handles tests.
+func (idx *IVFIndex) ensureCentroidNorms() {
+	if len(idx.centroidNorms) > 0 {
+		return
+	}
+	norms := make([]float32, idx.nlist)
+	for ci := 0; ci < idx.nlist; ci++ {
+		var s float32
+		for d := 0; d < DIM; d++ {
+			v := idx.centroids[d*idx.nlist+ci]
+			s += v * v
+		}
+		norms[ci] = s
+	}
+	idx.centroidNorms = norms
+}

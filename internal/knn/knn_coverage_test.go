@@ -351,7 +351,20 @@ func TestSelectProbes_ExactMatch(t *testing.T) {
 	out := make([]int, nlist)
 
 	var dist [4096]float32
-	computeCentroidDistances(centroids, nlist, query, dist[:nlist])
+	accumulateDotProducts(centroids, nlist, query, dist[:nlist])
+	{ // convert dot products to L2 distances
+		var norms [5]float32
+		for ci := 0; ci < nlist; ci++ {
+			var s float32
+			for d := 0; d < DIM; d++ {
+				v := centroids[d*nlist+ci]
+				s += v * v
+			}
+			norms[ci] = s
+		}
+		qn := computeQueryNorm(query)
+		dotToDist(dist[:nlist], nlist, qn, norms[:nlist])
+	}
 	selectTopN(dist[:nlist], nlist, 1, out[:1])
 	if out[0] != 0 {
 		t.Errorf("closest centroid = %d, want 0 (d=0)", out[0])
