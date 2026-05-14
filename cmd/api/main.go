@@ -152,6 +152,11 @@ func serveControl(ctrlConn net.Conn, srv *fasthttp.Server) {
 			continue
 		}
 
+		if tc, ok := conn.(*net.TCPConn); ok {
+			_ = tc.SetNoDelay(true)
+			_ = tc.SetKeepAlive(true)
+		}
+
 		select {
 		case workerCh <- conn:
 		default:
