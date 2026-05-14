@@ -1,12 +1,10 @@
 # =============================================================================
 # fraudctl - Docker Compose
 # =============================================================================
-# HAProxy (round-robin) + 2 API instances
+# Custom SCM_RIGHTS load balancer + 2 API instances
 # Total resources: ~1.0 CPU, 350 MB RAM
-# Unix Domain Sockets (tmpfs) replace TCP loopback — saves ~40-60µs/request.
 # =============================================================================
 x-api-env: &api-env
-  PORT: 9999
   RESOURCES: /resources
   GOMAXPROCS: 1
   GOGC: off
@@ -31,6 +29,9 @@ x-api-resources: &api-resources
 
 x-api-defaults: &api-defaults
   image: fraudctl:latest
+  build:
+    context: .
+    dockerfile: Dockerfile
   volumes:
     - sockets:/sockets
   healthcheck: *api-healthcheck
@@ -51,7 +52,7 @@ services:
     hostname: api-1
     environment:
       <<: *api-env
-      UNIX_SOCKET: /sockets/api-1.sock
+      CTRL_SOCKET: /sockets/lb-ctrl-1.sock
 
   api-2:
     <<: *api-defaults
@@ -59,16 +60,21 @@ services:
     hostname: api-2
     environment:
       <<: *api-env
-      UNIX_SOCKET: /sockets/api-2.sock
+      CTRL_SOCKET: /sockets/lb-ctrl-2.sock
 
-  haproxy:
-    image: haproxy:alpine
-    container_name: fraudctl-haproxy
-    hostname: haproxy
+  lb:
+    build:
+      context: ./cmd/lb
+      dockerfile: Dockerfile
+    image: ghcr.io/fabianoflorentino/fraudctl-lb:latest
+    command:
+      - "-workers"
+      - "/sockets/lb-ctrl-1.sock,/sockets/lb-ctrl-2.sock"
+    container_name: fraudctl-lb
+    hostname: lb
     ports:
       - "9999:9999"
     volumes:
-      - ./config/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
       - sockets:/sockets
     depends_on:
       api-1:
@@ -86,14 +92,16 @@ services:
     restart: unless-stopped
     sysctls:
       net.core.somaxconn: 4096
-      net.ipv4.tcp_fin_timeout: 15
-      net.ipv4.tcp_tw_reuse: 1
     ulimits:
       nofile:
         soft: 65536
         hard: 65536
     security_opt:
       - seccomp:unconfined
+    environment:
+      GOMAXPROCS: "1"
+      GOGC: "off"
+      GOMEMLIMIT: "10MiB"
 
 volumes:
   sockets:

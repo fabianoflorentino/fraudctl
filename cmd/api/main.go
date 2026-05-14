@@ -9,7 +9,6 @@ import (
 	"os/signal"
 	"runtime"
 	"runtime/debug"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -21,8 +20,8 @@ import (
 )
 
 var (
-	resourcesPath = flag.String("resources", "/resources", "Path to resources directory")
-	healthCheck   = flag.Bool("healthcheck", false, "Run healthcheck and exit")
+	resourcesPath = flag.String("resources", "/resources", "path to resources directory")
+	healthCheck   = flag.Bool("healthcheck", false, "run healthcheck and exit")
 )
 
 func main() {
@@ -30,30 +29,22 @@ func main() {
 
 	if *healthCheck {
 		if err := checkHealth(); err != nil {
-			log.Fatalf("Healthcheck failed: %v", err)
+			log.Fatalf("healthcheck: %v", err)
 		}
-		log.Println("Healthcheck OK")
+		log.Println("healthcheck OK")
 		return
 	}
 
-	port := 9999
-	if p := os.Getenv("PORT"); p != "" {
-		if parsed, err := strconv.Atoi(p); err == nil {
-			port = parsed
-		}
-	}
 	telemetryEnabled := os.Getenv("TELEMETRY_ENABLED") != "false"
 	middleware.SetEnabled(telemetryEnabled)
-	socketPath := os.Getenv("UNIX_SOCKET")
 
-	log.Printf("Loading dataset (IVF index) from %s ...", *resourcesPath)
+	log.Printf("loading dataset from %s ...", *resourcesPath)
 	ds, err := dataset.LoadDefault(*resourcesPath)
 	if err != nil {
-		log.Fatalf("Failed to load dataset: %v", err)
+		log.Fatalf("dataset: %v", err)
 	}
-	log.Printf("Dataset loaded: %d vectors (%d fraud)", ds.Count(), ds.FraudCount())
+	log.Printf("dataset loaded: %d vectors (%d fraud)", ds.Count(), ds.FraudCount())
 
-	// Liberar memória não utilizada após carregar o dataset (~95MB ivf.bin)
 	runtime.GC()
 	debug.FreeOSMemory()
 
@@ -61,44 +52,21 @@ func main() {
 
 	if telemetryEnabled {
 		middleware.StartReporter(10 * time.Second)
-		log.Printf("Telemetry enabled (stats every 10s)")
 	} else {
-		log.Printf("Telemetry disabled")
-	}
-
-	requestHandler := func(ctx *fasthttp.RequestCtx) {
-		path := ctx.Path()
-		switch {
-		case len(path) == 6 && path[1] == 'r': // /ready
-			handler.Ready(ctx)
-		case len(path) == 12 && path[1] == 'f': // /fraud-score
-			fraudHandler.Handle(ctx)
-		default:
-			ctx.SetStatusCode(fasthttp.StatusNotFound)
-		}
-	}
-
-	var ln net.Listener
-	if socketPath != "" {
-		_ = os.Remove(socketPath)
-		ln, err = net.Listen("unix", socketPath)
-		if err != nil {
-			log.Fatalf("Failed to listen on unix socket %s: %v", socketPath, err)
-		}
-		if err := os.Chmod(socketPath, 0666); err != nil {
-			log.Fatalf("Failed to chmod socket: %v", err)
-		}
-		log.Printf("Server starting on unix socket %s (fasthttp)", socketPath)
-	} else {
-		ln, err = net.Listen("tcp", fmt.Sprintf(":%d", port))
-		if err != nil {
-			log.Fatalf("Failed to listen on port %d: %v", port, err)
-		}
-		log.Printf("Server starting on port %d (fasthttp)", port)
+		log.Print("telemetry disabled")
 	}
 
 	srv := &fasthttp.Server{
-		Handler:                       requestHandler,
+		Handler: func(ctx *fasthttp.RequestCtx) {
+			switch {
+			case len(ctx.Path()) == 6 && ctx.Path()[1] == 'r':
+				handler.Ready(ctx)
+			case len(ctx.Path()) == 12 && ctx.Path()[1] == 'f':
+				fraudHandler.Handle(ctx)
+			default:
+				ctx.SetStatusCode(fasthttp.StatusNotFound)
+			}
+		},
 		ReadTimeout:                   750 * time.Millisecond,
 		WriteTimeout:                  750 * time.Millisecond,
 		IdleTimeout:                   10 * time.Second,
@@ -113,9 +81,27 @@ func main() {
 		ReduceMemoryUsage:             false,
 	}
 
+	ctrlSocket := os.Getenv("CTRL_SOCKET")
+	if ctrlSocket == "" {
+		log.Fatal("CTRL_SOCKET not set")
+	}
+	_ = os.Remove(ctrlSocket)
+	ctrlLn, err := net.Listen("unix", ctrlSocket)
+	if err != nil {
+		log.Fatalf("ctrl listen: %v", err)
+	}
+	if err := os.Chmod(ctrlSocket, 0666); err != nil {
+		log.Fatalf("chmod: %v", err)
+	}
+	log.Printf("control socket at %s", ctrlSocket)
+
 	go func() {
-		if err := srv.Serve(ln); err != nil {
-			log.Fatalf("Server failed: %v", err)
+		for {
+			ctrlConn, err := ctrlLn.Accept()
+			if err != nil {
+				return
+			}
+			go serveControl(ctrlConn, srv)
 		}
 	}()
 
@@ -123,37 +109,67 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Println("Shutting down server...")
+	log.Println("shutting down")
+	_ = ctrlLn.Close()
+	_ = srv.Shutdown()
+}
 
-	if err := srv.Shutdown(); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
+func serveControl(ctrlConn net.Conn, srv *fasthttp.Server) {
+	defer func() { _ = ctrlConn.Close() }()
+	uc := ctrlConn.(*net.UnixConn)
+	buf := make([]byte, 1)
+	oob := make([]byte, 64)
+
+	for {
+		_, oobn, _, _, err := uc.ReadMsgUnix(buf, oob)
+		if err != nil {
+			return
+		}
+
+		fds, err := parseUnixRights(oob[:oobn])
+		if err != nil || len(fds) == 0 {
+			continue
+		}
+
+		file := os.NewFile(uintptr(fds[0]), "")
+		conn, err := net.FileConn(file)
+		_ = file.Close()
+		if err != nil {
+			continue
+		}
+
+		go func() { _ = srv.ServeConn(conn) }()
 	}
+}
 
-	log.Println("Server exited properly")
+func parseUnixRights(oob []byte) ([]int, error) {
+	cmsgs, err := syscall.ParseSocketControlMessage(oob)
+	if err != nil {
+		return nil, err
+	}
+	var fds []int
+	for i := range cmsgs {
+		if cmsgs[i].Header.Level == syscall.SOL_SOCKET && cmsgs[i].Header.Type == syscall.SCM_RIGHTS {
+			parsed, err := syscall.ParseUnixRights(&cmsgs[i])
+			if err != nil {
+				return nil, err
+			}
+			fds = append(fds, parsed...)
+		}
+	}
+	return fds, nil
 }
 
 func checkHealth() error {
-	socketPath := os.Getenv("UNIX_SOCKET")
-
-	c := &fasthttp.Client{}
-
-	var uri string
-	if socketPath != "" {
-		uri = "http://unix/ready"
-		c.Dial = func(addr string) (net.Conn, error) {
-			return net.Dial("unix", socketPath)
-		}
-	} else {
-		uri = "http://localhost:9999/ready"
+	ctrlSocket := os.Getenv("CTRL_SOCKET")
+	if ctrlSocket == "" {
+		return fmt.Errorf("CTRL_SOCKET not set")
 	}
-
-	status, _, err := c.Get(nil, uri)
+	conn, err := net.DialTimeout("unix", ctrlSocket, time.Second)
 	if err != nil {
 		return err
 	}
-	if status != fasthttp.StatusOK {
-		return fmt.Errorf("unexpected status: %d", status)
-	}
+	_ = conn.Close()
 	return nil
 }
 
