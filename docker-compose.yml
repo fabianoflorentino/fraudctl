@@ -21,8 +21,8 @@ x-api-healthcheck: &api-healthcheck
 x-api-resources: &api-resources
   resources:
     limits:
-      cpus: "0.40"
-      memory: 150M
+      cpus: "0.47"
+      memory: 170M
     reservations:
       cpus: "0.1"
       memory: 110M
@@ -66,7 +66,7 @@ services:
     build:
       context: ./cmd/lb
       dockerfile: Dockerfile
-    image: ghcr.io/fabianoflorentino/fraudctl-lb:latest
+    image: fraudctl-lb:latest
     command:
       - "-workers"
       - "/sockets/lb-ctrl-1.sock,/sockets/lb-ctrl-2.sock"
@@ -84,8 +84,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.20"
-          memory: 50M
+          cpus: "0.5"
+          memory: 10M
         reservations:
           cpus: "0.05"
           memory: 10M

@@ -5,9 +5,10 @@
 # ============================================================================
 
 .PHONY: help build run test test-short test-race coverage fmt vet lint tidy clean \
-	bench bench-knn bench-vectorizer all docker-build docker-push docker-run docker-lint \
+	bench bench-knn bench-vectorizer all docker-build docker-build-all docker-push docker-run docker-lint \
 	docker-clean docker-size docker-up docker-down submit submission-update \
-	submission-test submission-result k6-smoke k6-full k6-results
+	submission-test submission-result k6-smoke k6-full k6-results \
+	lb-build lb-vet lb-docker-build
 
 # ============================================================================
 # Variables
@@ -137,6 +138,15 @@ docker-build: ## Build Docker image (latest + version tag)
 	@echo -e "$(GREEN)✓ Image $(IMAGE):$(VERSION) created!$(NC)"
 	@$(MAKE) docker-size
 
+docker-build-all: ## Build API + LB Docker images in parallel
+	@echo -e "$(BLUE)🔨 Building both images in parallel...$(NC)"
+	@$(MAKE) docker-build &
+	@$(MAKE) lb-docker-build &
+	@wait
+	@echo -e "$(GREEN)✓ Both images built:$(NC)"
+	@docker images $(IMAGE) --format "  API:  {{.Repository}}:{{.Tag}} — {{.Size}}"
+	@docker images $(LB_IMAGE) --format "  LB:   {{.Repository}}:{{.Tag}} — {{.Size}}"
+
 docker-lint: ## Lint Dockerfile with hadolint
 	@echo -e "$(BLUE)🔍 Linting Dockerfile...$(NC)"
 	@docker run --rm -i hadolint/hadolint < Dockerfile || true
@@ -181,6 +191,29 @@ docker-down: ## Stop docker compose services
 
 docker-logs: ## Show docker compose logs
 	@./scripts/docker-up.sh logs
+
+##@ Load Balancer
+
+LB_DIR := cmd/lb
+LB_BINARY := fraudctl-lb
+LB_IMAGE := fraudctl-lb
+
+lb-build: ## Compile the LB binary to ./bin/fraudctl-lb
+	@echo -e "$(BLUE)🔨 Building $(LB_BINARY)...$(NC)"
+	@mkdir -p bin
+	@cd $(LB_DIR) && CGO_ENABLED=0 GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o ../../bin/$(LB_BINARY) .
+	@echo -e "$(GREEN)✓ Binary created at bin/$(LB_BINARY)$(NC)"
+
+lb-vet: ## Run go vet on the LB module
+	@echo -e "$(BLUE)🔍 Running go vet on LB module...$(NC)"
+	@cd $(LB_DIR) && go vet ./...
+	@echo -e "$(GREEN)✓ go vet passed!$(NC)"
+
+lb-docker-build: ## Build LB Docker image
+	@echo -e "$(BLUE)🔨 Building LB Docker image...$(NC)"
+	@docker build -t $(LB_IMAGE):latest -t $(LB_IMAGE):$(VERSION) $(LB_DIR)
+	@echo -e "$(GREEN)✓ Image $(LB_IMAGE):$(VERSION) created!$(NC)"
+	@docker images $(LB_IMAGE) --format "  {{.Repository}}:{{.Tag}} — {{.Size}}"
 
 ##@ Cleanup
 

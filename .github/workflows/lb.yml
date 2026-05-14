@@ -1,3 +1,12 @@
+# Required secrets (Settings → Secrets and variables → Actions):
+#
+#   Environment: DOCKERHUB
+#     DOCKERHUB_USERNAME  Docker Hub login name
+#     DOCKERHUB_TOKEN     Docker Hub access token
+#
+#   Environment: GITHUB
+#     GIT_HUB_TOKEN  GitHub personal access token with contents:write + workflow scope
+
 name: LB Image
 
 on:
@@ -19,12 +28,41 @@ on:
       - '.github/workflows/lb.yml'
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 jobs:
+  # ── Compute next semantic version from latest lb-v1.0.x git tag ──────────
+  version:
+    name: Compute next version
+    runs-on: ubuntu-latest
+    outputs:
+      next_version: ${{ steps.compute.outputs.next_version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Compute next patch version
+        id: compute
+        run: |
+          LATEST=$(git tag --list 'lb-v1.0.*' | sort -t. -k3 -n | tail -1)
+          if [ -z "$LATEST" ]; then
+            NEXT="lb-v1.0.1"
+          else
+            PATCH=$(echo "$LATEST" | cut -d. -f3)
+            NEXT="lb-v1.0.$((PATCH + 1))"
+          fi
+          echo "Latest tag: ${LATEST:-<none>}  →  Next version: $NEXT"
+          echo "next_version=$NEXT" >> $GITHUB_OUTPUT
+
+  # ── Build & push Docker image to Docker Hub ──────────────────────────────
   build_and_push:
     name: Build and Push to Docker Hub
+    environment: DOCKERHUB
+    needs: version
     runs-on: ubuntu-latest
 
     steps:
@@ -37,7 +75,7 @@ jobs:
           go-version-file: cmd/lb/go.mod
           cache: true
 
-      - name: Run tests
+      - name: Run vet
         run: go vet ./...
         working-directory: cmd/lb
 
@@ -51,12 +89,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Compute version
-        id: version
-        run: |
-          SHORT_SHA="${GITHUB_SHA::7}"
-          echo "tag=latest-${SHORT_SHA}" >> $GITHUB_OUTPUT
-
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
@@ -65,6 +97,97 @@ jobs:
           push: ${{ github.event.inputs.dry_run != 'true' }}
           tags: |
             ${{ github.repository }}-lb:latest
-            ${{ github.repository }}-lb:${{ steps.version.outputs.tag }}
+            ${{ github.repository }}-lb:${{ needs.version.outputs.next_version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Smoke test — verify binary entrypoint
+        run: |
+          IMAGE_REF="${{ github.repository }}-lb:${{ needs.version.outputs.next_version }}"
+          echo "Running smoke test on ${IMAGE_REF}"
+          OUTPUT=$(docker run --rm "${IMAGE_REF}" --help 2>&1 || true)
+          echo "${OUTPUT}"
+          if ! echo "${OUTPUT}" | grep -qE "Usage:|fraudctl-lb"; then
+            echo "Smoke test FAILED: binary did not produce expected help output"
+            exit 1
+          fi
+          echo "Smoke test passed"
+
+  # ── Docker Scout CVE scan ───────────────────────────────────────────────
+  docker_scout:
+    name: Docker Scout CVE Scan
+    environment: DOCKERHUB
+    needs: [version, build_and_push]
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.dry_run != 'true' }}
+
+    steps:
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Docker Scout CVE scan
+        uses: docker/scout-action@v1
+        with:
+          command: cves
+          image: ${{ github.repository }}-lb:${{ needs.version.outputs.next_version }}
+          only-severities: critical,high
+          exit-code: true
+
+  # ── Create and push Git tag ─────────────────────────────────────────────
+  tag:
+    name: Tag
+    environment: GITHUB
+    needs: [version, build_and_push, docker_scout]
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.dry_run != 'true' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create and push tag
+        id: create_tag
+        run: |
+          TAG_NAME="${{ needs.version.outputs.next_version }}"
+          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
+
+          git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}
+
+          git tag $TAG_NAME
+          git push origin $TAG_NAME
+
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+        env:
+          GITHUB_TOKEN: ${{ secrets.GIT_HUB_TOKEN || secrets.GITHUB_TOKEN }}
+
+    outputs:
+      tag_name: ${{ steps.create_tag.outputs.tag_name }}
+
+  # ── Create GitHub Release ───────────────────────────────────────────────
+  release:
+    name: Release
+    environment: GITHUB
+    needs: [version, build_and_push, docker_scout, tag]
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.dry_run != 'true' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.tag.outputs.tag_name }}
+          name: ${{ needs.tag.outputs.tag_name }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GIT_HUB_TOKEN }}
