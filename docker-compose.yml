@@ -29,9 +29,6 @@ x-api-resources: &api-resources
 
 x-api-defaults: &api-defaults
   image: fabianoflorentino/fraudctl:v1.0.93
-  build:
-    context: .
-    dockerfile: Dockerfile
   volumes:
     - sockets:/sockets
   healthcheck: *api-healthcheck
@@ -62,9 +59,6 @@ services:
       CTRL_SOCKET: /sockets/lb-ctrl-2.sock
 
   lb:
-    build:
-      context: ./cmd/lb
-      dockerfile: Dockerfile
     image: fabianoflorentino/fraudctl-lb:lb-v1.0.1
     command:
       - "-workers"
