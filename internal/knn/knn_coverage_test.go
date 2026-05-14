@@ -350,7 +350,9 @@ func TestSelectProbes_ExactMatch(t *testing.T) {
 	query[0] = 0.1
 	out := make([]int, nlist)
 
-	selectProbes(centroids, nlist, query, 1, out[:1])
+	var dist [4096]float32
+	computeCentroidDistances(centroids, nlist, query, dist[:nlist])
+	selectTopN(dist[:nlist], nlist, 1, out[:1])
 	if out[0] != 0 {
 		t.Errorf("closest centroid = %d, want 0 (d=0)", out[0])
 	}

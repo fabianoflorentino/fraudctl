@@ -263,12 +263,14 @@ func TestSelectProbes(t *testing.T) {
 	centroids[3*DIM] = 0.0
 
 	var query [DIM]float32
+	var dist [4096]float32
+	computeCentroidDistances(centroids, nlist, query, dist[:nlist])
 	out := make([]int, nlist)
 
-	selectProbes(centroids, nlist, query, 2, out[:2])
+	selectTopN(dist[:nlist], nlist, 2, out[:2])
 
 	if out[0] != 3 || out[1] != 0 {
-		t.Logf("selectProbes result = %v (expected closest to centroids[3]=0.0 and [0]=0.1)", out[:2])
+		t.Logf("selectTopN result = %v (expected closest to centroids[3]=0.0 and [0]=0.1)", out[:2])
 	}
 }
 
@@ -276,9 +278,11 @@ func TestSelectProbes_NprobeGreaterThanNlist(t *testing.T) {
 	nlist := 3
 	centroids := make([]float32, nlist*DIM)
 	var query [DIM]float32
+	var dist [4096]float32
+	computeCentroidDistances(centroids, nlist, query, dist[:nlist])
 	out := make([]int, nlist+2)
 
-	selectProbes(centroids, nlist, query, 10, out)
+	selectTopN(dist[:nlist], nlist, 10, out)
 	for i := 0; i < nlist; i++ {
 		if out[i] < 0 || out[i] >= nlist {
 			t.Errorf("out[%d] = %d, want [0,%d)", i, out[i], nlist)

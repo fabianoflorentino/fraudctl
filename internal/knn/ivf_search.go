@@ -242,9 +242,24 @@ func bboxMayImprove(bboxMin, bboxMax []int16, ci int, q [DIM]int16, worstDist ui
 	return d < worstDist
 }
 
-// selectProbes uses SoA centroid layout: centroids[d*nlist + ci].
-// Processing one dimension at a time is cache-friendly (stride-1 reads).
-func selectProbes(centroids []float32, nlist int, query [DIM]float32, nprobe int, out []int) {
+// computeCentroidDistances computes squared L2 distance from query to every centroid.
+// Uses SoA layout: centroids[d*nlist + ci] — dim-by-dim for cache-friendly stride-1 access.
+func computeCentroidDistances(centroids []float32, nlist int, query [DIM]float32, out []float32) {
+	for ci := 0; ci < nlist; ci++ {
+		out[ci] = 0
+	}
+	for d := 0; d < DIM; d++ {
+		qd := query[d]
+		base := d * nlist
+		for ci := 0; ci < nlist; ci++ {
+			diff := qd - centroids[base+ci]
+			out[ci] += diff * diff
+		}
+	}
+}
+
+// selectTopN picks the top-nprobe indices from precomputed centroid distances.
+func selectTopN(dist []float32, nlist, nprobe int, out []int) {
 	if nprobe > nlist {
 		nprobe = nlist
 	}
@@ -253,26 +268,12 @@ func selectProbes(centroids []float32, nlist int, query [DIM]float32, nprobe int
 	for i := 0; i < nprobe; i++ {
 		probeDist[i] = math.MaxFloat32
 	}
-
-	// Accumulate squared distance dim by dim (SoA: centroids[d*nlist + ci]).
-	// Array sized for nlist ≤ 4096; at nlist=2048 only half the slots are used
-	// but the loop iterates exactly nlist times — no wasted work.
-	var acc [4096]float32 // stack — nlist ≤ 4096
-	for ci := 0; ci < nlist; ci++ {
-		acc[ci] = 0
-	}
-	for d := 0; d < DIM; d++ {
-		qd := query[d]
-		base := d * nlist
-		for ci := 0; ci < nlist; ci++ {
-			diff := qd - centroids[base+ci]
-			acc[ci] += diff * diff
-		}
+	for i := range out {
+		out[i] = 0
 	}
 
-	// Pick top-nprobe by sorted insertion.
 	for ci := 0; ci < nlist; ci++ {
-		d := acc[ci]
+		d := dist[ci]
 		if d < probeDist[nprobe-1] {
 			pos := nprobe - 1
 			for pos > 0 && d < probeDist[pos-1] {
@@ -482,8 +483,11 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 		quickProbe = nprobe
 	}
 
+	var centroidDist [4096]float32
+	computeCentroidDistances(idx.centroids, idx.nlist, ([DIM]float32)(query), centroidDist[:])
+
 	var quickProbes [maxProbes]int
-	selectProbes(idx.centroids, idx.nlist, ([DIM]float32)(query), quickProbe, quickProbes[:quickProbe])
+	selectTopN(centroidDist[:], idx.nlist, quickProbe, quickProbes[:quickProbe])
 
 	qi := quantizeQuery(query)
 
@@ -515,20 +519,10 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 	}
 
 	var fullProbes [maxProbes]int
-	selectProbes(idx.centroids, idx.nlist, ([DIM]float32)(query), nprobe, fullProbes[:nprobe])
+	selectTopN(centroidDist[:], idx.nlist, nprobe, fullProbes[:nprobe])
 
-	var scanned [4096]bool
-	for qi := 0; qi < quickProbe; qi++ {
-		scanned[quickProbes[qi]] = true
-	}
-
-	for pi := 0; pi < nprobe; pi++ {
+	for pi := quickProbe; pi < nprobe; pi++ {
 		ci := fullProbes[pi]
-		if scanned[ci] {
-			continue
-		}
-		scanned[ci] = true
-
 		start := int(idx.offsets[ci])
 		end := int(idx.offsets[ci+1])
 		if start >= end {
