@@ -403,3 +403,66 @@ func TestKMeansUpdate_EmptyCluster(t *testing.T) {
 		t.Errorf("centroid 1 should be unchanged (empty cluster), got %v", centroids[DIM])
 	}
 }
+
+func TestAccumulateDotProductsGeneric(t *testing.T) {
+	nlist := 4
+	centroids := make([]float32, DIM*nlist)
+	for d := 0; d < DIM; d++ {
+		for ci := 0; ci < nlist; ci++ {
+			centroids[d*nlist+ci] = float32(d*10 + ci)
+		}
+	}
+	var query [DIM]float32
+	for d := 0; d < DIM; d++ {
+		query[d] = float32(d + 1)
+	}
+	out := make([]float32, nlist)
+
+	accumulateDotProductsGeneric(centroids, nlist, query, out)
+
+	for ci := 0; ci < nlist; ci++ {
+		var want float32
+		for d := 0; d < DIM; d++ {
+			want += query[d] * centroids[d*nlist+ci]
+		}
+		if out[ci] != want {
+			t.Errorf("out[%d] = %f, want %f", ci, out[ci], want)
+		}
+	}
+}
+
+func TestScanClusterGeneric(t *testing.T) {
+	nVecs := 10
+	vectors := make([]int16, nVecs*DIM)
+	labels := make([]byte, (nVecs+7)/8)
+	for i := 0; i < 5; i++ {
+		vectors[i*DIM] = 5000
+	}
+
+	var qi [DIM]int16
+	qi[0] = 5000
+
+	h := newTopK5()
+	scanClusterGeneric(vectors, labels, 0, nVecs, qi, &h)
+
+	if h.count == 0 {
+		t.Error("scanClusterGeneric should find at least one close vector")
+	}
+	if h.dist[0] != 0 {
+		t.Errorf("scanClusterGeneric closest dist = %d, want 0", h.dist[0])
+	}
+	if h.fraudCount(labels) != 0 {
+		t.Error("scanClusterGeneric fraudCount should be 0 (no fraud labels)")
+	}
+}
+
+func TestScanClusterGeneric_EmptyRange(t *testing.T) {
+	vectors := make([]int16, 0)
+	labels := make([]byte, 0)
+	var qi [DIM]int16
+	h := newTopK5()
+	scanClusterGeneric(vectors, labels, 0, 0, qi, &h)
+	if h.count != 0 {
+		t.Errorf("count on empty generic scan = %d, want 0", h.count)
+	}
+}

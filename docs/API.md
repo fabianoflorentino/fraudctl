@@ -1,20 +1,27 @@
-# API Documentation
+# API
 
-The fraudctl API exposes exactly two endpoints on port **9999**.
+## Endpoints
+
+O serviço expõe exatamente dois endpoints no runtime principal.
+
+| Endpoint | Método | Resposta |
+|---|---|---|
+| `/ready` | `GET` | `200 OK` com corpo `OK` |
+| `/fraud-score` | `POST` | `200 OK` com JSON `{approved, fraud_score}` |
 
 ## `GET /ready`
 
-Health check. The API returns `HTTP 200 OK` once it is ready to receive requests.
+Usado por health check local e pelo `docker-compose`.
 
-**Response:**
+Resposta:
 
-```bash
+```text
 OK
 ```
 
 ## `POST /fraud-score`
 
-This is the fraud detection endpoint, the core of the submission. The payload format must match the example below:
+### Payload
 
 ```json
 {
@@ -46,30 +53,28 @@ This is the fraud detection endpoint, the core of the submission. The payload fo
 }
 ```
 
-### Request Fields
+### Campos
 
-| Field                          | Type       | Description |
-| ------------------------------ | ---------- | ----------- |
-| `id`                           | string     | Transaction identifier (e.g., `tx-1329056812`) |
-| `transaction.amount`           | number     | Transaction value |
-| `transaction.installments`     | integer    | Number of installments |
-| `transaction.requested_at`     | string ISO | UTC timestamp of the request |
-| `customer.avg_amount`          | number     | Cardholder's historical spending average |
-| `customer.tx_count_24h`        | integer    | Cardholder's transactions in the last 24h |
-| `customer.known_merchants`     | string[]   | Merchants already used by the cardholder |
-| `merchant.id`                  | string     | Merchant identifier |
-| `merchant.mcc`                 | string     | MCC (Merchant Category Code), a code that identifies the merchant's line of business |
-| `merchant.avg_amount`          | number     | Merchant's average ticket |
-| `terminal.is_online`           | boolean    | Online transaction (`true`) or in-person (`false`) |
-| `terminal.card_present`        | boolean    | Whether the physical card is present at the terminal |
-| `terminal.km_from_home`        | number     | Distance (km) from the cardholder's address |
-| `last_transaction`             | object \| `null` | Previous transaction data (may be `null`) |
-| `last_transaction.timestamp`   | string ISO | UTC timestamp of the previous transaction |
-| `last_transaction.km_from_current` | number | Distance (km) between the previous transaction and the current one |
+| Campo | Tipo | Obrigatório |
+|---|---|---|
+| `id` | string | sim |
+| `transaction.amount` | number | sim |
+| `transaction.installments` | integer | sim |
+| `transaction.requested_at` | string RFC3339 | sim |
+| `customer.avg_amount` | number | sim |
+| `customer.tx_count_24h` | integer | sim |
+| `customer.known_merchants` | string[] | sim |
+| `merchant.id` | string | sim |
+| `merchant.mcc` | string | sim |
+| `merchant.avg_amount` | number | sim |
+| `terminal.is_online` | boolean | sim |
+| `terminal.card_present` | boolean | sim |
+| `terminal.km_from_home` | number | sim |
+| `last_transaction` | object ou `null` | não |
+| `last_transaction.timestamp` | string RFC3339 | quando presente |
+| `last_transaction.km_from_current` | number | quando presente |
 
-### Response
-
-The API's response follows this format:
+### Resposta
 
 ```json
 {
@@ -78,14 +83,17 @@ The API's response follows this format:
 }
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `approved` | boolean | `true` if fraud_score < 0.6, otherwise `false` |
-| `fraud_score` | number | Score between 0.0 and 1.0 (frauds among 5 nearest neighbors / 5) |
+### Regras da resposta
 
-## Error Handling
+- `fraud_score` assume apenas estes valores: `0.0`, `0.2`, `0.4`, `0.6`, `0.8`, `1.0`
+- `approved=true` quando `fraudCount < 3`
+- `approved=false` quando `fraudCount >= 3`
 
-In case of parsing errors or unexpected failures, the API returns a fallback response to avoid HTTP errors:
+## Comportamento em Erro
+
+O handler evita HTTP error no caminho de parse inválido.
+
+Se `VectorizeJSON` falhar, a resposta atual é:
 
 ```json
 {
@@ -94,21 +102,20 @@ In case of parsing errors or unexpected failures, the API returns a fallback res
 }
 ```
 
-This fallback response is used when:
+Com isso:
 
-- Invalid JSON in the request body
-- Missing required fields
-- Invalid timestamp format
-- Any unexpected error during processing
+- o status HTTP continua `200 OK`
+- o erro entra como erro de classificação potencial, não como erro HTTP
 
-HTTP errors (status codes other than 200) are heavily penalized in the scoring formula (weight: 5).
+## Restrições Operacionais
 
-## Detection Logic
+- corpo máximo configurado no servidor: `4 KiB`
+- timeout de leitura: `750ms`
+- timeout de escrita: `750ms`
+- `IdleTimeout`: `10s`
 
-The detection logic is described in [DETECTION_RULES.md](./DETECTION_RULES.md):
+## Notas de Implementação
 
-- 14 dimensions vectorization
-- K-Nearest Neighbors with k=5
-- Euclidean distance
-- fraud_score = number_of_frauds / 5
-- Threshold: approved = fraud_score < 0.6
+- O hot path atual usa `VectorizeJSON(ctx.PostBody())`, não `json.Unmarshal` da request inteira.
+- As respostas são pré-computadas em memória em `internal/handler/fraud_score.go`.
+- O serviço principal não usa prefilter GBDT no handler atual.
