@@ -53,6 +53,8 @@ Mapeamento direto:
 
 ## Implementação Atual do IVF
 
+### Busca
+
 - Formato do índice: `ivf.bin` v5
 - `nlist` de build da imagem principal: `4096`
 - Iterações de k-means no Dockerfile: `32`
@@ -66,6 +68,28 @@ Mapeamento direto:
   - re-scan apenas quando `fraudCount` inicial cai na zona ambígua `[2, 3]`
   - bbox pruning por cluster
   - vetores quantizados para `int16`
+  - `selectTopN` único com `nprobe` (elimina segunda varredura O(nlist))
+
+### SIMD (AVX2)
+
+O hot path do KNN usa SIMD via Go assembly em CPUs amd64:
+
+| Função | SIMD | Operação |
+|--------|------|----------|
+| `vecSqDistAVX2` | `VPMOVSXWD` + `VPMULLD` + `VPSUBD` | Distância L2 entre `[14]int16` (8 dims por instrução) |
+| `accumulateDotProductsAVX2` | `VBROADCASTSS` + `VMULPS` + `VADDPS` | Dot product 8-wide sobre centróides SoA |
+
+Dispatch automático: `init()` seta `useAVX2=true` em amd64. Em arm64 ou sem suporte, as implementações genéricas em Go puro são usadas (`scanClusterGeneric`, `accumulateDotProductsGeneric`).
+
+### Otimizações Go
+
+Além do SIMD, o hot path inclui:
+
+- `//go:inline` em `newTopK5`, `worstDist`, `tryInsert`
+- `tryInsert` desenrolado manualmente para K=5 (sem loop)
+- Bounds checking hints para eliminar verificações redundantes
+- Pre-computed centroid norms para dot-to-L2 em 2 ops/dim
+- Quantização `int16` com escala `10000`
 
 ## Stack Local
 

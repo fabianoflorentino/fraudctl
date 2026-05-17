@@ -108,6 +108,9 @@ Arquivos principais:
 - `internal/knn/ivf_build.go`
 - `internal/knn/brute.go`
 - `internal/knn/ivf_search.go`
+- `internal/knn/ivf_search_amd64.go` — dispatch AVX2 (amd64)
+- `internal/knn/vec_sq_dist_amd64.s` — assembly SIMD
+- `internal/knn/stub_other.go` — stubs para non-amd64
 
 Formato atual do índice:
 
@@ -116,6 +119,34 @@ Formato atual do índice:
 - labels bit-packed
 - centroids transpostos para SoA ao carregar
 - bounding boxes por cluster
+
+Otimizações de busca:
+
+- `//go:inline` nas funções hot do `topK5`
+- `tryInsert` desenrolado para K=5, sem loop
+- Bounds checking hints para eliminar verificações redundantes
+- `selectTopN` único com `nprobe` (evita segunda varredura O(nlist))
+
+#### SIMD via Go Assembly (amd64)
+
+Em CPUs amd64 com AVX2, duas funções críticas são aceleradas via assembly:
+
+| Função | Assembly | Ganho |
+|--------|----------|-------|
+| `vecSqDistAVX2` | `VPMOVSXWD` + `VPSUBD` + `VPMULLD` (8 int16 → 8 int32, processa 14 dims em 2 batches) | ~4x vs scalar |
+| `accumulateDotProductsAVX2` | `VBROADCASTSS` + `VMULPS` + `VADDPS` (8 float32 FMA por iteração) | ~4x vs scalar |
+
+O dispatch é feito via flag `useAVX2` setada no `init()`. Em CPUs sem AVX2 ou arquiteturas não-amd64, as implementações genéricas (`scanClusterGeneric`, `accumulateDotProductsGeneric`) são usadas automaticamente.
+
+#### Performance
+
+Com o índice de 3M vectores e nprobe=36:
+
+| Métrica | Antes | Depois (AVX2) |
+|---------|-------|---------------|
+| KNN Predict (microbenchmark) | ~38μs | ~19-21μs |
+| Alocações por request | 96 B, 1 alloc | 0 B, 0 alloc |
+| p99 (k6 900 RPS, 2min) | ~1.10ms | ~1.04ms consistente |
 
 ### Load Balancer Custom
 
