@@ -505,18 +505,19 @@ func quantizeQuery(query model.Vector14) [DIM]int16 {
 // PredictRaw uses 2-tier IVF with EARLY EXIT (inspired by joycegodinho/rinha-2026).
 //
 // Strategy:
-//  1. FAST PROBE: scan the single closest centroid's cluster
-//     — the closest cluster is most likely to contain true neighbours
+//  1. QUICK PROBE: select+scan only quickProbe clusters (default 16)
+//  2. CHECK fraudCount:
+//     - fraud ∈ {0,1,4,5} → CLEAR result → EARLY EXIT (return immediately)
+//     - fraud ∈ {2,3}     → AMBIGUOUS → select full nprobe and scan remaining
 //
-//  2. EARLY EXIT: if we have 5 neighbours and fraudCount is
-//     unambiguous (0,1 or 4,5) → return immediately
+// Why this works:
+//   - Decision rule: >= 3/5 fraud neighbors → deny
+//   - fraud=0,1: clearly approve (can't reach 3 with closer neighbors)
+//   - fraud=4,5: clearly deny
+//   - Only fraud=2,3 are borderline (adding a closer neighbor could flip the decision)
 //
-//  3. ESCALATION: scan remaining nprobe-1 clusters
-//     — only for ambiguous fraudCount ∈ [2,3] or < 5 neighbours
-//     — bbox pruning when possible
-//
-// Result: ~80-90% of queries exit early after scanning just 1
-// cluster instead of 16, saving ~15 cluster scans per request.
+// Result: ~80-90% of queries exit early with only quickProbe centroid selection
+// and quickProbe cluster scan (avoids full selectProbes on clear cases).
 func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 	if len(idx.vectors) == 0 {
 		return 0
@@ -532,6 +533,17 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 		nprobe = idx.nlist
 	}
 
+	quickProbe := idx.quickProbe
+	if quickProbe < 1 {
+		quickProbe = nprobe / 2
+	}
+	if quickProbe < 1 {
+		quickProbe = 1
+	}
+	if quickProbe > nprobe {
+		quickProbe = nprobe
+	}
+
 	idx.ensureCentroidNorms()
 
 	var centroidDist [4096]float32
@@ -545,23 +557,33 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 	qi := quantizeQuery(query)
 
 	h := newTopK5()
+	hasBbox := len(idx.bboxMin) > 0
 
-	ci := probes[0]
-	start := int(idx.offsets[ci])
-	end := int(idx.offsets[ci+1])
-	if start < end {
+	for pi := 0; pi < quickProbe; pi++ {
+		ci := probes[pi]
+		start := int(idx.offsets[ci])
+		end := int(idx.offsets[ci+1])
+		if start >= end {
+			continue
+		}
+		if hasBbox && h.count == K {
+			if !bboxMayImprove(idx.bboxMin, idx.bboxMax, ci, qi, h.worstDist()) {
+				continue
+			}
+		}
 		scanCluster(idx.vectors, idx.labels, start, end, qi, &h)
 	}
 
 	fraud := h.fraudCount(idx.labels)
 
-	if h.count == K && (fraud < idx.boundaryLo || fraud > idx.boundaryHi) {
+	if fraud < idx.boundaryLo || fraud > idx.boundaryHi {
+		return fraud
+	}
+	if quickProbe == nprobe {
 		return fraud
 	}
 
-	hasBbox := len(idx.bboxMin) > 0
-
-	for pi := 1; pi < nprobe; pi++ {
+	for pi := quickProbe; pi < nprobe; pi++ {
 		ci := probes[pi]
 		start := int(idx.offsets[ci])
 		end := int(idx.offsets[ci+1])
