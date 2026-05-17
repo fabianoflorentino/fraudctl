@@ -41,8 +41,6 @@ x-api-defaults: &api-defaults
     nofile:
       soft: 65536
       hard: 65536
-  security_opt:
-    - seccomp:unconfined
 
 
 services:
@@ -90,14 +88,10 @@ services:
           cpus: "0.05"
           memory: 10M
     restart: unless-stopped
-    sysctls:
-      net.core.somaxconn: 4096
     ulimits:
       nofile:
         soft: 65536
         hard: 65536
-    security_opt:
-      - seccomp:unconfined
     environment:
       GOMAXPROCS: "1"
       GOGC: "off"
