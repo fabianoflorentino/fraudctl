@@ -21,9 +21,17 @@ package knn
 
 import (
 	"math"
+	"sync"
 
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
+
+var centroidPool = sync.Pool{
+	New: func() any {
+		b := make([]float32, 4096)
+		return &b
+	},
+}
 
 const (
 	fastNProbe = 16 // fallback: same as IVF_QUICK_PROBE
@@ -546,13 +554,14 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 
 	idx.ensureCentroidNorms()
 
-	var centroidDist [4096]float32
-	accumulateDotProducts(idx.centroids, idx.nlist, ([DIM]float32)(query), centroidDist[:])
+	centroidBuf := centroidPool.Get().(*[]float32)
+	centroidDist := *centroidBuf
+	accumulateDotProducts(idx.centroids, idx.nlist, ([DIM]float32)(query), centroidDist)
 	qn := computeQueryNorm(([DIM]float32)(query))
-	dotToDist(centroidDist[:], idx.nlist, qn, idx.centroidNorms)
+	dotToDist(centroidDist, idx.nlist, qn, idx.centroidNorms)
 
 	var probes [maxProbes]int
-	selectTopN(centroidDist[:], idx.nlist, nprobe, probes[:nprobe])
+	selectTopN(centroidDist, idx.nlist, nprobe, probes[:nprobe])
 
 	qi := quantizeQuery(query)
 
@@ -575,6 +584,8 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 	}
 
 	fraud := h.fraudCount(idx.labels)
+
+	centroidPool.Put(centroidBuf)
 
 	if fraud < idx.boundaryLo || fraud > idx.boundaryHi {
 		return fraud
