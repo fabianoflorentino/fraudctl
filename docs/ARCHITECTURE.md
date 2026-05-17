@@ -1,115 +1,162 @@
 # Architecture
 
-## Request Flow
+## Visão Geral
+
+O caminho principal atual do projeto usa:
+
+- `fraudctl-lb` como load balancer TCP custom
+- `fasthttp` nas APIs
+- `IVFIndex` carregado de `resources/ivf.bin`
+- `VectorizeJSON` no hot path de requisição
+
+## Topologia Atual
+
+```mermaid
+flowchart LR
+    C[Client] --> LB[fraudctl-lb TCP 9999]
+    LB -->|round-robin SCM_RIGHTS| S1[socket lb-ctrl-1.sock]
+    LB -->|round-robin SCM_RIGHTS| S2[socket lb-ctrl-2.sock]
+    S1 --> API1[api-1]
+    S2 --> API2[api-2]
+    API1 --> IDX[ivf.bin in memory]
+    API2 --> IDX
+    API1 --> CFG[normalization and mcc_risk]
+    API2 --> CFG
+```
+
+## Fluxo de Requisição
 
 ```mermaid
 sequenceDiagram
     participant C as Client
-    participant N as nginx
-    participant H as Handler
+    participant LB as fraudctl-lb
+    participant A as API
+    participant H as FraudScoreHandler
     participant V as Vectorizer
     participant K as IVFIndex
 
-    C->>N: POST /fraud-score (port 9999)
-    N->>H: round-robin via Unix Domain Socket
-    H->>H: decode JSON (fasthttp)
-    H->>V: Vectorize(request)
-    V-->>H: float32[14]
-    H->>K: PredictRaw(vector, nprobe=16)
-    K->>K: quantizeQuery → int16[14]
-    K->>K: selectProbes → top-16 centroids (0 allocs)
-    K->>K: scanCluster ×16 (2-stage early exit)
-    K->>K: boundary retry if fraudCount ∈ [2,3]
-    K-->>H: fraudCount (0..5)
-    H->>C: 200 OK {approved, fraud_score}
-
-    alt decode error
-        H->>C: 200 OK {approved:true, fraud_score:0.0}
-    end
+    C->>LB: TCP connect + POST /fraud-score
+    LB->>A: Passa FD via SCM_RIGHTS
+    A->>A: net.FileConn + ServeConn
+    A->>H: Handle(ctx)
+    H->>V: VectorizeJSON(ctx.PostBody())
+    V-->>H: Vector14
+    H->>K: PredictRaw(vec, NProbe())
+    K-->>H: fraudCount 0..5
+    H-->>C: JSON precomputado
 ```
 
-## IVF KNN Algorithm
+## Componentes
+
+### API
+
+Entrypoint: `cmd/api/main.go`
+
+Responsabilidades:
+
+- carregar dataset e configurações
+- subir `fasthttp.Server`
+- criar socket de controle Unix em `CTRL_SOCKET`
+- receber FDs do LB via `SCM_RIGHTS`
+- distribuir conexões para um pool de workers com `ServeConn`
+
+Detalhes relevantes:
+
+- endpoint `/ready` responde `200 OK` com corpo `OK`
+- endpoint `/fraud-score` responde sempre JSON `200 OK`
+- `TELEMETRY_ENABLED=false` desliga a telemetria periódica
+- `pprof` só é exposto quando `-pprof` é informado
+
+### Vectorizer
+
+Arquivos principais:
+
+- `internal/vectorizer/vectorizer.go`
+- `internal/vectorizer/fast_json.go`
+
+Responsabilidades:
+
+- converter payload em `model.Vector14`
+- usar parser JSON rápido sem desserializar a struct inteira no hot path
+- normalizar 14 features com base em `normalization.json` e `mcc_risk.json`
+
+### Dataset Loader
+
+Arquivos principais:
+
+- `internal/dataset/dataset.go`
+- `internal/dataset/loader.go`
+
+Responsabilidades:
+
+- carregar `normalization.json`
+- carregar `mcc_risk.json`
+- priorizar `ivf.bin`
+- cair para brute force apenas se `ivf.bin` não estiver disponível
+
+Fallbacks internos atuais quando não há variáveis de ambiente:
+
+- `IVF_NPROBE=36`
+- `IVF_QUICK_PROBE=16`
+- `IVF_BOUNDARY_LO=2`
+- `IVF_BOUNDARY_HI=3`
+
+### IVF KNN
+
+Arquivos principais:
+
+- `internal/knn/ivf_build.go`
+- `internal/knn/brute.go`
+- `internal/knn/ivf_search.go`
+
+Formato atual do índice:
+
+- versão `v5`
+- vetores quantizados em `int16`
+- labels bit-packed
+- centroids transpostos para SoA ao carregar
+- bounding boxes por cluster
+
+### Load Balancer Custom
+
+Entrypoint: `cmd/lb/main.go`
+
+Responsabilidades:
+
+- aceitar conexões TCP em `:9999`
+- escolher worker por round-robin
+- extrair o FD do socket TCP aceito
+- encaminhar o FD para a API via `WriteMsgUnix(..., SCM_RIGHTS, ...)`
+
+O LB atual é o caminho principal em `docker-compose.yml`.
+
+Arquivos legados como `config/haproxy.cfg` e `config/nginx.conf` não fazem parte da topologia principal atual.
+
+## Build-Time vs Run-Time
 
 ```mermaid
-flowchart LR
-    Q[Query float32-14] --> QQ[quantizeQuery\nfloat32 → int16\nscale=10000]
-    QQ --> SP[selectProbes\nsorted-insertion\nover 4096 centroids\ntop-16 closest\n0 allocs stack array]
-    SP --> SC[scanCluster ×16\n~733 vectors each\nStage1: dims 0-7\nearly exit if dist≥worst\nStage2: dims 8-13]
-    SC --> TK[topK5\nsorted insertion\nK=5 neighbors]
-    TK --> BR{fraudCount\n∈ 2,3 ?}
-    BR -->|yes| RE[retry: probe\n8 more clusters]
-    RE --> TK
-    BR -->|no| FS[fraud_score = fraudCount / 5\napproved = score < 0.6]
-
-    style Q fill:#e1f5fe,color:#000000
-    style FS fill:#e8f5e8,color:#000000
-    style SP fill:#fffbe6,color:#000000
-    style BR fill:#fce4ec,color:#000000
+flowchart TD
+    R[references json gz] --> B[cmd build-index]
+    B --> I[ivf bin]
+    N[normalization.json] --> D[dataset.LoadDefault]
+    M[mcc_risk.json] --> D
+    I --> D
+    D --> API[fraudctl runtime]
 ```
 
-## Index Build (docker build time)
+### Build da imagem principal
 
-```mermaid
-flowchart LR
-    G[references.json.gz\n3M vectors] --> KM[k-means\nnlist=4096\n25 iterations\nparallel GOMAXPROCS workers\nPDE early exit per centroid]
-    KM --> WR[write ivf.bin v4\nAoS int16 vectors\nbit-packed labels\n~84MB]
-    WR --> L[LoadDefault\nstartup read into memory]
-    L --> I[IVFIndex\nnlist=4096\nnprobe=16\nretryExtra=8]
+Arquivo: `Dockerfile`
 
-    style G fill:#e1f5fe,color:#000000
-    style WR fill:#fffbe6,color:#000000
-    style I fill:#e8f5e8,color:#000000
-```
+O build atual:
 
-## ivf.bin Format (v5)
+1. compila `fraudctl`
+2. compila `build-index`
+3. executa `build-index -nlist 4096 -iterations 32`
+4. copia `/build/resources` para a imagem final
 
-```
-magic     uint32   0x49564649
-version   uint32   5
-nlist     uint32   4096
-dim       uint32   14
-n         uint32   3000000
-centroids [nlist×DIM]float32   — cluster centroids (SoA on load: dim-major for cache-friendly selectProbes)
-offsets   [nlist+1]uint32      — cluster boundaries (vector indices)
-bbox_min  [nlist×DIM]int16     — per-cluster per-dimension min (quantized)
-bbox_max  [nlist×DIM]int16     — per-cluster per-dimension max (quantized)
-vectors   [n×DIM]int16         — AoS: vectors[i*DIM+d] (int16 quantized, scale=10000)
-labels    [ceil(n/8)]byte      — bit-packed: bit i%8 of byte i/8 (1 = fraud)
-```
+## Observações de Estado Atual
 
-**v5 novidades (vs v4)**:
-- `bbox_min`/`bbox_max`: bounding boxes por cluster para bbox pruning
-- 32 iterações de k-means (vs 25)
-- Transposição de centroids para SoA (dim-major) no load para `selectProbes` mais eficiente
-
-## Resource Allocation
-
-| Component | CPU | Memory | Env |
-|---|---|---|---|
-| haproxy | 0.20 | 50MB | — |
-| api-1 | 0.40 | 150MB | `GOMAXPROCS=1`, `GOGC=off`, `GOMEMLIMIT=145MiB` |
-| api-2 | 0.40 | 150MB | `GOMAXPROCS=1`, `GOGC=off`, `GOMEMLIMIT=145MiB` |
-| **Total** | **1.00** | **350MB** | budget: 350MB |
-
-Communication between haproxy and API instances uses **Unix Domain Sockets** on a shared `tmpfs` volume — eliminates TCP loopback overhead (~40–60µs/request).
-
-## Performance
-
-| Path | Latency |
-|---|---|
-| selectProbes (4096 centroids) | ~10µs |
-| scanCluster ×16 (~733 vectors each, nlist=4096) | ~60µs |
-| KNN total (nlist=4096) | ~70µs (estimated) |
-| KNN total (nlist=512 local benchmark) | ~566µs |
-| p99 (Docker 0.45 CPU, k6, nlist=4096) | ~91ms |
-| Allocations per query | **0 B/op, 0 allocs/op** |
-
-## Score History
-
-| Version | Official Score | Local Docker | p99 | Notes |
-|---|---|---|---|---|
-| v1.0.45 | 1650 | — | 112ms | nlist=300, CGo |
-| v1.0.51 | 3443 | — | — | nlist=1024, CGo AVX2 |
-| v1.0.52 | 3434 | — | 157ms | nlist=1024, CGo AVX2 (CPU throttled) |
-| v1.0.53–v1.0.83 | ~3900–5636 | ~3949 | ~91ms–2.31ms | IVF v4/v5, nlist=4096, pure Go |
-| **v1.0.84+** | TBD | TBD | TBD | **IVF v5, nlist=4096, nprobe=48, bbox pruning, page-warming goroutine REMOVED (fixes p99 outliers)** |
+- O README e os docs antigos citavam `nginx` ou `haproxy` como caminho principal; isso não corresponde mais ao stack atual.
+- O código de `dataset` ainda sabe carregar `gbdt.bin` e `model.bin`, mas o handler atual não usa esse prefilter.
+- Existe divergência entre defaults internos do pacote `dataset` e eventuais experimentos locais; a documentação desta pasta descreve o código atual, não experimentos passados.
