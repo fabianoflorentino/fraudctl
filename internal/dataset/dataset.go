@@ -31,12 +31,12 @@ import (
 // ============================================================================
 
 // IVF_NPROBE: total de clusters para casos ambíguos (quick + remaining)
-// Com nlist=4096: nprobe=36 cobre 0.88% dos clusters.
-const IVF_NPROBE = 36
+// Com nlist=4096 e AVX2 SIMD: nprobe=64 cobre 1.56% dos clusters.
+const IVF_NPROBE = 64
 
 // IVF_QUICK_PROBE: clusters para quick probe (early exit)
-// Com nlist=4096: quickProbe=16 cobre 0.39% dos clusters.
-const IVF_QUICK_PROBE = 16
+// Com nlist=4096 e AVX2 SIMD: quickProbe=32 cobre 0.78% dos clusters.
+const IVF_QUICK_PROBE = 32
 
 // IVF_BOUNDARY_LO/HI: zona ambígua (apenas estes valores disparam re-score)
 const IVF_BOUNDARY_LO = 2
