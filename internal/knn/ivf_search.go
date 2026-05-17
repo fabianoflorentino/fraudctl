@@ -38,6 +38,7 @@ type topK5 struct {
 	count int
 }
 
+//go:inline
 func newTopK5() topK5 {
 	var h topK5
 	for i := range h.dist {
@@ -46,20 +47,35 @@ func newTopK5() topK5 {
 	return h
 }
 
+//go:inline
 func (h *topK5) worstDist() uint64 { return h.dist[K-1] }
 
+//go:inline
 func (h *topK5) tryInsert(dist uint64, vecIdx int) {
-	if dist >= h.dist[K-1] {
+	if dist >= h.dist[4] {
 		return
 	}
-	pos := K - 1
-	for pos > 0 && dist < h.dist[pos-1] {
-		h.dist[pos] = h.dist[pos-1]
-		h.idx[pos] = h.idx[pos-1]
-		pos--
+	if dist < h.dist[0] {
+		h.dist[4], h.idx[4] = h.dist[3], h.idx[3]
+		h.dist[3], h.idx[3] = h.dist[2], h.idx[2]
+		h.dist[2], h.idx[2] = h.dist[1], h.idx[1]
+		h.dist[1], h.idx[1] = h.dist[0], h.idx[0]
+		h.dist[0], h.idx[0] = dist, vecIdx
+	} else if dist < h.dist[1] {
+		h.dist[4], h.idx[4] = h.dist[3], h.idx[3]
+		h.dist[3], h.idx[3] = h.dist[2], h.idx[2]
+		h.dist[2], h.idx[2] = h.dist[1], h.idx[1]
+		h.dist[1], h.idx[1] = dist, vecIdx
+	} else if dist < h.dist[2] {
+		h.dist[4], h.idx[4] = h.dist[3], h.idx[3]
+		h.dist[3], h.idx[3] = h.dist[2], h.idx[2]
+		h.dist[2], h.idx[2] = dist, vecIdx
+	} else if dist < h.dist[3] {
+		h.dist[4], h.idx[4] = h.dist[3], h.idx[3]
+		h.dist[3], h.idx[3] = dist, vecIdx
+	} else {
+		h.dist[4], h.idx[4] = dist, vecIdx
 	}
-	h.dist[pos] = dist
-	h.idx[pos] = vecIdx
 	if h.count < K {
 		h.count++
 	}
@@ -251,9 +267,11 @@ func computeQueryNorm(query [DIM]float32) float32 {
 	return s
 }
 
-// accumulateDotProducts computes dot(q, centroid[ci]) for every centroid.
+// accumulateDotProductsGeneric computes dot(q, centroid[ci]) for every centroid.
 // Uses SoA layout: centroids[d*nlist + ci] — dim-by-dim for cache-friendly stride-1 access.
-func accumulateDotProducts(centroids []float32, nlist int, query [DIM]float32, out []float32) {
+func accumulateDotProductsGeneric(centroids []float32, nlist int, query [DIM]float32, out []float32) {
+	_ = centroids[(DIM-1)*nlist+nlist-1]
+	_ = out[nlist-1]
 	for ci := 0; ci < nlist; ci++ {
 		out[ci] = 0
 	}
@@ -266,9 +284,19 @@ func accumulateDotProducts(centroids []float32, nlist int, query [DIM]float32, o
 	}
 }
 
+func accumulateDotProducts(centroids []float32, nlist int, query [DIM]float32, out []float32) {
+	if useAVX2 {
+		accumulateDotProductsAVX2(centroids, nlist, query, out)
+	} else {
+		accumulateDotProductsGeneric(centroids, nlist, query, out)
+	}
+}
+
 // dotToDist converts dot products to squared L2 distances using pre-computed norms.
 // out[ci] = queryNorm + centroidNorms[ci] - 2*out[ci]
 func dotToDist(out []float32, nlist int, queryNorm float32, centroidNorms []float32) {
+	_ = out[nlist-1]
+	_ = centroidNorms[nlist-1]
 	for ci := 0; ci < nlist; ci++ {
 		out[ci] = queryNorm + centroidNorms[ci] - 2*out[ci]
 	}
@@ -303,7 +331,9 @@ func selectTopN(dist []float32, nlist, nprobe int, out []int) {
 	}
 }
 
-// scanCluster scans vectors in blocks of 8 (AoS within block).
+var useAVX2 bool
+
+// scanClusterGeneric scans vectors in blocks of 8 (AoS within block).
 //
 // Dimension processing order mirrors the C reference (highest variance first):
 //
@@ -314,7 +344,14 @@ func selectTopN(dist []float32, nlist, nprobe int, out []int) {
 //
 //	Stage 1: if ALL 8 lanes exceed worst, skip block.
 //	Stage 2: complete distance, update top-K.
-func scanCluster(vectors []int16, labels []byte, start, end int, q [DIM]int16, h *topK5) {
+//
+//go:noinline
+func scanClusterGeneric(vectors []int16, labels []byte, start, end int, q [DIM]int16, h *topK5) {
+	if start >= end {
+		return
+	}
+	_ = vectors[(end-1)*DIM+13]
+	_ = labels[(end-1)>>3]
 	worst := h.worstDist()
 	nVecs := end - start
 
@@ -440,6 +477,14 @@ func scanCluster(vectors []int16, labels []byte, start, end int, q [DIM]int16, h
 	}
 }
 
+func scanCluster(vectors []int16, labels []byte, start, end int, q [DIM]int16, h *topK5) {
+	if useAVX2 {
+		scanClusterAVX2(vectors, labels, start, end, q, h)
+	} else {
+		scanClusterGeneric(vectors, labels, start, end, q, h)
+	}
+}
+
 func quantizeQuery(query model.Vector14) [DIM]int16 {
 	var q [DIM]int16
 	for i := 0; i < DIM; i++ {
@@ -506,8 +551,8 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 	qn := computeQueryNorm(([DIM]float32)(query))
 	dotToDist(centroidDist[:], idx.nlist, qn, idx.centroidNorms)
 
-	var quickProbes [maxProbes]int
-	selectTopN(centroidDist[:], idx.nlist, quickProbe, quickProbes[:quickProbe])
+	var probes [maxProbes]int
+	selectTopN(centroidDist[:], idx.nlist, nprobe, probes[:nprobe])
 
 	qi := quantizeQuery(query)
 
@@ -515,7 +560,7 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 	hasBbox := len(idx.bboxMin) > 0
 
 	for pi := 0; pi < quickProbe; pi++ {
-		ci := quickProbes[pi]
+		ci := probes[pi]
 		start := int(idx.offsets[ci])
 		end := int(idx.offsets[ci+1])
 		if start >= end {
@@ -538,11 +583,8 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 		return fraud
 	}
 
-	var fullProbes [maxProbes]int
-	selectTopN(centroidDist[:], idx.nlist, nprobe, fullProbes[:nprobe])
-
 	for pi := quickProbe; pi < nprobe; pi++ {
-		ci := fullProbes[pi]
+		ci := probes[pi]
 		start := int(idx.offsets[ci])
 		end := int(idx.offsets[ci+1])
 		if start >= end {
