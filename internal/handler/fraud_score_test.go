@@ -2,10 +2,7 @@ package handler
 
 import (
 	"math"
-	"strings"
 	"testing"
-
-	"github.com/valyala/fasthttp"
 
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
@@ -25,33 +22,22 @@ func (m *mockVec) VectorizeJSON(data []byte) (model.Vector14, error) {
 			break
 		}
 	}
-	return model.Vector14{}, ErrInvalidJSON
+	return model.Vector14{}, errInvalidJSON
 }
 
-var ErrInvalidJSON = &invalidJSONError{}
+var errInvalidJSON = &invalidJSONError{}
 
 type invalidJSONError struct{}
 
 func (e *invalidJSONError) Error() string { return "invalid json" }
 
-// mockKNN returns a fixed score regardless of the query vector.
 type mockKNN struct{ score float64 }
 
 func (m *mockKNN) Predict(_ model.Vector14, _ int) float64 { return m.score }
 func (m *mockKNN) PredictRaw(_ model.Vector14, _ int) int {
-	return int(math.Round(m.score * float64(knnNeighbors)))
+	return int(math.Round(m.score * float64(knnK)))
 }
 func (m *mockKNN) NProbe() int { return 8 }
-
-func newCtx(method, body string) *fasthttp.RequestCtx {
-	ctx := &fasthttp.RequestCtx{}
-	ctx.Request.SetRequestURI("/fraud-score")
-	ctx.Request.Header.SetMethod(method)
-	if body != "" {
-		ctx.Request.SetBodyString(body)
-	}
-	return ctx
-}
 
 const validPayload = `{
 	"id": "tx-123",
@@ -61,52 +47,69 @@ const validPayload = `{
 	"terminal": {"is_online": false, "card_present": true, "km_from_home": 10}
 }`
 
-func TestFraudScoreHandler_MethodNotAllowed(t *testing.T) {
-	h := NewFraudScoreHandler(&mockVec{}, &mockKNN{0.0})
-	ctx := newCtx("GET", "")
-	h.Handle(ctx)
-	if ctx.Response.StatusCode() != fasthttp.StatusMethodNotAllowed {
-		t.Errorf("expected 405, got %d", ctx.Response.StatusCode())
-	}
-}
-
-func TestFraudScoreHandler_InvalidJSON(t *testing.T) {
-	h := NewFraudScoreHandler(&mockVec{}, &mockKNN{0.0})
-	ctx := newCtx("POST", "invalid json")
-	h.Handle(ctx)
-	if ctx.Response.StatusCode() != fasthttp.StatusOK {
-		t.Errorf("expected 200, got %d", ctx.Response.StatusCode())
-	}
-	body := string(ctx.Response.Body())
-	if !strings.Contains(body, `"approved":true`) {
-		t.Errorf("expected approved=true fallback, got %s", body)
-	}
-}
-
-func TestFraudScoreHandler_LegitScore(t *testing.T) {
-	// KNN returns 0.4 → below threshold → approved
+func TestHandleFraudScore_ValidJSON_Approved(t *testing.T) {
 	h := NewFraudScoreHandler(&mockVec{}, &mockKNN{0.4})
-	ctx := newCtx("POST", validPayload)
-	h.Handle(ctx)
-	if ctx.Response.StatusCode() != fasthttp.StatusOK {
-		t.Errorf("expected 200, got %d", ctx.Response.StatusCode())
+	count := h.HandleFraudScore([]byte(validPayload))
+	if count >= 3 {
+		t.Errorf("expected approved (count < 3), got count=%d", count)
 	}
-	body := string(ctx.Response.Body())
-	if !strings.Contains(body, `"approved":true`) {
-		t.Errorf("expected approved=true, got %s", body)
+	resp := h.ResponseForCount(count)
+	if len(resp) == 0 {
+		t.Error("expected non-empty response")
 	}
 }
 
-func TestFraudScoreHandler_FraudScore(t *testing.T) {
-	// KNN returns 0.6 → at threshold → denied (majority vote >=3/5)
+func TestHandleFraudScore_ValidJSON_Denied(t *testing.T) {
 	h := NewFraudScoreHandler(&mockVec{}, &mockKNN{0.6})
-	ctx := newCtx("POST", validPayload)
-	h.Handle(ctx)
-	if ctx.Response.StatusCode() != fasthttp.StatusOK {
-		t.Errorf("expected 200, got %d", ctx.Response.StatusCode())
+	count := h.HandleFraudScore([]byte(validPayload))
+	if count < 3 {
+		t.Errorf("expected denied (count >= 3), got count=%d", count)
 	}
-	body := string(ctx.Response.Body())
-	if !strings.Contains(body, `"approved":false`) {
-		t.Errorf("expected approved=false, got %s", body)
+	resp := h.ResponseForCount(count)
+	if len(resp) == 0 {
+		t.Error("expected non-empty response")
+	}
+}
+
+func TestHandleFraudScore_InvalidJSON(t *testing.T) {
+	h := NewFraudScoreHandler(&mockVec{}, &mockKNN{0.0})
+	count := h.HandleFraudScore([]byte("not json"))
+	if count != 0 {
+		t.Errorf("expected fallback count=0, got %d", count)
+	}
+}
+
+func TestHandleFraudScore_EmptyBody(t *testing.T) {
+	h := NewFraudScoreHandler(&mockVec{}, &mockKNN{0.0})
+	count := h.HandleFraudScore([]byte{})
+	if count != 0 {
+		t.Errorf("expected fallback count=0, got %d", count)
+	}
+}
+
+func TestResponseForCount(t *testing.T) {
+	h := NewFraudScoreHandler(&mockVec{}, &mockKNN{0.0})
+	for count := 0; count <= 5; count++ {
+		resp := h.ResponseForCount(count)
+		if string(resp) != string(precomputedResp[count]) {
+			t.Errorf("ResponseForCount(%d) = %s; want %s", count, resp, precomputedResp[count])
+		}
+	}
+}
+
+func TestResponseForCount_OutOfRange(t *testing.T) {
+	h := NewFraudScoreHandler(&mockVec{}, &mockKNN{0.0})
+	tests := []struct {
+		count int
+		want  int
+	}{
+		{-1, 0},
+		{99, 0},
+	}
+	for _, tt := range tests {
+		resp := h.ResponseForCount(tt.count)
+		if string(resp) != string(precomputedResp[tt.want]) {
+			t.Errorf("ResponseForCount(%d) = %s; want %s", tt.count, resp, precomputedResp[tt.want])
+		}
 	}
 }

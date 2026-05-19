@@ -1,11 +1,6 @@
 package handler
 
 import (
-	"time"
-
-	"github.com/valyala/fasthttp"
-
-	"github.com/fabianoflorentino/fraudctl/internal/middleware"
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
 
@@ -20,11 +15,7 @@ type KNNIndex interface {
 	NProbe() int
 }
 
-const (
-	knnK              = 5
-	knnFraudThreshold = 0.6
-	knnNeighbors      = knnK
-)
+const knnK = 5
 
 var precomputedResp [knnK + 1][]byte
 
@@ -46,51 +37,17 @@ func NewFraudScoreHandler(vec Vectorizer, knn KNNIndex) *FraudScoreHandler {
 	return &FraudScoreHandler{vec: vec, knn: knn}
 }
 
-func (h *FraudScoreHandler) Handle(ctx *fasthttp.RequestCtx) {
-	var start, vecStart, knnStart time.Time
-	var vecDur, knnDur time.Duration
-
-	telemetry := middleware.IsEnabled()
-
-	if !ctx.IsPost() {
-		ctx.SetStatusCode(fasthttp.StatusMethodNotAllowed)
-		return
-	}
-
-	if telemetry {
-		start = time.Now()
-		vecStart = time.Now()
-	}
-	vec, err := h.vec.VectorizeJSON(ctx.PostBody())
-	if telemetry {
-		vecDur = time.Since(vecStart)
-	}
-
+func (h *FraudScoreHandler) HandleFraudScore(body []byte) int {
+	vec, err := h.vec.VectorizeJSON(body)
 	if err != nil {
-		ctx.SetStatusCode(fasthttp.StatusOK)
-		ctx.SetContentType("application/json")
-		_, _ = ctx.Write(precomputedResp[0])
-		if telemetry {
-			middleware.Record(time.Since(start), vecDur, 0, 0, true, true)
-		}
-		return
+		return 0
 	}
+	return h.knn.PredictRaw(vec, h.knn.NProbe())
+}
 
-	if telemetry {
-		knnStart = time.Now()
+func (h *FraudScoreHandler) ResponseForCount(count int) []byte {
+	if count < 0 || count > knnK {
+		return precomputedResp[0]
 	}
-	fraudCount := h.knn.PredictRaw(vec, h.knn.NProbe())
-	if telemetry {
-		knnDur = time.Since(knnStart)
-	}
-
-	resp := precomputedResp[fraudCount]
-
-	ctx.SetStatusCode(fasthttp.StatusOK)
-	ctx.SetContentType("application/json")
-	_, _ = ctx.Write(resp)
-
-	if telemetry {
-		middleware.Record(time.Since(start), vecDur, knnDur, fraudCount, fraudCount < 3, false)
-	}
+	return precomputedResp[count]
 }
