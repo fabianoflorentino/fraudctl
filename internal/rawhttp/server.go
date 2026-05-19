@@ -215,3 +215,11 @@ func FraudResponse(count int) []byte {
 	}
 	return fraudResponses[count]
 }
+
+func ReadyResponse() []byte {
+	return readyResponse
+}
+
+func NotFoundResponse() []byte {
+	return notFoundResponse
+}

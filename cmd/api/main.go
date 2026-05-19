@@ -122,7 +122,7 @@ func (h *httpHandler) ServeFraudScore(body []byte) []byte {
 }
 
 func (h *httpHandler) ServeReady() []byte {
-	return handler.Ready()
+	return rawhttp.ReadyResponse()
 }
 
 func isLikelyValidJSON(body []byte) bool {
@@ -157,10 +157,11 @@ func serveControl(ctrlConn net.Conn, srv *rawhttp.Server) {
 	oob := make([]byte, 64)
 
 	for {
-		_, oobn, _, _, err := uc.ReadMsgUnix(buf, oob)
+		n, oobn, _, _, err := uc.ReadMsgUnix(buf, oob)
 		if err != nil {
 			return
 		}
+		_ = n
 
 		fds, err := parseUnixRights(oob[:oobn])
 		if err != nil || len(fds) == 0 {
@@ -182,7 +183,7 @@ func serveControl(ctrlConn net.Conn, srv *rawhttp.Server) {
 		select {
 		case workerCh <- conn:
 		default:
-			go func() { _ = srv.ServeConn(conn) }()
+			go func(c net.Conn) { _ = srv.ServeConn(c) }(conn)
 		}
 	}
 }
