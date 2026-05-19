@@ -14,11 +14,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/valyala/fasthttp"
-
 	"github.com/fabianoflorentino/fraudctl/internal/dataset"
 	"github.com/fabianoflorentino/fraudctl/internal/handler"
 	"github.com/fabianoflorentino/fraudctl/internal/middleware"
+	"github.com/fabianoflorentino/fraudctl/internal/rawhttp"
 )
 
 var (
@@ -68,30 +67,7 @@ func main() {
 		}()
 	}
 
-	srv := &fasthttp.Server{
-		Handler: func(ctx *fasthttp.RequestCtx) {
-			switch {
-			case len(ctx.Path()) == 6 && ctx.Path()[1] == 'r':
-				handler.Ready(ctx)
-			case len(ctx.Path()) == 12 && ctx.Path()[1] == 'f':
-				fraudHandler.Handle(ctx)
-			default:
-				ctx.SetStatusCode(fasthttp.StatusNotFound)
-			}
-		},
-		ReadTimeout:                   750 * time.Millisecond,
-		WriteTimeout:                  750 * time.Millisecond,
-		IdleTimeout:                   10 * time.Second,
-		MaxRequestBodySize:            4 * 1024,
-		NoDefaultServerHeader:         true,
-		NoDefaultContentType:          true,
-		ReadBufferSize:                4096,
-		WriteBufferSize:               4096,
-		Concurrency:                   4096,
-		DisableHeaderNamesNormalizing: true,
-		DisablePreParseMultipartForm:  true,
-		ReduceMemoryUsage:             false,
-	}
+	srv := rawhttp.New(&httpHandler{fraudHandler: fraudHandler})
 
 	ctrlSocket := os.Getenv("CTRL_SOCKET")
 	if ctrlSocket == "" {
@@ -125,13 +101,47 @@ func main() {
 
 	log.Println("shutting down")
 	_ = ctrlLn.Close()
-	_ = srv.Shutdown()
+}
+
+type httpHandler struct {
+	fraudHandler *handler.FraudScoreHandler
+}
+
+func (h *httpHandler) ServeFraudScore(body []byte) []byte {
+	start := time.Now()
+	count := h.fraudHandler.HandleFraudScore(body)
+	elapsed := time.Since(start)
+
+	if middleware.IsEnabled() {
+		approved := count < 3
+		parseErr := count == 0 && !isLikelyValidJSON(body)
+		middleware.Record(elapsed, elapsed/2, elapsed/2, count, approved, parseErr)
+	}
+
+	return rawhttp.FraudResponse(count)
+}
+
+func (h *httpHandler) ServeReady() []byte {
+	return handler.Ready()
+}
+
+func isLikelyValidJSON(body []byte) bool {
+	for _, b := range body {
+		if b == '{' {
+			return true
+		}
+		if b != ' ' && b != '\t' && b != '\n' && b != '\r' {
+			return false
+		}
+	}
+	return false
 }
 
 var workerCh = make(chan net.Conn)
 
-func startWorkerPool(srv *fasthttp.Server) {
-	for i := 0; i < runtime.GOMAXPROCS(0)*4; i++ {
+func startWorkerPool(srv *rawhttp.Server) {
+	n := runtime.GOMAXPROCS(0)
+	for i := 0; i < n; i++ {
 		go func() {
 			for conn := range workerCh {
 				_ = srv.ServeConn(conn)
@@ -140,7 +150,7 @@ func startWorkerPool(srv *fasthttp.Server) {
 	}
 }
 
-func serveControl(ctrlConn net.Conn, srv *fasthttp.Server) {
+func serveControl(ctrlConn net.Conn, srv *rawhttp.Server) {
 	defer func() { _ = ctrlConn.Close() }()
 	uc := ctrlConn.(*net.UnixConn)
 	buf := make([]byte, 1)
