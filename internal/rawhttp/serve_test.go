@@ -1,4 +1,3 @@
-//nolint:errcheck
 package rawhttp
 
 import (
@@ -33,14 +32,14 @@ func TestDirectServe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	req := "GET /ready HTTP/1.1\r\nHost: localhost\r\n\r\n"
 	if _, err := client.Write([]byte(req)); err != nil {
 		t.Fatal(err)
 	}
 
-	client.SetReadDeadline(time.Now().Add(3 * time.Second))
+	_ = client.SetReadDeadline(time.Now().Add(3 * time.Second))
 	buf := make([]byte, 4096)
 	n, err := client.Read(buf)
 	if err != nil {

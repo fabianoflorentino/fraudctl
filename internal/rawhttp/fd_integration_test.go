@@ -1,4 +1,3 @@
-//nolint:errcheck
 package rawhttp
 
 import (
@@ -13,31 +12,23 @@ import (
 func TestFullFlowLikeMain(t *testing.T) {
 	srv := New(&mockHandler{})
 
-	// Control socket
 	ctrlPath := "/tmp/test_ctrl_full.sock"
-	os.Remove(ctrlPath)
+	_ = os.Remove(ctrlPath)
 	ctrlLn, err := net.ListenUnix("unix", &net.UnixAddr{Name: ctrlPath, Net: "unix"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ctrlLn.Close()
-	defer os.Remove(ctrlPath)
+	defer func() { _ = ctrlLn.Close() }()
+	defer func() { _ = os.Remove(ctrlPath) }()
 
-	// Worker channel (same as main.go)
 	workerCh := make(chan net.Conn)
 
-	// Start worker pool (same as main.go)
 	go func() {
 		for conn := range workerCh {
-			t.Log("Worker received connection")
-			if err := srv.ServeConn(conn); err != nil {
-				t.Logf("ServeConn error: %v", err)
-			}
-			t.Log("Worker done")
+			_ = srv.ServeConn(conn)
 		}
 	}()
 
-	// Accept loop (same as main.go)
 	done := make(chan struct{})
 	go func() {
 		for {
@@ -52,14 +43,12 @@ func TestFullFlowLikeMain(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	// Connect to control (simulate LB)
 	uc, err := net.DialUnix("unix", nil, &net.UnixAddr{Name: ctrlPath, Net: "unix"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer uc.Close()
+	defer func() { _ = uc.Close() }()
 
-	// Create TCP pair (simulate client connecting to LB)
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -80,18 +69,17 @@ func TestFullFlowLikeMain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	server := (<-acceptCh).conn
-	defer server.Close()
+	defer func() { _ = server.Close() }()
 
-	// Send FD
 	tcpConn := server.(*net.TCPConn)
 	f, err := tcpConn.File()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	rawConn, err := uc.SyscallConn()
 	if err != nil {
@@ -110,17 +98,15 @@ func TestFullFlowLikeMain(t *testing.T) {
 		t.Fatal(sendErr)
 	}
 
-	// Wait for server to accept
 	<-done
 	time.Sleep(200 * time.Millisecond)
 
-	// Send HTTP request
 	req := "GET /ready HTTP/1.1\r\nHost: localhost\r\n\r\n"
 	if _, err := client.Write([]byte(req)); err != nil {
 		t.Fatal(err)
 	}
 
-	client.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_ = client.SetReadDeadline(time.Now().Add(5 * time.Second))
 	buf := make([]byte, 4096)
 	n, err := client.Read(buf)
 	if err != nil {
