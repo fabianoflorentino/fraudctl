@@ -340,6 +340,7 @@ func selectTopN(dist []float32, nlist, nprobe int, out []int) {
 }
 
 var useAVX2 bool
+var useAVX2Scan bool
 
 // scanClusterGeneric scans vectors in blocks of 8 (AoS within block).
 //
@@ -486,7 +487,7 @@ func scanClusterGeneric(vectors []int16, labels []byte, start, end int, q [DIM]i
 }
 
 func scanCluster(vectors []int16, labels []byte, start, end int, q [DIM]int16, h *topK5) {
-	if useAVX2 {
+	if useAVX2Scan {
 		scanClusterAVX2(vectors, labels, start, end, q, h)
 	} else {
 		scanClusterGeneric(vectors, labels, start, end, q, h)

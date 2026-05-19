@@ -79,7 +79,7 @@ func (s *Server) ServeConn(conn net.Conn) error {
 	used := 0
 
 	for {
-		if err := conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		if err := conn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
 			return err
 		}
 

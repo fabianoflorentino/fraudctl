@@ -116,7 +116,7 @@ func TestFullFlowLikeMain(t *testing.T) {
 	fmt.Printf("Response: %s\n", string(buf[:n]))
 }
 
-func serveConn(ctrlConn net.Conn, workerCh chan net.Conn, srv *Server, t *testing.T) {
+func serveConn(ctrlConn net.Conn, workerCh chan net.Conn, srv *Server, _ *testing.T) {
 	defer func() { _ = ctrlConn.Close() }()
 	uc := ctrlConn.(*net.UnixConn)
 	buf := make([]byte, 1)
@@ -125,7 +125,6 @@ func serveConn(ctrlConn net.Conn, workerCh chan net.Conn, srv *Server, t *testin
 	for {
 		_, oobn, _, _, err := uc.ReadMsgUnix(buf, oob)
 		if err != nil {
-			t.Logf("ReadMsgUnix: %v", err)
 			return
 		}
 
@@ -152,7 +151,6 @@ func serveConn(ctrlConn net.Conn, workerCh chan net.Conn, srv *Server, t *testin
 		conn, err := net.FileConn(file)
 		_ = file.Close()
 		if err != nil {
-			t.Logf("FileConn error: %v", err)
 			continue
 		}
 
@@ -161,7 +159,6 @@ func serveConn(ctrlConn net.Conn, workerCh chan net.Conn, srv *Server, t *testin
 			_ = tc.SetKeepAlive(true)
 		}
 
-		t.Log("Sending connection to worker")
 		select {
 		case workerCh <- conn:
 		default:

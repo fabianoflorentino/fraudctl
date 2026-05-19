@@ -40,6 +40,8 @@ func main() {
 	telemetryEnabled := os.Getenv("TELEMETRY_ENABLED") != "false"
 	middleware.SetEnabled(telemetryEnabled)
 
+	debug.SetMemoryLimit(150 << 20)
+
 	log.Printf("loading dataset from %s ...", *resourcesPath)
 	ds, err := dataset.LoadDefault(*resourcesPath)
 	if err != nil {
