@@ -6,9 +6,9 @@
 # =============================================================================
 x-api-env: &api-env
   RESOURCES: /resources
-  GOMAXPROCS: 1
+  GOMAXPROCS: 2
   GOGC: off
-  GOMEMLIMIT: 145MiB
+  GOMEMLIMIT: 160MiB
   TELEMETRY_ENABLED: "false"
 
 x-api-healthcheck: &api-healthcheck
@@ -23,9 +23,6 @@ x-api-resources: &api-resources
     limits:
       cpus: "0.48"
       memory: 170M
-    reservations:
-      cpus: "0.1"
-      memory: 110M
 
 x-api-defaults: &api-defaults
   image: fabianoflorentino/fraudctl:v1.0.98
@@ -34,11 +31,6 @@ x-api-defaults: &api-defaults
   healthcheck: *api-healthcheck
   deploy: *api-resources
   restart: unless-stopped
-  ulimits:
-    nofile:
-      soft: 65536
-      hard: 65536
-
 
 services:
   api-1:
@@ -78,18 +70,7 @@ services:
         limits:
           cpus: "0.04"
           memory: 10M
-        reservations:
-          cpus: "0.04"
-          memory: 10M
     restart: unless-stopped
-    ulimits:
-      nofile:
-        soft: 65536
-        hard: 65536
-    environment:
-      GOMAXPROCS: "1"
-      GOGC: "off"
-      GOMEMLIMIT: "10MiB"
 
 volumes:
   sockets:
