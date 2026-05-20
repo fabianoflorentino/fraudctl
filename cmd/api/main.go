@@ -95,8 +95,6 @@ func main() {
 		}
 	}()
 
-	startWorkerPool(srv)
-
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
@@ -110,11 +108,14 @@ type httpHandler struct {
 }
 
 func (h *httpHandler) ServeFraudScore(body []byte) []byte {
-	start := time.Now()
+	var start time.Time
+	if middleware.IsEnabled() {
+		start = time.Now()
+	}
 	count := h.fraudHandler.HandleFraudScore(body)
-	elapsed := time.Since(start)
 
 	if middleware.IsEnabled() {
+		elapsed := time.Since(start)
 		approved := count < 3
 		parseErr := count == 0 && !isLikelyValidJSON(body)
 		middleware.Record(elapsed, elapsed/2, elapsed/2, count, approved, parseErr)
@@ -139,19 +140,6 @@ func isLikelyValidJSON(body []byte) bool {
 	return false
 }
 
-var workerCh = make(chan net.Conn)
-
-func startWorkerPool(srv *rawhttp.Server) {
-	n := runtime.GOMAXPROCS(0)
-	for i := 0; i < n; i++ {
-		go func() {
-			for conn := range workerCh {
-				_ = srv.ServeConn(conn)
-			}
-		}()
-	}
-}
-
 func serveControl(ctrlConn net.Conn, srv *rawhttp.Server) {
 	defer func() { _ = ctrlConn.Close() }()
 	uc := ctrlConn.(*net.UnixConn)
@@ -165,12 +153,12 @@ func serveControl(ctrlConn net.Conn, srv *rawhttp.Server) {
 		}
 		_ = n
 
-		fds, err := parseUnixRights(oob[:oobn])
-		if err != nil || len(fds) == 0 {
+		fd, err := parseUnixRights(oob[:oobn])
+		if err != nil || fd < 0 {
 			continue
 		}
 
-		file := os.NewFile(uintptr(fds[0]), "")
+		file := os.NewFile(uintptr(fd), "")
 		conn, err := net.FileConn(file)
 		_ = file.Close()
 		if err != nil {
@@ -182,30 +170,23 @@ func serveControl(ctrlConn net.Conn, srv *rawhttp.Server) {
 			_ = tc.SetKeepAlive(true)
 		}
 
-		select {
-		case workerCh <- conn:
-		default:
-			go func(c net.Conn) { _ = srv.ServeConn(c) }(conn)
-		}
+		_ = srv.ServeConn(conn)
 	}
 }
 
-func parseUnixRights(oob []byte) ([]int, error) {
-	cmsgs, err := syscall.ParseSocketControlMessage(oob)
-	if err != nil {
-		return nil, err
+func parseUnixRights(oob []byte) (int, error) {
+	// Manual parse to avoid allocation from ParseSocketControlMessage.
+	// SCM_RIGHTS layout: 16-byte cmsghdr + 4-byte fd (on amd64).
+	if len(oob) < 20 {
+		return -1, nil
 	}
-	var fds []int
-	for i := range cmsgs {
-		if cmsgs[i].Header.Level == syscall.SOL_SOCKET && cmsgs[i].Header.Type == syscall.SCM_RIGHTS {
-			parsed, err := syscall.ParseUnixRights(&cmsgs[i])
-			if err != nil {
-				return nil, err
-			}
-			fds = append(fds, parsed...)
-		}
+	level := int(oob[8]) | int(oob[9])<<8 | int(oob[10])<<16 | int(oob[11])<<24
+	typ := int(oob[12]) | int(oob[13])<<8 | int(oob[14])<<16 | int(oob[15])<<24
+	if level != syscall.SOL_SOCKET || typ != syscall.SCM_RIGHTS {
+		return -1, nil
 	}
-	return fds, nil
+	fd := int(oob[16]) | int(oob[17])<<8 | int(oob[18])<<16 | int(oob[19])<<24
+	return fd, nil
 }
 
 func checkHealth() error {
