@@ -4,6 +4,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -58,6 +59,13 @@ func buildResponse(code int, text, ct, body string) []byte {
 	return out
 }
 
+var bufPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, readBufSize)
+		return &b
+	},
+}
+
 const (
 	readBufSize    = 4096
 	maxRequestSize = 8 * 1024
@@ -74,9 +82,11 @@ func New(handler Handler) *Server {
 func (s *Server) ServeConn(conn net.Conn) error {
 	defer func() { _ = conn.Close() }()
 
-	buf := make([]byte, readBufSize)
+	bp := bufPool.Get().(*[]byte)
+	buf := *bp
 	pos := 0
 	used := 0
+	defer bufPool.Put(bp)
 
 	for {
 		if err := conn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
