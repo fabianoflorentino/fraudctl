@@ -28,15 +28,13 @@ import (
 
 var centroidPool = sync.Pool{
 	New: func() any {
-		b := make([]float32, 4096)
+		b := make([]float32, 16384)
 		return &b
 	},
 }
 
 const (
-	fastNProbe = 16 // fallback: same as IVF_QUICK_PROBE
-	fullNProbe = 36 // fallback: same as IVF_NPROBE
-	blockSize  = 16 // vectors per scan block
+	blockSize = 16 // vectors per scan block
 )
 
 // topK5 is a fixed-size sorted array tracking the K=5 nearest neighbours.
@@ -103,7 +101,7 @@ func (h *topK5) fraudCount(labels []byte) int {
 	return n
 }
 
-const maxProbes = 64
+const maxProbes = 128
 
 // bboxMayImprove returns true if the cluster's bounding box could contain a
 // vector closer than worstDist to the query. Fully unrolled in high-variance
@@ -536,10 +534,13 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 		nprobe = idx.nprobe
 	}
 	if nprobe < 1 {
-		nprobe = fullNProbe
+		nprobe = 64
 	}
 	if nprobe > idx.nlist {
 		nprobe = idx.nlist
+	}
+	if nprobe > maxProbes {
+		nprobe = maxProbes
 	}
 
 	quickProbe := idx.quickProbe
@@ -556,7 +557,10 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 	idx.ensureCentroidNorms()
 
 	centroidBuf := centroidPool.Get().(*[]float32)
-	centroidDist := *centroidBuf
+	if len(*centroidBuf) < idx.nlist {
+		*centroidBuf = make([]float32, idx.nlist)
+	}
+	centroidDist := (*centroidBuf)[:idx.nlist]
 	accumulateDotProducts(idx.centroids, idx.nlist, ([DIM]float32)(query), centroidDist)
 	qn := computeQueryNorm(([DIM]float32)(query))
 	dotToDist(centroidDist, idx.nlist, qn, idx.centroidNorms)
