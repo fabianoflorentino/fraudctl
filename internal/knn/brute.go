@@ -138,7 +138,7 @@ func LoadIVF(path string) (*IVFIndex, error) {
 
 	idx := &IVFIndex{
 		nlist:         int(nlist),
-		nprobe:        16,
+		nprobe:        64,
 		centroids:     centroids,
 		centroidNorms: centroidNorms,
 		vectors:       vectors,
@@ -157,10 +157,6 @@ func LoadIVF(path string) (*IVFIndex, error) {
 	}
 
 	// Keep pages hot to prevent swapping under memory pressure.
-	// This is CRITICAL for stable p99 latency — without this, the OS may
-	// page out inactive portions of the index, causing random page faults.
-	// Interval: 10s (original) — this is frequent enough to keep pages hot
-	// but infrequent enough to not compete with request handling.
 	go func() {
 		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()

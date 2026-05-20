@@ -12,37 +12,19 @@ import (
 )
 
 // ============================================================================
-// IVF KNN Performance Tuning Constants — 2-tier com EARLY EXIT
+// IVF KNN Performance Tuning Constants — 2-tier with EARLY EXIT
 // ============================================================================
 //
-// Estratégia otimizada inspirada em joycegodinho/rinha-2026:
-//   1. Quick probe: IVF_QUICK_PROBE clusters (saída RÁPIDA)
-//   2. Verifica fraudCount:
-//      - fraud ∈ {0,1,4,5} → resultado CLARO → retorna IMEDIATAMENTE (early exit)
-//      - fraud ∈ {2,3}     → resultado AMBÍGUO → scan remaining clusters
-//
-// Por que isso funciona:
-//   - Regra de decisão: >= 3/5 fraud neighbors → nega
-//   - fraud=0,1 → claramente aprova (não pode chegar a 3 com vizinhos mais próximos)
-//   - fraud=4,5 → claramente nega
-//   - Apenas fraud=2,3 são limítrofes (adicionar vizinho pode inverter a decisão)
-//
-// Resultado: maioria das queries (~80-90%) saem cedo com apenas QUICK_PROBE clusters!
-// ============================================================================
+// nlist=4096 (~732 vetores/cluster).
+// IVF_NPROBE=36 cobre ~0.88% dos clusters.
+// IVF_QUICK_PROBE=16 cobre ~0.39% dos clusters.
+// Total vetores quick scan: 16×732 = 11.712.
+//============================================================================
 
-// IVF_NPROBE: total de clusters para casos ambíguos (quick + remaining)
-// Com nlist=4096: nprobe=36 cobre 0.88% dos clusters.
 const IVF_NPROBE = 36
-
-// IVF_QUICK_PROBE: clusters para quick probe (early exit)
-// Com nlist=4096: quickProbe=16 cobre 0.39% dos clusters.
 const IVF_QUICK_PROBE = 16
-
-// IVF_BOUNDARY_LO/HI: zona ambígua (apenas estes valores disparam re-score)
 const IVF_BOUNDARY_LO = 2
 const IVF_BOUNDARY_HI = 3
-
-// IVF_RETRY_EXTRA: mantido para compatibilidade (não usado mais)
 const IVF_RETRY_EXTRA = 0
 
 // Dataset holds config and the KNN index needed to serve requests.

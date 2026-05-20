@@ -14,8 +14,8 @@ import (
 
 func main() {
 	resources := flag.String("resources", "./resources", "Path to resources directory")
-	nlist := flag.Int("nlist", 500, "Number of IVF clusters")
-	iterations := flag.Int("iterations", 20, "K-means iterations")
+	nlist := flag.Int("nlist", 4096, "Number of IVF clusters")
+	iterations := flag.Int("iterations", 30, "K-means iterations")
 	flag.Parse()
 
 	refsGz := filepath.Join(*resources, "references.json.gz")
