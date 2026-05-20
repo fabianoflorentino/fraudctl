@@ -7,11 +7,6 @@ import (
 )
 
 var (
-	jsonFieldTx           = []byte(`"transaction"`)
-	jsonFieldCust         = []byte(`"customer"`)
-	jsonFieldMerch        = []byte(`"merchant"`)
-	jsonFieldTerm         = []byte(`"terminal"`)
-	jsonFieldLastTx       = []byte(`"last_transaction"`)
 	jsonFieldAmount       = []byte(`"amount"`)
 	jsonFieldInstallments = []byte(`"installments"`)
 	jsonFieldRequestedAt  = []byte(`"requested_at"`)
@@ -27,46 +22,171 @@ var (
 	jsonFieldKmFromCurr   = []byte(`"km_from_current"`)
 )
 
-func findJSONObject(data []byte, field []byte) []byte {
-	idx := bytes.Index(data, field)
-	if idx == -1 {
-		return nil
-	}
-	rest := data[idx+len(field):]
+// scanTopLevel finds all top-level JSON objects in ONE forward scan.
+func scanTopLevel(data []byte) (tx, cust, merch, term, lastTx []byte) {
+	i := 0
+	n := len(data)
 
-	colonIdx := bytes.IndexByte(rest, ':')
-	if colonIdx == -1 {
-		return nil
+	for i < n && data[i] != '{' {
+		i++
 	}
-	rest = rest[colonIdx+1:]
-
-	start := -1
-	for i, b := range rest {
-		if b == '{' {
-			start = i
-			break
-		}
-		if b != ' ' && b != '\t' && b != '\n' && b != '\r' {
-			return nil
-		}
+	if i >= n {
+		return
 	}
-	if start == -1 {
-		return nil
-	}
+	i++
 
 	depth := 1
-	for i := start + 1; i < len(rest); i++ {
-		switch rest[i] {
+	for i < n && depth > 0 {
+		switch data[i] {
 		case '{':
 			depth++
+			i++
 		case '}':
 			depth--
-			if depth == 0 {
-				return rest[start : i+1]
+			i++
+		case '"':
+			j := i + 1
+			for j < n {
+				if data[j] == '\\' {
+					j += 2
+					continue
+				}
+				if data[j] == '"' {
+					break
+				}
+				j++
+			}
+			key := data[i+1 : j]
+			i = j + 1
+
+			if depth == 1 {
+				for i < n && data[i] != ':' {
+					i++
+				}
+				i++
+				for i < n && (data[i] == ' ' || data[i] == '\t' || data[i] == '\n' || data[i] == '\r') {
+					i++
+				}
+				if i >= n {
+					return
+				}
+
+				if data[i] == '{' {
+					objStart := i
+					objDepth := 1
+					i++
+					for i < n && objDepth > 0 {
+						switch data[i] {
+						case '{':
+							objDepth++
+						case '}':
+							objDepth--
+						case '"':
+							i++
+							for i < n {
+								if data[i] == '\\' {
+									i += 2
+									continue
+								}
+								if data[i] == '"' {
+									break
+								}
+								i++
+							}
+						}
+						i++
+					}
+
+					switch len(key) {
+					case 11:
+						if key[0] == 't' && key[1] == 'r' {
+							tx = data[objStart:i]
+						}
+					case 8:
+						if key[0] == 'c' {
+							cust = data[objStart:i]
+						} else if key[0] == 'm' {
+							merch = data[objStart:i]
+						} else if key[0] == 't' && key[1] == 'e' {
+							term = data[objStart:i]
+						}
+					case 16:
+						if key[0] == 'l' {
+							lastTx = data[objStart:i]
+						}
+					}
+				} else {
+					skipValue(data, &i, n)
+				}
+			}
+		default:
+			i++
+		}
+	}
+	return
+}
+
+func skipValue(data []byte, i *int, n int) {
+	if *i >= n {
+		return
+	}
+	switch data[*i] {
+	case '"':
+		*i++
+		for *i < n {
+			if data[*i] == '\\' {
+				*i += 2
+				continue
+			}
+			if data[*i] == '"' {
+				break
+			}
+			*i++
+		}
+		*i++
+	case 't':
+		*i += 4
+	case 'f':
+		*i += 5
+	case 'n':
+		*i += 4
+	case '[':
+		arrDepth := 1
+		*i++
+		for *i < n && arrDepth > 0 {
+			switch data[*i] {
+			case '[':
+				arrDepth++
+			case ']':
+				arrDepth--
+			case '"':
+				*i++
+				for *i < n {
+					if data[*i] == '\\' {
+						*i += 2
+						continue
+					}
+					if data[*i] == '"' {
+						break
+					}
+					*i++
+				}
+			}
+			*i++
+		}
+	default:
+		for *i < n {
+			c := data[*i]
+			if (c >= '0' && c <= '9') || c == '.' || c == '-' || c == '+' || c == 'e' || c == 'E' {
+				*i++
+			} else {
+				break
 			}
 		}
 	}
-	return nil
+	for *i < n && (data[*i] == ' ' || data[*i] == '\t' || data[*i] == '\n' || data[*i] == '\r') {
+		*i++
+	}
 }
 
 func parseJSONFloat64Fast(obj []byte, field []byte) float64 {
@@ -365,7 +485,8 @@ func (v *Vectorizer) VectorizeJSON(data []byte) (model.Vector14, error) {
 		return vec, errInvalidJSON
 	}
 
-	txObj := findJSONObject(data, jsonFieldTx)
+	// Single scan: find all 5 top-level objects at once
+	txObj, custObj, merchObj, termObj, lastTxObj := scanTopLevel(data)
 	if txObj == nil {
 		return vec, nil
 	}
@@ -377,7 +498,6 @@ func (v *Vectorizer) VectorizeJSON(data []byte) (model.Vector14, error) {
 	vec[0] = clampFloat32(float32(txAmount) * v.invMaxAmount)
 	vec[1] = clampFloat32(float32(txInstallments) * v.invMaxInstall)
 
-	custObj := findJSONObject(data, jsonFieldCust)
 	if custObj != nil {
 		custAvgAmount := parseJSONFloat64Fast(custObj, jsonFieldAvgAmount)
 		custTxCount24h := parseJSONIntFast(custObj, jsonFieldTxCount24h)
@@ -389,7 +509,6 @@ func (v *Vectorizer) VectorizeJSON(data []byte) (model.Vector14, error) {
 		vec[2] = clampFloat32(float32(amountVsAvg) * v.invAmountRatio)
 		vec[8] = clampFloat32(float32(custTxCount24h) * v.invMaxTxCount)
 
-		merchObj := findJSONObject(data, jsonFieldMerch)
 		if merchObj != nil {
 			merchID := parseJSONStringBytes(merchObj, jsonFieldID)
 			merchMCC := parseJSONStringBytes(merchObj, jsonFieldMCC)
@@ -408,7 +527,6 @@ func (v *Vectorizer) VectorizeJSON(data []byte) (model.Vector14, error) {
 	vec[3] = float32(hour) / 23.0
 	vec[4] = float32(dayOfWeek) / 6.0
 
-	lastTxObj := findJSONObject(data, jsonFieldLastTx)
 	if lastTxObj != nil {
 		lastTxTime := parseJSONStringBytes(lastTxObj, jsonFieldTimestamp)
 		lastTxKm := parseJSONFloat64Fast(lastTxObj, jsonFieldKmFromCurr)
@@ -423,7 +541,6 @@ func (v *Vectorizer) VectorizeJSON(data []byte) (model.Vector14, error) {
 		vec[6] = -1
 	}
 
-	termObj := findJSONObject(data, jsonFieldTerm)
 	if termObj != nil {
 		termIsOnline := parseJSONBoolFast(termObj, jsonFieldIsOnline)
 		termCardPresent := parseJSONBoolFast(termObj, jsonFieldCardPresent)
