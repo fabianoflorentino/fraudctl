@@ -4,7 +4,7 @@ package knn
 
 func init() {
 	useAVX2 = true
-	useAVX2Scan = false
+	useAVX2Scan = true
 }
 
 //go:noescape
