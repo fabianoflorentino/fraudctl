@@ -25,7 +25,7 @@ FROM builder AS index-builder
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOAMD64=v3 \
     go build -ldflags="-s -w" -o build-index ./cmd/build-index
 
-RUN ./build-index -resources ./resources -nlist 4096 -iterations 36
+RUN ./build-index -resources ./resources -nlist 4096 -iterations 28
 
 # ── Stage 2: production ────────────────────────────────────────────────────────
 FROM gcr.io/distroless/base-debian12 AS production
