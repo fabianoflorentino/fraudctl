@@ -21,8 +21,8 @@ import (
 // Total vetores quick scan: 16×732 = 11.712.
 //============================================================================
 
-const IVF_NPROBE = 36
-const IVF_QUICK_PROBE = 16
+const IVF_NPROBE = 64
+const IVF_QUICK_PROBE = 24
 const IVF_BOUNDARY_LO = 2
 const IVF_BOUNDARY_HI = 3
 const IVF_RETRY_EXTRA = 0
