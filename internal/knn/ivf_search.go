@@ -58,30 +58,20 @@ func (h *topK5) worstDist() uint64 { return h.dist[K-1] }
 
 //go:inline
 func (h *topK5) tryInsert(dist uint64, vecIdx int) {
-	if dist >= h.dist[4] {
+	if dist >= h.worstDist() {
 		return
 	}
-	if dist < h.dist[0] {
-		h.dist[4], h.idx[4] = h.dist[3], h.idx[3]
-		h.dist[3], h.idx[3] = h.dist[2], h.idx[2]
-		h.dist[2], h.idx[2] = h.dist[1], h.idx[1]
-		h.dist[1], h.idx[1] = h.dist[0], h.idx[0]
-		h.dist[0], h.idx[0] = dist, vecIdx
-	} else if dist < h.dist[1] {
-		h.dist[4], h.idx[4] = h.dist[3], h.idx[3]
-		h.dist[3], h.idx[3] = h.dist[2], h.idx[2]
-		h.dist[2], h.idx[2] = h.dist[1], h.idx[1]
-		h.dist[1], h.idx[1] = dist, vecIdx
-	} else if dist < h.dist[2] {
-		h.dist[4], h.idx[4] = h.dist[3], h.idx[3]
-		h.dist[3], h.idx[3] = h.dist[2], h.idx[2]
-		h.dist[2], h.idx[2] = dist, vecIdx
-	} else if dist < h.dist[3] {
-		h.dist[4], h.idx[4] = h.dist[3], h.idx[3]
-		h.dist[3], h.idx[3] = dist, vecIdx
-	} else {
-		h.dist[4], h.idx[4] = dist, vecIdx
+	i := h.count
+	if i == K {
+		i = K - 1
 	}
+	for i > 0 && dist < h.dist[i-1] {
+		h.dist[i] = h.dist[i-1]
+		h.idx[i] = h.idx[i-1]
+		i--
+	}
+	h.dist[i] = dist
+	h.idx[i] = vecIdx
 	if h.count < K {
 		h.count++
 	}
@@ -101,7 +91,7 @@ func (h *topK5) fraudCount(labels []byte) int {
 	return n
 }
 
-const maxProbes = 128
+const maxProbes = 256
 
 // bboxMayImprove returns true if the cluster's bounding box could contain a
 // vector closer than worstDist to the query. Fully unrolled in high-variance
@@ -509,12 +499,12 @@ func quantizeQuery(query model.Vector14) [DIM]int16 {
 	return q
 }
 
-// PredictRaw uses 2-tier IVF with EARLY EXIT (inspired by joycegodinho/rinha-2026).
+// PredictRaw uses 2-tier IVF with EARLY EXIT.
 //
 // Strategy:
-//  1. QUICK PROBE: select+scan only quickProbe clusters (default 16)
+//  1. QUICK PROBE: select+scan only quickProbe clusters
 //  2. CHECK fraudCount:
-//     - fraud ∈ {0,1,4,5} → CLEAR result → EARLY EXIT (return immediately)
+//     - fraud ∈ {0,1,4,5} → EARLY EXIT (return immediately)
 //     - fraud ∈ {2,3}     → AMBIGUOUS → select full nprobe and scan remaining
 //
 // Why this works:
