@@ -6,7 +6,7 @@
 # =============================================================================
 x-api-env: &api-env
   RESOURCES: /resources
-  GOMAXPROCS: 1
+  GOMAXPROCS: 2
   GOGC: off
   GOMEMLIMIT: 160MiB
   TELEMETRY_ENABLED: "false"
