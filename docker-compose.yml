@@ -6,7 +6,7 @@
 # =============================================================================
 x-api-env: &api-env
   RESOURCES: /resources
-  GOMAXPROCS: 2
+  GOMAXPROCS: 1
   GOGC: off
   GOMEMLIMIT: 160MiB
   TELEMETRY_ENABLED: "false"
@@ -25,7 +25,7 @@ x-api-resources: &api-resources
       memory: 170M
 
 x-api-defaults: &api-defaults
-  image: fabianoflorentino/fraudctl:v1.0.91
+  image: fabianoflorentino/fraudctl:v1.0.102
   volumes:
     - sockets:/sockets
   healthcheck: *api-healthcheck
