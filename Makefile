@@ -25,8 +25,6 @@ GOTEST_FLAGS  := -v -race -count=1
 IMAGE         := fraudctl
 REGISTRY      ?= ghcr.io/$(MODULE)
 BUILD_OPTS    := --platform linux/amd64 --load
-NLIST         ?= 4096
-ITERATIONS    ?= 36
 
 # ============================================================================
 # Output colors
@@ -112,6 +110,11 @@ tidy: ## Tidy and verify Go modules
 	@go mod verify
 	@echo -e "$(GREEN)✓ Modules up to date!$(NC)"
 
+build-index: ## Build IVF index locally (resources/ivf.bin)
+	@echo -e "$(BLUE)🔨 Building IVF index (nlist=4096, 36 iters)...$(NC)"
+	@go run ./cmd/build-index/ -resources ./resources -nlist 4096 -iterations 36
+	@echo -e "$(GREEN)✓ Index built at resources/ivf.bin$(NC)"
+
 all: fmt vet test build ## Format, vet, test and build
 
 ##@ Benchmarks
@@ -136,12 +139,7 @@ bench-dataset: ## Run dataset benchmarks only
 
 docker-build: ## Build Docker image (latest + version tag)
 	@echo -e "$(BLUE)🔨 Building Docker image...$(NC)"
-	@docker build \
-		-t $(IMAGE):latest \
-		-t $(IMAGE):$(VERSION) \
-		--build-arg NLIST=$(NLIST) \
-		--build-arg ITERATIONS=$(ITERATIONS) \
-		. --no-cache
+	@docker build -t $(IMAGE):latest -t $(IMAGE):$(VERSION) . --no-cache
 	@echo -e "$(GREEN)✓ Image $(IMAGE):$(VERSION) created!$(NC)"
 	@$(MAKE) docker-size
 
