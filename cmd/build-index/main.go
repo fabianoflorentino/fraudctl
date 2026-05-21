@@ -16,6 +16,7 @@ func main() {
 	resources := flag.String("resources", "./resources", "Path to resources directory")
 	nlist := flag.Int("nlist", 4096, "Number of IVF clusters")
 	iterations := flag.Int("iterations", 30, "K-means iterations")
+
 	flag.Parse()
 
 	refsGz := filepath.Join(*resources, "references.json.gz")
@@ -23,8 +24,10 @@ func main() {
 	// Build IVF index
 	ivfPath := filepath.Join(*resources, "ivf.bin")
 	log.Printf("Building IVF index: nlist=%d iterations=%d", *nlist, *iterations)
+
 	if err := knn.BuildIVF(refsGz, ivfPath, *nlist, *iterations); err != nil {
 		log.Fatalf("BuildIVF failed: %v", err)
 	}
+
 	log.Printf("IVF index written to %s", ivfPath)
 }
