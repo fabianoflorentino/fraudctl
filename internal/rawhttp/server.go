@@ -28,34 +28,44 @@ func init() {
 		`{"approved":false,"fraud_score":0.8}`,
 		`{"approved":false,"fraud_score":1.0}`,
 	}
+
 	for i, body := range bodies {
 		fraudResponses[i] = buildOKResponse("application/json", body)
 	}
+
 	readyResponse = buildOKResponse("", "OK")
 	notFoundResponse = buildResponse(404, "Not Found", "", "")
 }
 
 func buildOKResponse(ct, body string) []byte {
 	hdr := "HTTP/1.1 200 OK\r\n"
+
 	if ct != "" {
 		hdr += "Content-Type: " + ct + "\r\n"
 	}
+
 	hdr += "Content-Length: " + strconv.Itoa(len(body)) + "\r\n\r\n"
 	out := make([]byte, len(hdr)+len(body))
+
 	copy(out, hdr)
 	copy(out[len(hdr):], body)
+
 	return out
 }
 
 func buildResponse(code int, text, ct, body string) []byte {
 	hdr := "HTTP/1.1 " + strconv.Itoa(code) + " " + text + "\r\n"
+
 	if ct != "" {
 		hdr += "Content-Type: " + ct + "\r\n"
 	}
+
 	hdr += "Content-Length: " + strconv.Itoa(len(body)) + "\r\n\r\n"
 	out := make([]byte, len(hdr)+len(body))
+
 	copy(out, hdr)
 	copy(out[len(hdr):], body)
+
 	return out
 }
 
@@ -67,8 +77,8 @@ var bufPool = sync.Pool{
 }
 
 const (
-	readBufSize    = 4096
-	maxRequestSize = 8 * 1024
+	readBufSize    = 1024
+	maxRequestSize = 2 * 1024
 )
 
 type Server struct {
@@ -125,6 +135,7 @@ func (s *Server) ServeConn(conn net.Conn) error {
 		}
 
 		var resp []byte
+
 		switch {
 		case len(path) == 12 && path[1] == 'f' && len(method) == 4 && method[0] == 'P':
 			resp = s.handler.ServeFraudScore(buf[headEnd:bodyEnd])
@@ -155,6 +166,7 @@ func indexHeaderEnd(b []byte) int {
 			return i
 		}
 	}
+
 	return -1
 }
 
@@ -163,16 +175,19 @@ func parseRequestLine(buf []byte) (method, path []byte, contentLen int) {
 	for i < len(buf) && buf[i] != ' ' {
 		i++
 	}
+
 	method = buf[:i]
 	i++
 
 	pathStart := i
+
 	for i < len(buf) && buf[i] != ' ' {
 		i++
 	}
-	path = buf[pathStart:i]
 
+	path = buf[pathStart:i]
 	contentLen = findContentLength(buf)
+
 	return
 }
 
@@ -196,10 +211,12 @@ func findContentLength(buf []byte) int {
 
 func isContentLength(b []byte) bool {
 	const prefix = "content-length:"
+
 	if len(b) < len(prefix) {
 		return false
 	}
-	for i := 0; i < len(prefix); i++ {
+
+	for i := range len(prefix) {
 		c := b[i]
 		if c >= 'A' && c <= 'Z' {
 			c += 'a' - 'A'
@@ -208,6 +225,7 @@ func isContentLength(b []byte) bool {
 			return false
 		}
 	}
+
 	return true
 }
 
