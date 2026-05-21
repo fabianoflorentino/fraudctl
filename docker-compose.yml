@@ -5,10 +5,6 @@
 # Total resources: ~1.0 CPU, 350 MB RAM
 # =============================================================================
 x-api-env: &api-env
-  RESOURCES: /resources
-  GOMAXPROCS: 1
-  GOGC: off
-  GOMEMLIMIT: 160MiB
   TELEMETRY_ENABLED: "false"
 
 x-api-healthcheck: &api-healthcheck

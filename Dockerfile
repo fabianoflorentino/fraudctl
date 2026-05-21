@@ -34,10 +34,15 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOAMD64=v3 \
 RUN ./build-index -resources ./resources -nlist ${NLIST} -iterations ${ITERATIONS}
 
 # ── Stage 2: production ────────────────────────────────────────────────────────
-FROM gcr.io/distroless/static:nonroot AS production
+FROM gcr.io/distroless/base-debian13 AS production
 
 COPY --from=index-builder /build/fraudctl  /fraudctl
 COPY --from=index-builder /build/resources /resources
+
+ENV RESOURCES=/resources
+ENV GOMAXPROCS=1
+ENV GOGC=off
+ENV GOMEMLIMIT=145MiB
 
 EXPOSE 9999
 
