@@ -25,6 +25,8 @@ GOTEST_FLAGS  := -v -race -count=1
 IMAGE         := fraudctl
 REGISTRY      ?= ghcr.io/$(MODULE)
 BUILD_OPTS    := --platform linux/amd64 --load
+NLIST         ?= 4096
+ITERATIONS    ?= 36
 
 # ============================================================================
 # Output colors
@@ -134,7 +136,12 @@ bench-dataset: ## Run dataset benchmarks only
 
 docker-build: ## Build Docker image (latest + version tag)
 	@echo -e "$(BLUE)🔨 Building Docker image...$(NC)"
-	@docker build -t $(IMAGE):latest -t $(IMAGE):$(VERSION) . --no-cache
+	@docker build \
+		-t $(IMAGE):latest \
+		-t $(IMAGE):$(VERSION) \
+		--build-arg NLIST=$(NLIST) \
+		--build-arg ITERATIONS=$(ITERATIONS) \
+		. --no-cache
 	@echo -e "$(GREEN)✓ Image $(IMAGE):$(VERSION) created!$(NC)"
 	@$(MAKE) docker-size
 
