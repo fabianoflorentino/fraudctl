@@ -170,7 +170,7 @@ func serveControl(ctrlConn net.Conn, srv *rawhttp.Server) {
 			_ = tc.SetKeepAlive(true)
 		}
 
-		go func() { _ = srv.ServeConn(conn) }()
+		go srv.ServeConn(conn) //nolint:errcheck
 	}
 }
 
