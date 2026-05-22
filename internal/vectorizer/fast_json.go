@@ -7,19 +7,19 @@ import (
 )
 
 var (
-	jsonFieldAmount       = []byte(`"amount"`)
-	jsonFieldInstallments = []byte(`"installments"`)
-	jsonFieldRequestedAt  = []byte(`"requested_at"`)
-	jsonFieldAvgAmount    = []byte(`"avg_amount"`)
-	jsonFieldTxCount24h   = []byte(`"tx_count_24h"`)
-	jsonFieldKnownMerch   = []byte(`"known_merchants"`)
-	jsonFieldID           = []byte(`"id"`)
-	jsonFieldMCC          = []byte(`"mcc"`)
-	jsonFieldIsOnline     = []byte(`"is_online"`)
-	jsonFieldCardPresent  = []byte(`"card_present"`)
-	jsonFieldKmFromHome   = []byte(`"km_from_home"`)
-	jsonFieldTimestamp    = []byte(`"timestamp"`)
-	jsonFieldKmFromCurr   = []byte(`"km_from_current"`)
+	jsonFieldAmount       = []byte(`"amount":`)
+	jsonFieldInstallments = []byte(`"installments":`)
+	jsonFieldRequestedAt  = []byte(`"requested_at":`)
+	jsonFieldAvgAmount    = []byte(`"avg_amount":`)
+	jsonFieldTxCount24h   = []byte(`"tx_count_24h":`)
+	jsonFieldKnownMerch   = []byte(`"known_merchants":`)
+	jsonFieldID           = []byte(`"id":`)
+	jsonFieldMCC          = []byte(`"mcc":`)
+	jsonFieldIsOnline     = []byte(`"is_online":`)
+	jsonFieldCardPresent  = []byte(`"card_present":`)
+	jsonFieldKmFromHome   = []byte(`"km_from_home":`)
+	jsonFieldTimestamp    = []byte(`"timestamp":`)
+	jsonFieldKmFromCurr   = []byte(`"km_from_current":`)
 )
 
 // scanTopLevel finds all top-level JSON objects in ONE forward scan.
@@ -196,12 +196,6 @@ func parseJSONFloat64Fast(obj []byte, field []byte) float64 {
 	}
 	rest := obj[idx+len(field):]
 
-	colonIdx := bytes.IndexByte(rest, ':')
-	if colonIdx == -1 {
-		return 0
-	}
-	rest = rest[colonIdx+1:]
-
 	start := -1
 	for i, b := range rest {
 		if (b >= '0' && b <= '9') || b == '.' || b == '-' || b == '+' {
@@ -291,12 +285,6 @@ func parseJSONIntFast(obj []byte, field []byte) int {
 	}
 	rest := obj[idx+len(field):]
 
-	colonIdx := bytes.IndexByte(rest, ':')
-	if colonIdx == -1 {
-		return 0
-	}
-	rest = rest[colonIdx+1:]
-
 	start := -1
 	for i, b := range rest {
 		if (b >= '0' && b <= '9') || b == '-' {
@@ -331,12 +319,6 @@ func parseJSONStringBytes(obj []byte, field []byte) []byte {
 	}
 	rest := obj[idx+len(field):]
 
-	colonIdx := bytes.IndexByte(rest, ':')
-	if colonIdx == -1 {
-		return nil
-	}
-	rest = rest[colonIdx+1:]
-
 	quoteStart := -1
 	for i, b := range rest {
 		if b == '"' {
@@ -366,12 +348,6 @@ func parseJSONBoolFast(obj []byte, field []byte) bool {
 	}
 	rest := obj[idx+len(field):]
 
-	colonIdx := bytes.IndexByte(rest, ':')
-	if colonIdx == -1 {
-		return false
-	}
-	rest = rest[colonIdx+1:]
-
 	for i := 0; i < len(rest); i++ {
 		b := rest[i]
 		if b == ' ' || b == '\t' || b == '\n' || b == '\r' {
@@ -391,12 +367,6 @@ func merchantIDInArray(obj []byte, field []byte, target []byte) bool {
 		return false
 	}
 	rest := obj[idx+len(field):]
-
-	colonIdx := bytes.IndexByte(rest, ':')
-	if colonIdx == -1 {
-		return false
-	}
-	rest = rest[colonIdx+1:]
 
 	bracketStart := -1
 	for i, b := range rest {
