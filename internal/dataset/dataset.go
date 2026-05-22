@@ -139,24 +139,24 @@ func LoadDefault(path string) (*Dataset, error) {
 
 	var idx KNNIndex
 
-	// Priority 1: Grid index (exact, fastest)
-	gridPath := filepath.Join(path, "grid.bin")
-	if _, err := os.Stat(gridPath); err == nil {
-		grid, err := knn.LoadGrid(gridPath)
+	// Priority 1: IVF index (approximate, fastest)
+	ivfPath := filepath.Join(path, "ivf.bin")
+	if _, err := os.Stat(ivfPath); err == nil {
+		ivf, err := knn.LoadIVF(ivfPath)
 		if err == nil {
-			idx = grid
+			ivf.SetNProbe(IVF_NPROBE)
+			ivf.SetRetry(IVF_QUICK_PROBE, IVF_BOUNDARY_LO, IVF_BOUNDARY_HI)
+			idx = ivf
 		}
 	}
 
-	// Priority 2: IVF index (approximate, fast)
+	// Priority 2: Grid index (exact, fast)
 	if idx == nil {
-		ivfPath := filepath.Join(path, "ivf.bin")
-		if _, err := os.Stat(ivfPath); err == nil {
-			ivf, err := knn.LoadIVF(ivfPath)
+		gridPath := filepath.Join(path, "grid.bin")
+		if _, err := os.Stat(gridPath); err == nil {
+			grid, err := knn.LoadGrid(gridPath)
 			if err == nil {
-				ivf.SetNProbe(IVF_NPROBE)
-				ivf.SetRetry(IVF_QUICK_PROBE, IVF_BOUNDARY_LO, IVF_BOUNDARY_HI)
-				idx = ivf
+				idx = grid
 			}
 		}
 	}
