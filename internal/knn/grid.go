@@ -170,15 +170,117 @@ func gridSearchKDTree(root int32, rootBound uint64, qi *[DIM]int16, h *topK5, id
 
 func gridBBoxLowerBound(q *[DIM]int16, bmin, bmax *[DIM]int16) uint64 {
 	var d uint64
-	for i := 0; i < 14; i++ {
-		qi := int32(q[i])
-		if qi < int32(bmin[i]) {
-			diff := int32(bmin[i]) - qi
-			d += uint64(diff) * uint64(diff)
-		} else if qi > int32(bmax[i]) {
-			diff := qi - int32(bmax[i])
-			d += uint64(diff) * uint64(diff)
-		}
+	qi0 := int32(q[0])
+	if qi0 < int32(bmin[0]) {
+		diff := int32(bmin[0]) - qi0
+		d += uint64(diff) * uint64(diff)
+	} else if qi0 > int32(bmax[0]) {
+		diff := qi0 - int32(bmax[0])
+		d += uint64(diff) * uint64(diff)
+	}
+	qi1 := int32(q[1])
+	if qi1 < int32(bmin[1]) {
+		diff := int32(bmin[1]) - qi1
+		d += uint64(diff) * uint64(diff)
+	} else if qi1 > int32(bmax[1]) {
+		diff := qi1 - int32(bmax[1])
+		d += uint64(diff) * uint64(diff)
+	}
+	qi2 := int32(q[2])
+	if qi2 < int32(bmin[2]) {
+		diff := int32(bmin[2]) - qi2
+		d += uint64(diff) * uint64(diff)
+	} else if qi2 > int32(bmax[2]) {
+		diff := qi2 - int32(bmax[2])
+		d += uint64(diff) * uint64(diff)
+	}
+	qi3 := int32(q[3])
+	if qi3 < int32(bmin[3]) {
+		diff := int32(bmin[3]) - qi3
+		d += uint64(diff) * uint64(diff)
+	} else if qi3 > int32(bmax[3]) {
+		diff := qi3 - int32(bmax[3])
+		d += uint64(diff) * uint64(diff)
+	}
+	qi4 := int32(q[4])
+	if qi4 < int32(bmin[4]) {
+		diff := int32(bmin[4]) - qi4
+		d += uint64(diff) * uint64(diff)
+	} else if qi4 > int32(bmax[4]) {
+		diff := qi4 - int32(bmax[4])
+		d += uint64(diff) * uint64(diff)
+	}
+	qi5 := int32(q[5])
+	if qi5 < int32(bmin[5]) {
+		diff := int32(bmin[5]) - qi5
+		d += uint64(diff) * uint64(diff)
+	} else if qi5 > int32(bmax[5]) {
+		diff := qi5 - int32(bmax[5])
+		d += uint64(diff) * uint64(diff)
+	}
+	qi6 := int32(q[6])
+	if qi6 < int32(bmin[6]) {
+		diff := int32(bmin[6]) - qi6
+		d += uint64(diff) * uint64(diff)
+	} else if qi6 > int32(bmax[6]) {
+		diff := qi6 - int32(bmax[6])
+		d += uint64(diff) * uint64(diff)
+	}
+	qi7 := int32(q[7])
+	if qi7 < int32(bmin[7]) {
+		diff := int32(bmin[7]) - qi7
+		d += uint64(diff) * uint64(diff)
+	} else if qi7 > int32(bmax[7]) {
+		diff := qi7 - int32(bmax[7])
+		d += uint64(diff) * uint64(diff)
+	}
+	qi8 := int32(q[8])
+	if qi8 < int32(bmin[8]) {
+		diff := int32(bmin[8]) - qi8
+		d += uint64(diff) * uint64(diff)
+	} else if qi8 > int32(bmax[8]) {
+		diff := qi8 - int32(bmax[8])
+		d += uint64(diff) * uint64(diff)
+	}
+	qi9 := int32(q[9])
+	if qi9 < int32(bmin[9]) {
+		diff := int32(bmin[9]) - qi9
+		d += uint64(diff) * uint64(diff)
+	} else if qi9 > int32(bmax[9]) {
+		diff := qi9 - int32(bmax[9])
+		d += uint64(diff) * uint64(diff)
+	}
+	qi10 := int32(q[10])
+	if qi10 < int32(bmin[10]) {
+		diff := int32(bmin[10]) - qi10
+		d += uint64(diff) * uint64(diff)
+	} else if qi10 > int32(bmax[10]) {
+		diff := qi10 - int32(bmax[10])
+		d += uint64(diff) * uint64(diff)
+	}
+	qi11 := int32(q[11])
+	if qi11 < int32(bmin[11]) {
+		diff := int32(bmin[11]) - qi11
+		d += uint64(diff) * uint64(diff)
+	} else if qi11 > int32(bmax[11]) {
+		diff := qi11 - int32(bmax[11])
+		d += uint64(diff) * uint64(diff)
+	}
+	qi12 := int32(q[12])
+	if qi12 < int32(bmin[12]) {
+		diff := int32(bmin[12]) - qi12
+		d += uint64(diff) * uint64(diff)
+	} else if qi12 > int32(bmax[12]) {
+		diff := qi12 - int32(bmax[12])
+		d += uint64(diff) * uint64(diff)
+	}
+	qi13 := int32(q[13])
+	if qi13 < int32(bmin[13]) {
+		diff := int32(bmin[13]) - qi13
+		d += uint64(diff) * uint64(diff)
+	} else if qi13 > int32(bmax[13]) {
+		diff := qi13 - int32(bmax[13])
+		d += uint64(diff) * uint64(diff)
 	}
 	return d
 }
