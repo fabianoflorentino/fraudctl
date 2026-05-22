@@ -15,12 +15,13 @@ const gridMagic = uint32(0x4B445452)
 const gridVersion = uint32(2)
 
 type GridIndex struct {
-	n          int
-	nodes      []gridNode
-	partitions []gridPartition
-	vectors    []int16
-	labels     []byte
-	scratch    gridScratch
+	n               int
+	nodes           []gridNode
+	partitions      []gridPartition
+	partitionsByKey [256]int32
+	vectors         []int16
+	labels          []byte
+	scratch         gridScratch
 }
 
 type gridNode struct {
@@ -73,13 +74,7 @@ func (idx *GridIndex) PredictRaw(query model.Vector14, _ int) int {
 
 	idx.scratch = gridScratch{}
 
-	var sameIdx int32 = -1
-	for i := range idx.partitions {
-		if idx.partitions[i].key == key {
-			sameIdx = int32(i)
-			break
-		}
-	}
+	sameIdx := idx.partitionsByKey[key]
 
 	if sameIdx >= 0 {
 		p := &idx.partitions[sameIdx]
@@ -101,13 +96,13 @@ func (idx *GridIndex) PredictRaw(query model.Vector14, _ int) int {
 		var lb uint64
 		worst := h.worstDist()
 		for d := 0; d < 14; d++ {
-			qf := float32(qi[d])
-			if qf < p.bboxMinF32[d] {
-				diff := p.bboxMinF32[d] - qf
-				lb += uint64(diff * diff)
-			} else if qf > p.bboxMaxF32[d] {
-				diff := qf - p.bboxMaxF32[d]
-				lb += uint64(diff * diff)
+			qd := qi[d]
+			if qd < p.bboxMin[d] {
+				diff := int32(p.bboxMin[d]) - int32(qd)
+				lb += uint64(diff) * uint64(diff)
+			} else if qd > p.bboxMax[d] {
+				diff := int32(qd) - int32(p.bboxMax[d])
+				lb += uint64(diff) * uint64(diff)
 			}
 			if lb >= worst {
 				break
@@ -320,6 +315,10 @@ func LoadGrid(path string) (*GridIndex, error) {
 		nodes:      make([]gridNode, nnodes),
 	}
 
+	for i := range idx.partitionsByKey {
+		idx.partitionsByKey[i] = -1
+	}
+
 	for i := uint32(0); i < nparts; i++ {
 		p := &idx.partitions[i]
 		if err := binary.Read(f, binary.LittleEndian, &p.key); err != nil {
@@ -338,6 +337,7 @@ func LoadGrid(path string) (*GridIndex, error) {
 			p.bboxMinF32[d] = float32(p.bboxMin[d])
 			p.bboxMaxF32[d] = float32(p.bboxMax[d])
 		}
+		idx.partitionsByKey[p.key] = int32(i)
 	}
 
 	for i := uint32(0); i < nnodes; i++ {

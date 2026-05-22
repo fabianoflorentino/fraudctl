@@ -443,6 +443,9 @@ func TestGridIndex_Predict_EmptyIndex(t *testing.T) {
 		vectors:    make([]int16, 0),
 		labels:     make([]byte, 0),
 	}
+	for i := range idx.partitionsByKey {
+		idx.partitionsByKey[i] = -1
+	}
 
 	query := model.Vector14{0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5}
 	score := idx.Predict(query, 5)
@@ -458,6 +461,9 @@ func TestGridIndex_PredictRaw_NoPartitions(t *testing.T) {
 		partitions: make([]gridPartition, 0),
 		vectors:    make([]int16, 0),
 		labels:     make([]byte, 0),
+	}
+	for i := range idx.partitionsByKey {
+		idx.partitionsByKey[i] = -1
 	}
 
 	query := model.Vector14{0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5}
@@ -957,5 +963,35 @@ func TestQuantizeQuery_SmallValues(t *testing.T) {
 		if qi[d] != expected {
 			t.Errorf("qi[%d] for small value = %d, want %d", d, qi[d], expected)
 		}
+	}
+}
+
+func BenchmarkGridIndex_Predict(b *testing.B) {
+	gridPath := "../../resources/grid.bin"
+	idx, err := LoadGrid(gridPath)
+	if err != nil {
+		b.Fatalf("LoadGrid failed: %v", err)
+	}
+
+	query := model.Vector14{0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = idx.Predict(query, 5)
+	}
+}
+
+func BenchmarkGridIndex_PredictRaw(b *testing.B) {
+	gridPath := "../../resources/grid.bin"
+	idx, err := LoadGrid(gridPath)
+	if err != nil {
+		b.Fatalf("LoadGrid failed: %v", err)
+	}
+
+	query := model.Vector14{0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = idx.PredictRaw(query, 0)
 	}
 }
