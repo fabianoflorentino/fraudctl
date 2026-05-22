@@ -19,6 +19,9 @@ type gridBuilder struct {
 	n      int
 }
 
+// BuildGrid constructs a GridIndex (KD-tree with 8-bit partition keys) from
+// a gzipped JSON references file and writes it to outPath in binary format.
+// The index uses block-major vector layout for AVX2-accelerated scanning.
 func BuildGrid(refsGz, outPath string) error {
 	fmt.Printf("BuildGrid: loading %s ...\n", refsGz)
 

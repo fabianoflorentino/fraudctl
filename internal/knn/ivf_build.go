@@ -12,8 +12,12 @@ import (
 	"sync"
 )
 
+// K is the number of nearest neighbors used for fraud scoring.
 const K = 5
+
+// DIM is the dimensionality of the feature vectors.
 const DIM = 14
+
 const int16Scale = 10000
 const ivfMagic uint32 = 0x49564649
 

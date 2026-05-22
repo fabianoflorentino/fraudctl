@@ -43,6 +43,7 @@ var bucketBounds = [...]int64{250, 500, 750, 1000, 1500, 2000, 3000, 5000, 10000
 const numBuckets = len(bucketBounds) + 1 // +1 for >10ms
 
 // Stats holds lock-free counters updated on every request.
+// The zero value is ready to use (all counters start at 0).
 type Stats struct {
 	total        int64
 	errors       int64

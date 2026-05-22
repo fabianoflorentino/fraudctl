@@ -1,3 +1,6 @@
+// Package rawhttp provides a minimal, zero-allocation HTTP/1.1 server optimized
+// for the fraud detection API hot path. It parses requests manually from a
+// pooled buffer and routes to precomputed JSON responses.
 package rawhttp
 
 import (
@@ -8,6 +11,8 @@ import (
 	"time"
 )
 
+// Handler defines the interface for request routing. Implementations return
+// precomputed response bytes for fraud score and health check endpoints.
 type Handler interface {
 	ServeFraudScore(body []byte) []byte
 	ServeReady() []byte
@@ -81,14 +86,19 @@ const (
 	maxRequestSize = 2 * 1024
 )
 
+// Server is a minimal HTTP/1.1 server that processes connections directly
+// from a net.Conn without the overhead of net/http.
 type Server struct {
 	handler Handler
 }
 
+// New creates a new Server with the given handler.
 func New(handler Handler) *Server {
 	return &Server{handler: handler}
 }
 
+// ServeConn processes an HTTP connection, parsing requests and writing
+// precomputed responses. It supports pipelined requests on a single connection.
 func (s *Server) ServeConn(conn net.Conn) error {
 	defer func() { _ = conn.Close() }()
 
@@ -237,6 +247,7 @@ func (e *requestError) Error() string { return e.msg }
 
 var errRequestTooLarge = &requestError{"request too large"}
 
+// FraudResponse returns the precomputed HTTP response for the given fraud count.
 func FraudResponse(count int) []byte {
 	if count < 0 || count >= len(fraudResponses) {
 		return fraudResponses[0]
@@ -244,10 +255,12 @@ func FraudResponse(count int) []byte {
 	return fraudResponses[count]
 }
 
+// ReadyResponse returns the precomputed HTTP response for the /ready endpoint.
 func ReadyResponse() []byte {
 	return readyResponse
 }
 
+// NotFoundResponse returns the precomputed 404 response.
 func NotFoundResponse() []byte {
 	return notFoundResponse
 }

@@ -11,14 +11,18 @@ import (
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
 
+// BruteIndex is a brute-force KNN index that stores all vectors in a flat
+// float32 array. It is used as a fallback when no pre-built index is available.
 type BruteIndex struct {
 	flat       []float32
 	fraudFlags []bool
 	count      int
 }
 
+// NewBruteIndex creates an empty BruteIndex.
 func NewBruteIndex() *BruteIndex { return &BruteIndex{} }
 
+// Build populates the index from in-memory vectors and labels.
 func (b *BruteIndex) Build(vectors []model.Vector14, labels []bool) {
 	n := len(vectors)
 	b.count = n
@@ -29,6 +33,8 @@ func (b *BruteIndex) Build(vectors []model.Vector14, labels []bool) {
 	}
 }
 
+// BuildFromGzip loads vectors from a gzipped JSON file and builds the index.
+// The capacity parameter pre-allocates space for the expected number of vectors.
 func (b *BruteIndex) BuildFromGzip(path string, capacity int) error {
 	f, err := os.Open(path)
 	if err != nil {
@@ -74,6 +80,7 @@ func (b *BruteIndex) BuildFromGzip(path string, capacity int) error {
 	return nil
 }
 
+// Predict returns the fraud score for the given query using brute-force search.
 func (b *BruteIndex) Predict(query model.Vector14, k int) float64 {
 	return brutePredict(b.flat, b.fraudFlags, b.count, query, k)
 }
@@ -89,8 +96,10 @@ func (b *BruteIndex) PredictRaw(query model.Vector14, _ int) int {
 // NProbe for BruteIndex returns 0 — not applicable for exact search.
 func (b *BruteIndex) NProbe() int { return 0 }
 
+// Count returns the total number of vectors in the index.
 func (b *BruteIndex) Count() int { return b.count }
 
+// FraudCount returns the total number of fraud-labeled vectors.
 func (b *BruteIndex) FraudCount() int {
 	n := 0
 	for _, f := range b.fraudFlags {

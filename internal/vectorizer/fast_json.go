@@ -478,6 +478,9 @@ func parseUnixSecondsBytes(b []byte) int64 {
 	return days*86400 + hour*3600 + min*60 + sec
 }
 
+// VectorizeJSON parses a raw JSON request body and returns a 14-dimensional
+// feature vector. It uses a manual byte-oriented parser to avoid the overhead
+// of json.Unmarshal on the full request struct.
 func (v *Vectorizer) VectorizeJSON(data []byte) (model.Vector14, error) {
 	var vec model.Vector14
 

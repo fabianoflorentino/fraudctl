@@ -21,10 +21,19 @@ import (
 // Total vetores quick scan: 16×732 = 11.712.
 //============================================================================
 
+// IVF_NPROBE is the default number of IVF clusters to probe during search.
 const IVF_NPROBE = 128
+
+// IVF_QUICK_PROBE is the default number of IVF clusters for the quick probe pass.
 const IVF_QUICK_PROBE = 80
+
+// IVF_BOUNDARY_LO is the lower bound of the ambiguous fraud count zone.
 const IVF_BOUNDARY_LO = 2
+
+// IVF_BOUNDARY_HI is the upper bound of the ambiguous fraud count zone.
 const IVF_BOUNDARY_HI = 3
+
+// IVF_RETRY_EXTRA is the number of extra clusters to probe on retry (currently 0).
 const IVF_RETRY_EXTRA = 0
 
 // Dataset holds config and the KNN index needed to serve requests.

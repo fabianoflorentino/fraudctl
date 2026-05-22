@@ -1,3 +1,6 @@
+// Package logreg implements a logistic regression model for binary classification.
+// It supports training with class balancing, prediction, serialization,
+// and evaluation on labeled datasets.
 package logreg
 
 import (
@@ -14,12 +17,15 @@ const (
 	threshold   = 0.5
 )
 
+// Model represents a trained logistic regression classifier. It operates on
+// expanded feature vectors that include pairwise interaction terms.
 type Model struct {
 	weights []float64
 	bias    float64
 	dim     int
 }
 
+// NewModel creates a new untrained logistic regression model with zero weights.
 func NewModel() *Model {
 	return &Model{
 		weights: make([]float64, dimExpanded),
@@ -54,6 +60,8 @@ func expand(v [dimInput]float32) []float64 {
 	return feat
 }
 
+// Train trains the model using stochastic gradient descent with class balancing.
+// It uses a subsample of up to 300k vectors for 30 iterations with decaying learning rate.
 func (m *Model) Train(vectors []float32, labels []bool, n int) {
 	rng := randNew(42)
 
@@ -143,6 +151,7 @@ func (m *Model) Train(vectors []float32, labels []bool, n int) {
 	}
 }
 
+// Predict returns the probability that the input vector belongs to the positive class.
 func (m *Model) Predict(v [dimInput]float32) float64 {
 	feat := expand(v)
 	var dot float64
@@ -153,6 +162,7 @@ func (m *Model) Predict(v [dimInput]float32) float64 {
 	return sigmoid(dot)
 }
 
+// WriteTo serializes the model to binary format (magic + version + dim + bias + weights).
 func (m *Model) WriteTo(w io.Writer) (int64, error) {
 	buf := make([]byte, 0, 8+m.dim*8)
 	buf = binary.LittleEndian.AppendUint32(buf, 0x4C4F4752)
@@ -166,6 +176,7 @@ func (m *Model) WriteTo(w io.Writer) (int64, error) {
 	return int64(n), err
 }
 
+// LoadFrom deserializes a model from binary format.
 func LoadFrom(r io.Reader) (*Model, error) {
 	data, err := io.ReadAll(r)
 	if err != nil {
@@ -192,6 +203,7 @@ func LoadFrom(r io.Reader) (*Model, error) {
 	return m, nil
 }
 
+// Evaluate computes the confusion matrix (TP, TN, FP, FN) for the given dataset.
 func (m *Model) Evaluate(vectors []float32, labels []bool, n int) (tp, tn, fp, fn int) {
 	for i := range n {
 		var v [dimInput]float32

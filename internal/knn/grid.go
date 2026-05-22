@@ -14,6 +14,9 @@ import (
 const gridMagic = uint32(0x4B445452)
 const gridVersion = uint32(2)
 
+// GridIndex is an exact KNN index using a KD-tree with 8-bit partition keys.
+// It stores 3M vectors in block-major layout for AVX2-accelerated leaf scanning.
+// Partition lookup is O(1) via a direct-indexed array.
 type GridIndex struct {
 	n               int
 	nodes           []gridNode
@@ -48,8 +51,10 @@ type gridScratch struct {
 	blockSum    [8]float32
 }
 
+// Count returns the total number of vectors in the index.
 func (idx *GridIndex) Count() int { return idx.n }
 
+// FraudCount returns the total number of fraud-labeled vectors in the index.
 func (idx *GridIndex) FraudCount() int {
 	n := 0
 	for i := 0; i < idx.n; i++ {
@@ -60,12 +65,16 @@ func (idx *GridIndex) FraudCount() int {
 	return n
 }
 
+// Predict returns the fraud score (fraudCount/K) for the given query vector.
 func (idx *GridIndex) Predict(query model.Vector14, k int) float64 {
 	return float64(idx.PredictRaw(query, 0)) / float64(K)
 }
 
+// NProbe returns 0 since the GridIndex does not use adaptive probing.
 func (idx *GridIndex) NProbe() int { return 0 }
 
+// PredictRaw returns the count of fraudulent neighbors among the K=5 nearest
+// neighbors. The nprobe parameter is ignored (GridIndex is exact).
 func (idx *GridIndex) PredictRaw(query model.Vector14, _ int) int {
 	qi := quantizeQuery(query)
 	key := gridPartitionKey(&qi)
@@ -372,6 +381,11 @@ func exactI64Dist(qi *[DIM]int16, block *int16, lane int) uint64 {
 	return ssd
 }
 
+// LoadGrid loads a GridIndex from a binary file. The file format is:
+// magic (4B) + version (4B) + n (4B) + dim (4B) + nparts (4B) + nnodes (4B)
+// + partitions + nodes + vectors (block-major int16) + labels (bit-packed).
+// It also starts a background goroutine to periodically touch the vector
+// array, keeping pages resident in memory.
 func LoadGrid(path string) (*GridIndex, error) {
 	f, err := os.Open(path)
 

@@ -34,6 +34,7 @@ type IVFIndex struct {
 	boundaryHi    int
 }
 
+// SetNProbe sets the number of clusters to probe during IVF search.
 func (idx *IVFIndex) SetNProbe(n int) {
 	if n < 1 {
 		n = 1
@@ -41,6 +42,7 @@ func (idx *IVFIndex) SetNProbe(n int) {
 	idx.nprobe = n
 }
 
+// NProbe returns the current number of clusters to probe.
 func (idx *IVFIndex) NProbe() int { return idx.nprobe }
 
 // SetRetry configures 2-tier early exit strategy.
@@ -53,6 +55,7 @@ func (idx *IVFIndex) SetRetry(quick, lo, hi int) {
 	idx.boundaryHi = hi
 }
 
+// NewIVFIndex creates an empty IVFIndex.
 func NewIVFIndex() *IVFIndex { return &IVFIndex{} }
 
 // LoadIVF loads an IVF index in format v5 (AoS, bit-packed labels, bbox per cluster).
@@ -170,6 +173,8 @@ func LoadIVF(path string) (*IVFIndex, error) {
 	return idx, nil
 }
 
+// Predict returns the fraud score (fraudCount/K) for the given query vector
+// using the current nprobe setting.
 func (idx *IVFIndex) Predict(query model.Vector14, k int) float64 {
 	return float64(idx.PredictRaw(query, idx.nprobe)) / float64(K)
 }
@@ -180,6 +185,7 @@ func (idx *IVFIndex) Count() int {
 	return int(idx.offsets[idx.nlist])
 }
 
+// FraudCount returns the total number of fraud-labeled vectors in the index.
 func (idx *IVFIndex) FraudCount() int {
 	n := 0
 	total := idx.Count()
@@ -191,8 +197,13 @@ func (idx *IVFIndex) FraudCount() int {
 	return n
 }
 
-func (idx *IVFIndex) DebugNList() int           { return idx.nlist }
-func (idx *IVFIndex) DebugOffsets() []uint32    { return idx.offsets }
+// DebugNList returns the number of clusters in the index (for testing).
+func (idx *IVFIndex) DebugNList() int { return idx.nlist }
+
+// DebugOffsets returns the cluster offset array (for testing).
+func (idx *IVFIndex) DebugOffsets() []uint32 { return idx.offsets }
+
+// DebugCentroids returns the centroid array in SoA layout (for testing).
 func (idx *IVFIndex) DebugCentroids() []float32 { return idx.centroids }
 
 // ensureCentroidNorms lazily computes centroid norms if not already set.
