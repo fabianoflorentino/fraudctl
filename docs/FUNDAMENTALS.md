@@ -103,18 +103,28 @@ func quantizeFloat32(v float32) int16 {
 LB(q, bbox) = Σ max(0, q[i] - bboxMax[i])² + max(0, bboxMin[i] - q[i])²
 ```
 
-```
-         bboxMin[i]          bboxMax[i]
-              |                  |
-    ----------|==================|----------
-              |                  |
-              q[i] (dentro) → diff = 0
+```mermaid
+flowchart LR
+    subgraph "Caso 1: q[i] dentro da bbox → diff = 0"
+        direction LR
+        L1[ ] ---|"bboxMin[i]"| M1["● q[i]"]
+        M1 ---|"bboxMax[i]"| R1[ ]
+        style M1 fill:#4ade80
+    end
 
-              bboxMin[i]     bboxMax[i]
-                   |              |
-    ---------------|==============|----------
-                   |              |
-    q[i] (fora) →  |← diff →|
+    subgraph "Caso 2: q[i] abaixo da bbox → diff = bboxMin - q"
+        direction LR
+        L2["● q[i]"] -. "diff" .-> M2["bboxMin[i]"]
+        M2 === R2["bboxMax[i]"]
+        style L2 fill:#f87171
+    end
+
+    subgraph "Caso 3: q[i] acima da bbox → diff = q - bboxMax"
+        direction LR
+        L3["bboxMin[i]"] === M3["bboxMax[i]"]
+        M3 -. "diff" .-> R3["● q[i]"]
+        style R3 fill:#f87171
+    end
 ```
 
 ```go
