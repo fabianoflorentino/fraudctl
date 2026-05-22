@@ -24,7 +24,6 @@ type GridIndex struct {
 	partitionsByKey [256]int32
 	vectors         []int16
 	labels          []byte
-	scratch         gridScratch
 }
 
 type gridNode struct {
@@ -81,7 +80,7 @@ func (idx *GridIndex) PredictRaw(query model.Vector14, _ int) int {
 
 	h := newTopK5()
 
-	idx.scratch = gridScratch{}
+	var scratch gridScratch
 
 	sameIdx := idx.partitionsByKey[key]
 
@@ -89,17 +88,19 @@ func (idx *GridIndex) PredictRaw(query model.Vector14, _ int) int {
 		p := &idx.partitions[sameIdx]
 		lb := gridBBoxLowerBound(&qi, &p.bboxMin, &p.bboxMax)
 		if lb < h.worstDist() {
-			gridSearchKDTree(p.root, lb, &qi, &h, idx)
+			gridSearchKDTree(p.root, lb, &qi, &h, idx, &scratch)
 		}
 		if h.worstDist() == 0 {
 			return h.fraudCount(idx.labels)
 		}
 	}
 
-	nOther := 0
 	for i := range idx.partitions {
 		if int32(i) == sameIdx {
 			continue
+		}
+		if h.worstDist() == 0 {
+			break
 		}
 		p := &idx.partitions[i]
 		var lb uint64
@@ -118,16 +119,14 @@ func (idx *GridIndex) PredictRaw(query model.Vector14, _ int) int {
 			}
 		}
 		if lb < worst {
-			gridSearchKDTree(p.root, lb, &qi, &h, idx)
-			nOther++
+			gridSearchKDTree(p.root, lb, &qi, &h, idx, &scratch)
 		}
 	}
-	_ = nOther
 
 	return h.fraudCount(idx.labels)
 }
 
-func gridSearchKDTree(root int32, rootBound uint64, qi *[DIM]int16, h *topK5, idx *GridIndex) {
+func gridSearchKDTree(root int32, rootBound uint64, qi *[DIM]int16, h *topK5, idx *GridIndex, scratch *gridScratch) {
 	stackLen := 0
 	current := root
 	currentBound := rootBound
@@ -136,7 +135,7 @@ func gridSearchKDTree(root int32, rootBound uint64, qi *[DIM]int16, h *topK5, id
 		if currentBound < h.worstDist() {
 			n := &idx.nodes[current]
 			if n.left < 0 || n.right < 0 {
-				gridScanLeaf(idx.vectors, idx.labels, int(n.blockStart), int(n.vecOffset), int(n.blockLen), *qi, h, &idx.scratch.blockSum)
+				gridScanLeaf(idx.vectors, idx.labels, int(n.blockStart), int(n.vecOffset), int(n.blockLen), *qi, h, &scratch.blockSum)
 			} else {
 				lNode := &idx.nodes[n.left]
 				rNode := &idx.nodes[n.right]
@@ -155,8 +154,8 @@ func gridSearchKDTree(root int32, rootBound uint64, qi *[DIM]int16, h *topK5, id
 
 				worst := h.worstDist()
 				if farBound < worst && stackLen < 64 {
-					idx.scratch.stackNodes[stackLen] = farIdx
-					idx.scratch.stackBounds[stackLen] = farBound
+					scratch.stackNodes[stackLen] = farIdx
+					scratch.stackBounds[stackLen] = farBound
 					stackLen++
 				}
 
@@ -172,8 +171,8 @@ func gridSearchKDTree(root int32, rootBound uint64, qi *[DIM]int16, h *topK5, id
 			return
 		}
 		stackLen--
-		current = idx.scratch.stackNodes[stackLen]
-		currentBound = idx.scratch.stackBounds[stackLen]
+		current = scratch.stackNodes[stackLen]
+		currentBound = scratch.stackBounds[stackLen]
 	}
 }
 

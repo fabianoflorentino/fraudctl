@@ -417,21 +417,11 @@ func TestWidestDim_AllSame(t *testing.T) {
 func TestQuantizeQuery_Extreme(t *testing.T) {
 	query := model.Vector14{2.0, -2.0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 	qi := quantizeQuery(query)
-	if qi[0] != int16Scale {
-		t.Errorf("qi[0] = %d, want %d", qi[0], int16Scale)
+	if qi[0] != 20000 {
+		t.Errorf("qi[0] = %d, want 20000", qi[0])
 	}
-	if qi[1] != -int16Scale {
-		t.Errorf("qi[1] = %d, want %d", qi[1], -int16Scale)
-	}
-}
-
-func TestGridScratch_Reset(t *testing.T) {
-	idx := &GridIndex{}
-	idx.scratch = gridScratch{}
-	idx.scratch.stackNodes[0] = 42
-	idx.scratch = gridScratch{}
-	if idx.scratch.stackNodes[0] != 0 {
-		t.Error("scratch should be zeroed after reset")
+	if qi[1] != -20000 {
+		t.Errorf("qi[1] = %d, want -20000", qi[1])
 	}
 }
 

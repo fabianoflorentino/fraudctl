@@ -486,11 +486,7 @@ func quantizeQuery(query model.Vector14) [DIM]int16 {
 	var q [DIM]int16
 	for i := 0; i < DIM; i++ {
 		v := query[i]
-		if v > 1.0 {
-			q[i] = int16Scale
-		} else if v < -1.0 {
-			q[i] = -int16Scale
-		} else if v < 0 {
+		if v < 0 {
 			q[i] = int16(v*int16Scale - 0.5)
 		} else {
 			q[i] = int16(v*int16Scale + 0.5)

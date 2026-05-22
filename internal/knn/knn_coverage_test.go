@@ -256,11 +256,11 @@ func TestQuantizeQuery_AllNegOnes(t *testing.T) {
 func TestQuantizeQuery_OutOfRange(t *testing.T) {
 	query := model.Vector14{2.0, -2.0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 	qi := quantizeQuery(query)
-	if qi[0] != int16Scale {
-		t.Errorf("qi[0] (clamped) = %d, want %d", qi[0], int16Scale)
+	if qi[0] != 20000 {
+		t.Errorf("qi[0] = %d, want 20000", qi[0])
 	}
-	if qi[1] != -int16Scale {
-		t.Errorf("qi[1] (clamped) = %d, want %d", qi[1], -int16Scale)
+	if qi[1] != -20000 {
+		t.Errorf("qi[1] = %d, want -20000", qi[1])
 	}
 }
 
@@ -374,11 +374,11 @@ func TestSelectProbes_ExactMatch(t *testing.T) {
 func TestQuantizeQuery_ExtremeValues(t *testing.T) {
 	query := model.Vector14{1.5, -1.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 	qi := quantizeQuery(query)
-	if qi[0] != int16Scale {
-		t.Errorf("qi[0] for 1.5 = %d, want %d", qi[0], int16Scale)
+	if qi[0] != 15000 {
+		t.Errorf("qi[0] for 1.5 = %d, want 15000", qi[0])
 	}
-	if qi[1] != -int16Scale {
-		t.Errorf("qi[1] for -1.5 = %d, want %d", qi[1], -int16Scale)
+	if qi[1] != -15000 {
+		t.Errorf("qi[1] for -1.5 = %d, want -15000", qi[1])
 	}
 }
 

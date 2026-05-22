@@ -108,18 +108,17 @@ type httpHandler struct {
 }
 
 func (h *httpHandler) ServeFraudScore(body []byte) []byte {
-	var start time.Time
-	if middleware.IsEnabled() {
-		start = time.Now()
+	if !middleware.IsEnabled() {
+		count := h.fraudHandler.HandleFraudScore(body)
+		return rawhttp.FraudResponse(count)
 	}
-	count := h.fraudHandler.HandleFraudScore(body)
 
-	if middleware.IsEnabled() {
-		elapsed := time.Since(start)
-		approved := count < 3
-		parseErr := count == 0 && !isLikelyValidJSON(body)
-		middleware.Record(elapsed, elapsed/2, elapsed/2, count, approved, parseErr)
-	}
+	start := time.Now()
+	count := h.fraudHandler.HandleFraudScore(body)
+	elapsed := time.Since(start)
+	approved := count < 3
+	parseErr := count == 0 && !isLikelyValidJSON(body)
+	middleware.Record(elapsed, elapsed/2, elapsed/2, count, approved, parseErr)
 
 	return rawhttp.FraudResponse(count)
 }
