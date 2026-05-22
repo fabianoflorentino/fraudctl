@@ -21,8 +21,8 @@ import (
 // Total vetores quick scan: 16×732 = 11.712.
 //============================================================================
 
-const IVF_NPROBE = 224
-const IVF_QUICK_PROBE = 96
+const IVF_NPROBE = 128
+const IVF_QUICK_PROBE = 80
 const IVF_BOUNDARY_LO = 2
 const IVF_BOUNDARY_HI = 3
 const IVF_RETRY_EXTRA = 0
@@ -114,7 +114,7 @@ func LoadVectorizerOnly(path string) (*Dataset, error) {
 }
 
 // LoadDefault loads the dataset from path.
-// Priority: ivf.bin (IVF approximate) > references.json.gz (fallback).
+// Priority: grid.bin (exact grid) > ivf.bin (IVF approximate) > references.json.gz (fallback).
 func LoadDefault(path string) (*Dataset, error) {
 	loader := NewLoader(path)
 
@@ -130,18 +130,29 @@ func LoadDefault(path string) (*Dataset, error) {
 
 	var idx KNNIndex
 
-	// Priority 1: IVF index (primary - fast and accurate)
-	ivfPath := filepath.Join(path, "ivf.bin")
-	if _, err := os.Stat(ivfPath); err == nil {
-		ivf, err := knn.LoadIVF(ivfPath)
+	// Priority 1: Grid index (exact, fastest)
+	gridPath := filepath.Join(path, "grid.bin")
+	if _, err := os.Stat(gridPath); err == nil {
+		grid, err := knn.LoadGrid(gridPath)
 		if err == nil {
-			ivf.SetNProbe(IVF_NPROBE)
-			ivf.SetRetry(IVF_QUICK_PROBE, IVF_BOUNDARY_LO, IVF_BOUNDARY_HI)
-			idx = ivf
+			idx = grid
 		}
 	}
 
-	// Priority 2: Brute force from gzip (fallback)
+	// Priority 2: IVF index (approximate, fast)
+	if idx == nil {
+		ivfPath := filepath.Join(path, "ivf.bin")
+		if _, err := os.Stat(ivfPath); err == nil {
+			ivf, err := knn.LoadIVF(ivfPath)
+			if err == nil {
+				ivf.SetNProbe(IVF_NPROBE)
+				ivf.SetRetry(IVF_QUICK_PROBE, IVF_BOUNDARY_LO, IVF_BOUNDARY_HI)
+				idx = ivf
+			}
+		}
+	}
+
+	// Priority 3: Brute force from gzip (fallback)
 	if idx == nil {
 		brute := knn.NewBruteIndex()
 		gzPath := filepath.Join(path, "references.json.gz")
