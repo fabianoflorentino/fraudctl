@@ -1,7 +1,10 @@
-// build-index pre-computes IVF indexes from references.json.gz.
+// build-index pre-computes IVF or Grid indexes from references.json.gz.
 // Runs at docker build time so the API startup only needs to load the files.
 //
-// Usage: build-index -resources /path/to/resources -nlist 500 -iterations 20
+// Usage: build-index -resources /path/to/resources
+//
+//	build-index -resources /path/to/resources -grid
+//	build-index -resources /path/to/resources -nlist 4096 -iterations 20
 package main
 
 import (
@@ -16,12 +19,22 @@ func main() {
 	resources := flag.String("resources", "./resources", "Path to resources directory")
 	nlist := flag.Int("nlist", 4096, "Number of IVF clusters")
 	iterations := flag.Int("iterations", 30, "K-means iterations")
+	grid := flag.Bool("grid", false, "Build grid index instead of IVF")
 
 	flag.Parse()
 
 	refsGz := filepath.Join(*resources, "references.json.gz")
 
-	// Build IVF index
+	if *grid {
+		gridPath := filepath.Join(*resources, "grid.bin")
+		log.Println("Building grid index...")
+		if err := knn.BuildGrid(refsGz, gridPath); err != nil {
+			log.Fatalf("BuildGrid failed: %v", err)
+		}
+		log.Printf("Grid index written to %s", gridPath)
+		return
+	}
+
 	ivfPath := filepath.Join(*resources, "ivf.bin")
 	log.Printf("Building IVF index: nlist=%d iterations=%d", *nlist, *iterations)
 

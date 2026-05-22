@@ -115,6 +115,11 @@ build-index: ## Build IVF index locally (resources/ivf.bin)
 	@go run ./cmd/build-index/ -resources ./resources -nlist 4096 -iterations 36
 	@echo -e "$(GREEN)✓ Index built at resources/ivf.bin$(NC)"
 
+build-grid: ## Build grid index locally (resources/grid.bin)
+	@echo -e "$(BLUE)🔨 Building grid index...$(NC)"
+	@go run ./cmd/build-index/ -grid -resources ./resources
+	@echo -e "$(GREEN)✓ Grid index built at resources/grid.bin$(NC)"
+
 all: fmt vet test build ## Format, vet, test and build
 
 ##@ Benchmarks
