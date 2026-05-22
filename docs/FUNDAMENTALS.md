@@ -4,19 +4,20 @@ Este documento cobre **todos os conceitos fundamentais** implementados no projet
 
 ## Índice
 
-1. [Matemática Fundamental](#matemática-fundamental)
-2. [Algoritmos de Busca KNN](#algoritmos-de-busca-knn)
-3. [Estruturas de Dados Espaciais](#estruturas-de-dados-espaciais)
-4. [Técnicas de Decisão](#técnicas-de-decisão)
-5. [Padrões Go Fundamentais](#padrões-go-fundamentais)
-6. [Concorrência e Sincronização](#concorrência-e-sincronização)
-7. [Otimizações de Baixo Nível](#otimizações-de-baixo-nível)
-8. [Arquitetura de Sistema](#arquitetura-de-sistema)
-9. [Processamento de Dados](#processamento-de-dados)
-10. [Redes e Protocolos](#redes-e-protocolos)
+1. [Matemática Fundamental](#1-matematica-fundamental)
+2. [Algoritmos de Busca KNN](#2-algoritmos-de-busca-knn)
+3. [Estruturas de Dados Espaciais](#3-estruturas-de-dados-espaciais)
+4. [Técnicas de Decisão](#4-tecnicas-de-decisao)
+5. [Padrões Go Fundamentais](#5-padroes-go-fundamentais)
+6. [Concorrência e Sincronização](#6-concorrencia-e-sincronizacao)
+7. [Otimizações de Baixo Nível](#7-otimizacao-de-baixo-nivel)
+8. [Arquitetura de Sistema](#8-arquitetura-de-sistema)
+9. [Processamento de Dados](#9-processamento-de-dados)
+10. [Redes e Protocolos](#10-redes-e-protocolos)
 
 ---
 
+<a id="1-matematica-fundamental"></a>
 ## 1. Matemática Fundamental
 
 ### 1.1 Distância Euclidiana Quadrada (L2²)
@@ -200,6 +201,7 @@ Onde `weight_class = n / (2 · n_class)` para balancear classes desiguais.
 
 ---
 
+<a id="2-algoritmos-de-busca-knn"></a>
 ## 2. Algoritmos de Busca KNN
 
 ### 2.1 Brute Force (Força Bruta)
@@ -352,6 +354,7 @@ func widestDim(nmin, nmax *[DIM]int16) int {
 
 ---
 
+<a id="3-estruturas-de-dados-espaciais"></a>
 ## 3. Estruturas de Dados Espaciais
 
 ### 3.1 Layout Block-Major (SoA para SIMD)
@@ -451,6 +454,7 @@ func (h *topK5) tryInsert(dist uint64, vecIdx int) {
 
 ---
 
+<a id="4-tecnicas-de-decisao"></a>
 ## 4. Técnicas de Decisão
 
 ### 4.1 KNN Fraud Scoring
@@ -555,6 +559,7 @@ func gridPartitionKey(v *[DIM]int16) uint32 {
 
 ---
 
+<a id="5-padroes-go-fundamentais"></a>
 ## 5. Padrões Go Fundamentais
 
 ### 5.1 Interfaces Pequenas (Interface Segregation)
@@ -672,6 +677,7 @@ func NewDataset(refs []model.Reference) *Dataset {
 
 ---
 
+<a id="6-concorrencia-e-sincronizacao"></a>
 ## 6. Concorrência e Sincronização
 
 ### 6.1 sync.Pool para Reutilização
@@ -795,6 +801,7 @@ wg.Wait()
 
 ---
 
+<a id="7-otimizacao-de-baixo-nivel"></a>
 ## 7. Otimizações de Baixo Nível
 
 ### 7.1 SIMD com Go Assembly (AVX2)
@@ -942,6 +949,7 @@ vec[0] = float32(amount) * v.invMaxAmount
 
 ---
 
+<a id="8-arquitetura-de-sistema"></a>
 ## 8. Arquitetura de Sistema
 
 ### 8.1 FD Passing via SCM_RIGHTS
@@ -1106,6 +1114,7 @@ func LoadDefault(path string) (*Dataset, error) {
 
 ---
 
+<a id="9-processamento-de-dados"></a>
 ## 9. Processamento de Dados
 
 ### 9.1 Vectorização de Features
@@ -1240,6 +1249,7 @@ func clampFloat32(val float32) float32 {
 
 ---
 
+<a id="10-redes-e-protocolos"></a>
 ## 10. Redes e Protocolos
 
 ### 10.1 HTTP/1.1 Manual
