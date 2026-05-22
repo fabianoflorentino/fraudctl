@@ -23,7 +23,7 @@ Este documento cobre **todos os conceitos fundamentais** implementados no projet
 
 **Conceito:** Medida de similaridade entre dois vetores no espaço euclidiano.
 
-```
+```txt
 d²(q, v) = Σ(q[i] - v[i])²
 ```
 
@@ -48,11 +48,12 @@ func exactI64Dist(qi *[DIM]int16, block *int16, lane int) uint64 {
 
 **Conceito:** Para IVF, a distância L2 pode ser calculada via produto escalar:
 
-```
+```txt
 ||q - c||² = ||q||² + ||c||² - 2 · (q · c)
 ```
 
 Onde:
+
 - `||q||²` = norma da query (calculada por request)
 - `||c||²` = norma do centroide (pré-computada)
 - `q · c` = produto escalar (calculado via SIMD)
@@ -1307,3 +1308,190 @@ if tc, ok := conn.(*net.TCPConn); ok {
 | **Otimizações** | SIMD AVX2, Loop unrolling, Precomputed responses, Multiplication by inverse, Cache-line padding, PREFETCHT0 |
 | **Arquitetura** | FD passing SCM_RIGHTS, HTTP parser manual, Resource loading priority, Round-robin LB |
 | **Redes** | HTTP/1.1 manual, Unix domain sockets, TCP_NODELAY, Keepalive, Read/Write deadlines |
+
+---
+
+## Referências e Papers dos Algoritmos
+
+Esta seção lista os algoritmos fundamentais usados no projeto, com breve descrição e links para os papers originais ou materiais de referência.
+
+### K-Nearest Neighbors (KNN)
+
+**Descrição:** Algoritmo de classificação que atribui a classe mais frequente entre os K vizinhos mais próximos no espaço de features.
+
+**Uso no projeto:** Classificação de fraude baseada nos 5 vizinhos mais próximos entre 3M vetores de referência.
+
+**Paper original:**
+- Cover, T. & Hart, P. (1967). ["Nearest neighbor pattern classification"](https://ieeexplore.ieee.org/document/1053964). IEEE Transactions on Information Theory, 13(1), 21-27.
+
+**Material adicional:**
+- [Wikipedia: k-NN](https://en.wikipedia.org/wiki/K-nearest_neighbors_algorithm)
+- [Stanford CS229 Notes](https://cs229.stanford.edu/notes2021fall/cs229-notes2.pdf)
+
+### Inverted File Index (IVF)
+
+**Descrição:** Técnica de busca aproximada que particiona o espaço em clusters Voronoi e busca apenas nos clusters mais próximos à query.
+
+**Uso no projeto:** Fallback quando `grid.bin` não está disponível. Usa K-means para criar clusters e busca adaptativa 2-tier.
+
+**Paper original:**
+- Jégou, H., Douze, M. & Schmid, C. (2011). ["Product Quantization for Nearest Neighbor Search"](https://lear.inrialpes.fr/pubs/2011/JDS11/jegou_searching_with_quantization.pdf). IEEE Transactions on Pattern Analysis and Machine Intelligence, 33(1), 117-128.
+
+**Material adicional:**
+- [Faiss IVF documentation](https://github.com/facebookresearch/faiss/wiki/The-index-factory#inverted-file-index-ivf)
+- [PQ and IVF explained](https://wangzwhu.github.io/academic/file/acmmm-t-part1.pdf)
+
+### KD-tree (K-Dimensional Tree)
+
+**Descrição:** Árvore binária que particiona o espaço K-dimensional recursivamente pela dimensão de maior variância, permitindo busca eficiente por vizinhos mais próximos.
+
+**Uso no projeto:** Índice principal (`grid.bin`) com partições de 8 bits e KD-tree por partição. Busca exata com bounds pruning.
+
+**Paper original:**
+- Bentley, J. L. (1975). ["Multidimensional binary search trees used for associative searching"](https://dl.acm.org/doi/10.1145/361002.361007). Communications of the ACM, 18(9), 509-517.
+
+**Material adicional:**
+- [Wikipedia: KD-tree](https://en.wikipedia.org/wiki/K-d_tree)
+- [CMU Computational Geometry Notes](https://www.cs.cmu.edu/~ckingsf/bioinfo-lectures/kdtrees.pdf)
+
+### K-means Clustering
+
+**Descrição:** Algoritmo iterativo que particiona N pontos em K clusters, minimizando a soma das distâncias quadradas intra-cluster.
+
+**Uso no projeto:** Construção do índice IVF — cria `nlist` clusters de centroides para particionar os 3M vetores.
+
+**Paper original:**
+- Lloyd, S. P. (1982). ["Least squares quantization in PCM"](https://ieeexplore.ieee.org/document/1056489). IEEE Transactions on Information Theory, 28(2), 129-137.
+- MacQueen, J. (1967). ["Some methods for classification and analysis of multivariate observations"](https://projecteuclid.org/euclid.bsmsp/1200512992). Proceedings of the Fifth Berkeley Symposium, 1, 281-297.
+
+**Material adicional:**
+- [Wikipedia: K-means](https://en.wikipedia.org/wiki/K-means_clustering)
+- [Stanford CS229 Notes](https://cs229.stanford.edu/notes2021fall/cs229-notes7a.pdf)
+
+### Regressão Logística
+
+**Descrição:** Modelo linear para classificação binária que usa a função sigmoide para mapear combinações lineares de features para probabilidades.
+
+**Uso no projeto:** Modelo legado (`model.bin`) que pode ser usado como prefilter. Inclui termos de interação de segunda ordem.
+
+**Paper original:**
+- Cox, D. R. (1958). ["The regression analysis of binary sequences"](https://rss.onlinelibrary.wiley.com/doi/abs/10.1111/j.2517-6161.1958.tb00292.x). Journal of the Royal Statistical Society, Series B, 20(2), 215-242.
+
+**Material adicional:**
+- [Wikipedia: Logistic Regression](https://en.wikipedia.org/wiki/Logistic_regression)
+- [Stanford CS229 Notes](https://cs229.stanford.edu/notes2021fall/cs229-notes1.pdf)
+
+### Bounding Box Pruning
+
+**Descrição:** Técnica de otimização que calcula um lower bound da distância entre uma query e um hiper-retângulo (bounding box). Se o lower bound excede o pior candidato atual, o grupo inteiro pode ser ignorado.
+
+**Uso no projeto:** Usado tanto no KD-tree quanto no IVF para pular clusters/partições que não podem conter vizinhos melhores.
+
+**Paper original:**
+- Ciaccia, P., Patella, M. & Zezula, P. (1997). ["M-tree: An Efficient Access Method for Similarity Search in Metric Spaces"](https://dl.acm.org/doi/10.5555/1643721.1643757). VLDB Conference, 426-435.
+
+**Material adicional:**
+- [Similarity Search lecture notes](https://www.db.in.tum.de/teaching/ws1920/simsearch/lec04-handout.pdf)
+
+### SIMD (Single Instruction, Multiple Data)
+
+**Descrição:** Paradigma de computação paralela onde uma única instrução opera em múltiplos dados simultaneamente. AVX2 processa 8 float32 ou 16 int16 em registradores de 256 bits.
+
+**Uso no projeto:** `ScanBlock8AVX2` calcula distâncias L2² entre query e 8 vetores simultaneamente, com early exit na dimensão 8.
+
+**Documentação:**
+- [Intel AVX2 Intrinsics Guide](https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#techs=AVX_ALL)
+- [Agner Fog: Instruction Tables](https://www.agner.org/optimize/instruction_tables.pdf)
+
+**Material adicional:**
+- [Wikipedia: SIMD](https://en.wikipedia.org/wiki/SIMD)
+- [Go Assembly documentation](https://go.dev/doc/asm)
+
+### File Descriptor Passing (SCM_RIGHTS)
+
+**Descrição:** Mecanismo POSIX para transferir file descriptors entre processos via Unix domain sockets usando mensagens de controle ancillary.
+
+**Uso no projeto:** Load balancer transfere conexões TCP para as APIs sem proxy HTTP, eliminando overhead de cópia de dados.
+
+**Documentação:**
+- [POSIX: cmsg(3)](https://man7.org/linux/man-pages/man3/cmsg.3.html)
+- [Unix Network Programming, Vol 1, Ch 15](https://www.amazon.com/UNIX-Network-Programming-Sockets-Networking/dp/0131411551)
+
+**Material adicional:**
+- [Linux man page: unix(7)](https://man7.org/linux/man-pages/man7/unix.7.html)
+- [Go: syscall.UnixRights](https://pkg.go.dev/syscall#UnixRights)
+
+### Nagle's Algorithm e TCP_NODELAY
+
+**Descrição:** Algoritmo que agrupa pequenos pacotes TCP para melhorar eficiência de rede. `TCP_NODELAY` desabilita este comportamento para reduzir latência.
+
+**Uso no projeto:** `SetNoDelay(true)` em cada conexão TCP aceita para garantir baixa latência no hot path.
+
+**Paper original:**
+- Nagle, J. (1984). ["Congestion Control in IP/TCP Internetworks"](https://www.rfc-editor.org/rfc/rfc896). RFC 896.
+
+**Material adicional:**
+- [Wikipedia: Nagle's Algorithm](https://en.wikipedia.org/wiki/Nagle%27s_algorithm)
+- [TCP/IP Illustrated, Vol 1](https://www.amazon.com/Tcp-Ip-Illustrated-Volume-Addison-Wesley/dp/0201633469)
+
+### sync.Pool
+
+**Descrição:** Pool de objetos reutilizáveis que reduz pressão no GC ao manter objetos alocados frequentemente disponíveis para reuso.
+
+**Uso no projeto:** Buffer de 1 KiB para parsing HTTP no `rawhttp`, evitando alocação por request.
+
+**Documentação:**
+- [Go: sync.Pool](https://pkg.go.dev/sync#Pool)
+- [Go Blog: Introducing sync.Pool](https://go.dev/blog/pool)
+
+### Atomic Counters
+
+**Descrição:** Operações atômicas lock-free para atualização concorrente de contadores usando instruções CPU como `LOCK XADD`.
+
+**Uso no projeto:** Telemetria lock-free no middleware — contadores de total, erros, fraud, legit, border zone, etc.
+
+**Documentação:**
+- [Go: sync/atomic](https://pkg.go.dev/sync/atomic)
+- [Go Memory Model](https://go.dev/ref/mem)
+
+### Hash Partitioning (Partition Key)
+
+**Descrição:** Técnica de particionamento que usa bits derivados de features para dividir o espaço de busca em buckets independentes.
+
+**Uso no projeto:** Chave de 8 bits derivada de 7 features (last_tx, is_online, card_present, unknown_merchant, mcc_bucket, amount_high, tx_count_high) para particionar 3M vetores em ~192 buckets.
+
+**Material adicional:**
+- [Wikipedia: Hash Join](https://en.wikipedia.org/wiki/Hash_join)
+- [Database Internals: Partitioning](https://www.databass.dev/)
+
+### Quantização Uniforme
+
+**Descrição:** Mapeamento linear de valores float para inteiros com escala fixa, reduzindo memória com perda mínima de precisão.
+
+**Uso no projeto:** Vetores float32 → int16 com escala 10000, reduzindo memória de vetores em 50% (168 MB → 84 MB).
+
+**Paper relacionado:**
+- Jacob, B. et al. (2018). ["Quantization and Training of Neural Networks for Efficient Integer-Arithmetic-Only Inference"](https://arxiv.org/abs/1712.05877). CVPR 2018.
+
+**Material adicional:**
+- [Wikipedia: Quantization](https://en.wikipedia.org/wiki/Quantization_(signal_processing))
+
+### Top-K Selection (Sorted Array)
+
+**Descrição:** Manter os K menores valores em um array sorted de tamanho fixo com inserção cascata. Mais eficiente que heap para K pequeno.
+
+**Uso no projeto:** `topK5` mantém os 5 vizinhos mais próximos com inserção O(K) onde K=5.
+
+**Material adicional:**
+- [Wikipedia: Selection Algorithm](https://en.wikipedia.org/wiki/Selection_algorithm)
+- [Quickselect (Hoare, 1961)](https://en.wikipedia.org/wiki/Quickselect)
+
+### Graceful Shutdown
+
+**Descrição:** Padrão para encerrar serviços de forma ordenada, aguardando conexões ativas antes de fechar.
+
+**Uso no projeto:** `signal.Notify(quit, SIGINT, SIGTERM)` para capturar sinais e fechar o socket de controle.
+
+**Material adicional:**
+- [Go Blog: Go 1.8 Graceful Shutdown](https://go.dev/blog/http-graceful-shutdown)
+- [12 Factor App: Disposability](https://12factor.net/disposability)
