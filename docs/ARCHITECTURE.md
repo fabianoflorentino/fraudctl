@@ -6,7 +6,7 @@ O caminho principal atual do projeto usa:
 
 - `fraudctl-lb` como load balancer TCP custom
 - `fasthttp` nas APIs
-- `IVFIndex` carregado de `resources/ivf.bin`
+- `GridIndex` carregado de `resources/grid.bin` (KD-tree com partições de 8 bits)
 - `VectorizeJSON` no hot path de requisição
 
 ## Topologia Atual
@@ -18,7 +18,7 @@ flowchart LR
     LB -->|round-robin SCM_RIGHTS| S2[socket lb-ctrl-2.sock]
     S1 --> API1[api-1]
     S2 --> API2[api-2]
-    API1 --> IDX[ivf.bin in memory]
+    API1 --> IDX[grid.bin in memory]
     API2 --> IDX
     API1 --> CFG[normalization and mcc_risk]
     API2 --> CFG
@@ -33,7 +33,7 @@ sequenceDiagram
     participant A as API
     participant H as FraudScoreHandler
     participant V as Vectorizer
-    participant K as IVFIndex
+    participant K as GridIndex
 
     C->>LB: TCP connect + POST /fraud-score
     LB->>A: Passa FD via SCM_RIGHTS
@@ -41,7 +41,7 @@ sequenceDiagram
     A->>H: Handle(ctx)
     H->>V: VectorizeJSON(ctx.PostBody())
     V-->>H: Vector14
-    H->>K: PredictRaw(vec, NProbe())
+    H->>K: PredictRaw(vec, 0)
     K-->>H: fraudCount 0..5
     H-->>C: JSON precomputado
 ```
@@ -91,17 +91,67 @@ Responsabilidades:
 
 - carregar `normalization.json`
 - carregar `mcc_risk.json`
-- priorizar `ivf.bin`
-- cair para brute force apenas se `ivf.bin` não estiver disponível
+- priorizar `grid.bin` (índice exato KD-tree)
+- fallback para `ivf.bin` (índice aproximado IVF)
+- fallback para brute force apenas se nenhum índice estiver disponível
 
 Fallbacks internos atuais quando não há variáveis de ambiente:
 
-- `IVF_NPROBE=36`
-- `IVF_QUICK_PROBE=16`
+- `IVF_NPROBE=128`
+- `IVF_QUICK_PROBE=80`
 - `IVF_BOUNDARY_LO=2`
 - `IVF_BOUNDARY_HI=3`
 
-### IVF KNN
+### Grid Index (KD-tree)
+
+Arquivos principais:
+
+- `internal/knn/grid.go` — busca e carregamento
+- `internal/knn/grid_build.go` — construção do índice
+- `internal/knn/grid_amd64.go` — dispatch AVX2 (amd64)
+- `internal/knn/grid_kernel.s` — assembly SIMD para block scan
+
+Formato atual do índice:
+
+- versão `v2` (KD-tree)
+- 192 partições por chave de 8 bits
+- 61.122 nós KD-tree
+- 3.000.000 vetores em layout block-major
+- Labels bit-packed
+
+Estrutura da chave de partição (8 bits):
+
+| Bit | Feature | Condição |
+|-----|---------|----------|
+| 0 | last_tx | dim[5] >= 0 |
+| 1 | is_online | dim[9] > 0 |
+| 2 | card_present | dim[10] > 0 |
+| 3 | unknown_merchant | dim[11] > 0 |
+| 4-5 | mcc_bucket | dim[12] (0-3) |
+| 6 | amount_high | dim[2] > 5000 |
+| 7 | tx_count_high | dim[8] > 2500 |
+
+Otimizações de busca:
+
+- KD-tree com median split na dimensão mais larga
+- Leaf size: 128 vetores por nó folha
+- Precomputed f32 bbox bounds para evitar conversão no hot path
+- Early exit no bounds computation durante scanning de partições
+- Early exit quando worstDist = 0 (match exato encontrado)
+- Bounds pruning durante travessia da árvore KD
+- Layout block-major para compatibilidade com kernel AVX2
+
+#### SIMD via Go Assembly (amd64)
+
+Em CPUs amd64 com AVX2, o kernel `ScanBlock8AVX2` acelera o scanning de folhas:
+
+| Função | Assembly | Operação |
+|--------|----------|----------|
+| `ScanBlock8AVX2` | `VPMOVSXWD` + `VCVTDQ2PS` + `VFMADD231PS` | Distância L2 entre 8 vetores simultaneamente com early exit em dim 8 |
+
+O dispatch é feito via flag `useAVX2Scan` setada no `init()`. Em CPUs sem AVX2 ou arquiteturas não-amd64, a implementação genérica `scanClusterGeneric` é usada automaticamente.
+
+### IVF KNN (Fallback)
 
 Arquivos principais:
 
@@ -120,33 +170,7 @@ Formato atual do índice:
 - centroids transpostos para SoA ao carregar
 - bounding boxes por cluster
 
-Otimizações de busca:
-
-- `//go:inline` nas funções hot do `topK5`
-- `tryInsert` desenrolado para K=5, sem loop
-- Bounds checking hints para eliminar verificações redundantes
-- `selectTopN` único com `nprobe` (evita segunda varredura O(nlist))
-
-#### SIMD via Go Assembly (amd64)
-
-Em CPUs amd64 com AVX2, duas funções críticas são aceleradas via assembly:
-
-| Função | Assembly | Ganho |
-|--------|----------|-------|
-| `vecSqDistAVX2` | `VPMOVSXWD` + `VPSUBD` + `VPMULLD` (8 int16 → 8 int32, processa 14 dims em 2 batches) | ~4x vs scalar |
-| `accumulateDotProductsAVX2` | `VBROADCASTSS` + `VMULPS` + `VADDPS` (8 float32 FMA por iteração) | ~4x vs scalar |
-
-O dispatch é feito via flag `useAVX2` setada no `init()`. Em CPUs sem AVX2 ou arquiteturas não-amd64, as implementações genéricas (`scanClusterGeneric`, `accumulateDotProductsGeneric`) são usadas automaticamente.
-
-#### Performance
-
-Com o índice de 3M vectores e nprobe=36:
-
-| Métrica | Antes | Depois (AVX2) |
-|---------|-------|---------------|
-| KNN Predict (microbenchmark) | ~38μs | ~19-21μs |
-| Alocações por request | 96 B, 1 alloc | 0 B, 0 alloc |
-| p99 (k6 900 RPS, 2min) | ~1.10ms | ~1.04ms consistente |
+O IVF é usado como fallback quando `grid.bin` não está disponível.
 
 ### Load Balancer Custom
 
@@ -168,9 +192,11 @@ Arquivos legados como `config/haproxy.cfg` e `config/nginx.conf` não fazem part
 ```mermaid
 flowchart TD
     R[references json gz] --> B[cmd build-index]
+    B --> G[grid bin]
     B --> I[ivf bin]
     N[normalization.json] --> D[dataset.LoadDefault]
     M[mcc_risk.json] --> D
+    G --> D
     I --> D
     D --> API[fraudctl runtime]
 ```
@@ -183,7 +209,7 @@ O build atual:
 
 1. compila `fraudctl`
 2. compila `build-index`
-3. executa `build-index -nlist 4096 -iterations 32`
+3. executa `build-index -grid` para gerar `grid.bin`
 4. copia `/build/resources` para a imagem final
 
 ## Observações de Estado Atual
