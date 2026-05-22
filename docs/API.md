@@ -109,13 +109,14 @@ Com isso:
 
 ## Restrições Operacionais
 
-- corpo máximo configurado no servidor: `4 KiB`
-- timeout de leitura: `750ms`
-- timeout de escrita: `750ms`
-- `IdleTimeout`: `10s`
+- corpo máximo configurado no servidor: `2 KiB`
+- read deadline: `10s`
+- write deadline: `750ms`
+- buffer de leitura: `1 KiB`
 
 ## Notas de Implementação
 
+- O servidor HTTP é uma implementação custom (`rawhttp`), não `net/http` ou `fasthttp`.
 - O hot path atual usa `VectorizeJSON(ctx.PostBody())`, não `json.Unmarshal` da request inteira.
-- As respostas são pré-computadas em memória em `internal/handler/fraud_score.go`.
+- As respostas são pré-computadas em memória em `internal/rawhttp/server.go`.
 - O serviço principal não usa prefilter GBDT no handler atual.

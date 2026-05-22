@@ -1,8 +1,8 @@
-# Detection Rules
+# Regras de Detecção
 
 ## Visão Geral
 
-O backend transforma a transação em um vetor de 14 dimensões, busca os 5 vizinhos mais próximos no índice IVF e decide a aprovação com base na contagem de vizinhos fraudados.
+O backend transforma a transação em um vetor de 14 dimensões, busca os 5 vizinhos mais próximos no índice Grid (KD-tree) e decide a aprovação com base na contagem de vizinhos fraudados.
 
 ## Regra de Decisão
 
@@ -17,10 +17,10 @@ O backend transforma a transação em um vetor de 14 dimensões, busca os 5 vizi
 flowchart TD
     R[Request JSON] --> V[Vectorizer]
     V --> Q[Vector14]
-    Q --> K[IVFIndex PredictRaw]
+    Q --> K[GridIndex PredictRaw]
     K --> F[fraudCount 0 to 5]
     F --> S[fraud_score = fraudCount / 5]
-    F --> A[approved when fraudCount is less than 3]
+    F --> A[approved quando fraudCount < 3]
     S --> O[Response JSON]
     A --> O
 ```
@@ -40,7 +40,7 @@ flowchart TD
 | 8 | `tx_count_24h` | `clamp(tx_count_24h / max_tx_count_24h)` |
 | 9 | `is_online` | `1` ou `0` |
 | 10 | `card_present` | `1` ou `0` |
-| 11 | `unknown_merchant` | `1` se `merchant.id` nao estiver em `known_merchants` |
+| 11 | `unknown_merchant` | `1` se `merchant.id` não estiver em `known_merchants` |
 | 12 | `mcc_risk` | valor de `mcc_risk.json`, default `0.5` |
 | 13 | `merchant_avg_amount` | `clamp(merchant.avg_amount / max_merchant_avg_amount)` |
 
@@ -80,52 +80,65 @@ Campos usados:
 
 `clamp(x)` limita o valor ao intervalo `[0.0, 1.0]`.
 
-## Busca KNN Atual
+## Busca KNN Atual (Grid Index)
 
-Implementação atual em `internal/knn/ivf_search.go`.
+Implementação atual em `internal/knn/grid.go`.
 
 Passos:
 
-1. quantiza query para `int16`
-2. calcula distância para todos os centroides via produto escalar + norma pré-computada
-3. seleciona `quickProbe` centroides mais próximos
-4. faz scan dos clusters iniciais
-5. se `fraudCount` cair na zona ambígua `[boundaryLo, boundaryHi]`, amplia para `nprobe`
-6. retorna a contagem final de vizinhos fraudados
+1. quantiza query para `int16` com escala `10000`
+2. calcula chave de partição de 8 bits baseada nas features
+3. lookup direto da partição via `partitionsByKey[key]` (O(1))
+4. calcula lower bound da bounding box da partição com aritmética int16
+5. se lower bound < worstDist, traversa a KD-tree da partição:
+   - split na dimensão mais larga (median split)
+   - leaf size: 128 vetores
+   - bounds pruning em cada nó
+   - scanning de folhas com kernel AVX2 (`ScanBlock8AVX2`)
+6. early exit se worstDist = 0 (match exato)
+7. se ainda houver budget, scan de outras partições com bounds pruning
+8. retorna a contagem final de vizinhos fraudados
 
 ```mermaid
 flowchart TD
     Q[Query float32 14] --> QQ[Quantize int16]
-    QQ --> C[Centroid scan over nlist]
-    C --> P[Select quickProbe]
-    P --> S1[Scan initial clusters]
-    S1 --> B{fraudCount in boundary zone}
-    B -->|No| R[Return fraudCount]
-    B -->|Yes| P2[Select full nprobe]
-    P2 --> S2[Scan remaining clusters]
-    S2 --> R
+    QQ --> PK[Partition Key 8 bits]
+    PK --> PL[Direct Lookup partitionsByKey]
+    PL --> BB[BBox Lower Bound int16]
+    BB --> KD{KD-tree traversal}
+    KD -->|leaf| AVX[ScanBlock8AVX2]
+    KD -->|internal| BP[Bounds pruning]
+    AVX --> WD{worstDist == 0?}
+    WD -->|sim| RET[Return fraudCount]
+    WD -->|não| OP[Other partitions scan]
+    BP --> KD
+    OP --> RET
 ```
 
-## BBox Pruning
+## Chave de Partição (8 bits)
 
-Cada cluster possui `bboxMin` e `bboxMax` por dimensão.
+| Bit | Feature | Condição |
+|-----|---------|----------|
+| 0 | last_tx | dim[5] >= 0 |
+| 1 | is_online | dim[9] > 0 |
+| 2 | card_present | dim[10] > 0 |
+| 3 | unknown_merchant | dim[11] > 0 |
+| 4-5 | mcc_bucket | dim[12] (0-3) |
+| 6 | amount_high | dim[2] > 5000 |
+| 7 | tx_count_high | dim[8] > 2500 |
 
-Antes de escanear o cluster, o código calcula um lower bound da distância entre a query e a bounding box. Se esse bound não puder melhorar o pior candidato atual do top-K, o cluster é pulado.
+## SIMD via Go Assembly (amd64)
 
-## Ordem de Avaliação das Dimensões
+Em CPUs amd64 com AVX2, o kernel `ScanBlock8AVX2` acelera o scanning de folhas:
 
-No scan dos vetores, a ordem atual prioriza early exit.
-
-Stage 1:
-
-- `5, 6, 2, 0, 7, 1, 3, 4`
-
-Stage 2:
-
-- `8, 11, 12, 9, 10, 13`
+- Processa 8 vetores simultaneamente
+- Early exit na dim 8 se todos os 8 vetores excedem worstDist
+- Acumuladores paralelos (pares e ímpares) para reduzir dependency chain
+- PREFETCHT0 para prefetch do próximo bloco
 
 ## Observações Importantes do Estado Atual
 
 - O handler atual usa apenas KNN para a decisão.
 - Embora `dataset` consiga carregar `model.bin` e `gbdt.bin`, esse resultado não é usado no caminho principal atual da API.
 - O parser de JSON do hot path é manual e orientado a bytes.
+- O índice IVF (`ivf.bin`) é fallback quando `grid.bin` não está disponível.

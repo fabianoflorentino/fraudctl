@@ -1,4 +1,4 @@
-# Evaluation
+# Avaliação
 
 ## Objetivo
 
@@ -48,17 +48,19 @@ final_score = score_p99 + score_det
 
 ### Para p99
 
-- índice IVF pronto em tempo de build
+- índice Grid (KD-tree) pronto em tempo de build
+- parser HTTP manual orientado a bytes (`rawhttp`), sem overhead de `net/http` ou `fasthttp`
 - parser JSON rápido no hot path
-- `GOMAXPROCS=1` por instância
 - LB custom com passagem de FD, evitando proxy HTTP tradicional no caminho principal
-- respostas pré-computadas
+- respostas pré-computadas em memória (6 variantes JSON)
+- buffer reutilizável via `sync.Pool`
+- `debug.SetMemoryLimit(150MiB)` para controle de memória
 
 ### Para qualidade
 
-- KNN com `K=5`
-- zona ambígua tratada com second pass no IVF
-- bbox pruning para gastar CPU onde importa
+- KNN exato com `K=5` sobre 3.000.000 vetores
+- índice Grid (KD-tree) com partições de 8 bits para busca eficiente
+- bounds pruning para gastar CPU onde importa
 - fallback JSON em vez de erro HTTP quando o parse falha
 
 ## Compliance Atual com o Desafio
@@ -68,7 +70,7 @@ O projeto atual está alinhado com as regras usuais da Rinha neste ponto:
 - sem cache por payload de teste
 - sem lookup por ID de request
 - pré-processamento dos arquivos de recursos em tempo de build
-- materialização do índice `ivf.bin` antes do runtime
+- materialização do índice `grid.bin` antes do runtime
 
 ## Observações Sobre o Estado do Repositório
 
@@ -77,6 +79,7 @@ Alguns documentos antigos descreviam:
 - `nginx` ou `haproxy` como caminho principal
 - score histories antigas
 - valores de `nprobe` e `quickProbe` que não batem com o código atual
+- `fasthttp` como servidor HTTP
 
 Este documento foi ajustado para priorizar a implementação atual e não histórico experimental antigo.
 
@@ -90,4 +93,4 @@ Este documento foi ajustado para priorizar a implementação atual e não histó
 
 ## Nota Sobre Prefilter
 
-O repositório contém artefatos e carregamento de `model.bin` e `gbdt.bin`, mas o handler principal atual não usa esse prefilter no fluxo padrão da API. Portanto, a avaliação operacional atual do serviço é baseada no KNN IVF.
+O repositório contém artefatos e carregamento de `model.bin` e `gbdt.bin`, mas o handler principal atual não usa esse prefilter no fluxo padrão da API. Portanto, a avaliação operacional atual do serviço é baseada no KNN Grid Index.

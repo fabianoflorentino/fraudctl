@@ -4,8 +4,8 @@ API de detecção de fraude em Go para a Rinha de Backend 2026.
 
 ## Status Atual
 
-- Runtime principal em Go puro com `fasthttp`
-- Busca por similaridade com **Grid Index (KD-tree)** sobre `3_000_000` vetores de referência
+- Runtime principal em Go puro com servidor HTTP custom (`rawhttp`)
+- Busca por similaridade com **Grid Index (KD-tree)** sobre `3.000.000` vetores de referência
 - Balanceamento por um load balancer custom em Go com passagem de descritor de arquivo via `SCM_RIGHTS`
 - Stack principal local: `2x API + 1x fraudctl-lb`
 - Build principal da imagem gera `resources/grid.bin` em tempo de build Docker
@@ -17,8 +17,8 @@ flowchart LR
     C[Cliente HTTP] --> LB[fraudctl-lb TCP 9999]
     LB -->|SCM_RIGHTS| A1[api-1 ServeConn]
     LB -->|SCM_RIGHTS| A2[api-2 ServeConn]
-    A1 --> V1[VectorizeJSON or Vectorize]
-    A2 --> V2[VectorizeJSON or Vectorize]
+    A1 --> V1[VectorizeJSON]
+    A2 --> V2[VectorizeJSON]
     V1 --> K1[GridIndex PredictRaw]
     V2 --> K2[GridIndex PredictRaw]
     K1 --> R1[Response approved + fraud_score]
@@ -29,7 +29,7 @@ flowchart LR
 
 1. O cliente envia `POST /fraud-score` para `:9999`.
 2. `fraudctl-lb` aceita a conexão TCP e encaminha o socket aceito para uma API via Unix domain socket.
-3. A API recebe o FD, reconstrói `net.Conn` e processa a conexão com `fasthttp.Server.ServeConn`.
+3. A API recebe o FD, reconstrói `net.Conn` e processa a conexão com o servidor HTTP custom (`rawhttp`).
 4. O handler usa `VectorizeJSON` no hot path para montar o vetor de 14 dimensões.
 5. O KNN roda `PredictRaw` no índice Grid carregado em memória.
 6. A resposta é uma das seis cargas JSON pré-computadas, de `fraud_score` `0.0` a `1.0`.
@@ -60,11 +60,13 @@ Mapeamento direto:
 - KD-tree por partição com split na dimensão mais larga
 - Leaf size: 128 vetores por nó folha
 - Layout block-major para compatibilidade com AVX2
-- Precomputed f32 bbox bounds para cálculo rápido de distância
+- Lookup direto de partição via array `partitionsByKey[256]` (O(1))
+- Bounds computation com aritmética int16 (sem conversão f32 no hot path)
 - Otimizações:
   - Early exit no bounds computation
   - Early exit quando worstDist = 0 (match exato)
   - Bounds pruning durante travessia da árvore
+  - `gridBBoxLowerBound` desenrolado para 14 dimensões
 
 ### Chave de Partição (8 bits)
 
@@ -84,9 +86,9 @@ O hot path do KNN usa SIMD via Go assembly em CPUs amd64:
 
 | Função | SIMD | Operação |
 |--------|------|----------|
-| `ScanBlock8AVX2` | `VPMOVSXWD` + `VCVTDQ2PS` + `VFMADD231PS` | Distância L2 entre 8 vetores simultaneamente com early exit |
+| `ScanBlock8AVX2` | `VPMOVSXWD` + `VCVTDQ2PS` + `VFMADD231PS` | Distância L2 entre 8 vetores simultaneamente com early exit na dim 8 |
 
-Dispatch automático: `init()` seta `useAVX2=true` em amd64. Em arm64 ou sem suporte, as implementações genéricas em Go puro são usadas.
+Dispatch automático: `init()` seta `useAVX2Scan=true` em amd64. Em arm64 ou sem suporte, a implementação genérica em Go puro é usada.
 
 ### Otimizações Go
 
@@ -95,8 +97,10 @@ Além do SIMD, o hot path inclui:
 - `//go:inline` em `newTopK5`, `worstDist`, `tryInsert`
 - `tryInsert` desenrolado manualmente para K=5 (sem loop)
 - Bounds checking hints para eliminar verificações redundantes
-- Pre-computed f32 bbox bounds para evitar conversão int16→f32 no hot path
 - Quantização `int16` com escala `10000`
+- Aritmética int16 no bounds computation (sem conversão f32)
+- `partitionsByKey[256]` para lookup O(1) de partição
+- `gridBBoxLowerBound` desenrolado para 14 dimensões
 
 ## Stack Local
 
@@ -108,10 +112,9 @@ Além do SIMD, o hot path inclui:
 
 Recursos configurados:
 
-- API: limite `0.47 CPU`, `170M`
-- LB: limite `0.5 CPU`, `10M`
-- `GOMAXPROCS=1` em todos os containers
-- `GOGC=off`
+- API: limite `0.48 CPU`, `170M`
+- LB: limite `0.04 CPU`, `10M`
+- `debug.SetMemoryLimit(150MiB)` em cada API
 
 ## Build e Execução
 
@@ -168,6 +171,7 @@ Observações importantes do estado atual:
 - Existe suporte no código para carregar `model.bin` e `gbdt.bin` em `dataset`, mas o handler atual não usa prefilter no caminho principal de produção.
 - Existem arquivos legados em `config/` (`haproxy.cfg` e `nginx.conf`), mas o caminho principal atual usa `cmd/lb`.
 - O índice IVF (`ivf.bin`) ainda é suportado como fallback caso `grid.bin` não esteja disponível.
+- O servidor HTTP é uma implementação custom (`rawhttp`), não `fasthttp` ou `net/http`.
 
 ## Documentação
 

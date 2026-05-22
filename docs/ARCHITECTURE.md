@@ -1,11 +1,11 @@
-# Architecture
+# Arquitetura
 
 ## Visão Geral
 
 O caminho principal atual do projeto usa:
 
 - `fraudctl-lb` como load balancer TCP custom
-- `fasthttp` nas APIs
+- Servidor HTTP custom (`rawhttp`) nas APIs
 - `GridIndex` carregado de `resources/grid.bin` (KD-tree com partições de 8 bits)
 - `VectorizeJSON` no hot path de requisição
 
@@ -18,9 +18,9 @@ flowchart LR
     LB -->|round-robin SCM_RIGHTS| S2[socket lb-ctrl-2.sock]
     S1 --> API1[api-1]
     S2 --> API2[api-2]
-    API1 --> IDX[grid.bin in memory]
+    API1 --> IDX[grid.bin em memória]
     API2 --> IDX
-    API1 --> CFG[normalization and mcc_risk]
+    API1 --> CFG[normalization e mcc_risk]
     API2 --> CFG
 ```
 
@@ -31,19 +31,22 @@ sequenceDiagram
     participant C as Client
     participant LB as fraudctl-lb
     participant A as API
+    participant S as rawhttp.Server
     participant H as FraudScoreHandler
     participant V as Vectorizer
     participant K as GridIndex
 
     C->>LB: TCP connect + POST /fraud-score
     LB->>A: Passa FD via SCM_RIGHTS
-    A->>A: net.FileConn + ServeConn
-    A->>H: Handle(ctx)
-    H->>V: VectorizeJSON(ctx.PostBody())
+    A->>A: net.FileConn
+    A->>S: ServeConn
+    S->>H: ServeFraudScore(body)
+    H->>V: VectorizeJSON(body)
     V-->>H: Vector14
     H->>K: PredictRaw(vec, 0)
     K-->>H: fraudCount 0..5
-    H-->>C: JSON precomputado
+    H-->>S: JSON pré-computado
+    S-->>C: resposta HTTP
 ```
 
 ## Componentes
@@ -55,10 +58,9 @@ Entrypoint: `cmd/api/main.go`
 Responsabilidades:
 
 - carregar dataset e configurações
-- subir `fasthttp.Server`
 - criar socket de controle Unix em `CTRL_SOCKET`
 - receber FDs do LB via `SCM_RIGHTS`
-- distribuir conexões para um pool de workers com `ServeConn`
+- distribuir conexões para o servidor HTTP custom (`rawhttp`)
 
 Detalhes relevantes:
 
@@ -66,6 +68,20 @@ Detalhes relevantes:
 - endpoint `/fraud-score` responde sempre JSON `200 OK`
 - `TELEMETRY_ENABLED=false` desliga a telemetria periódica
 - `pprof` só é exposto quando `-pprof` é informado
+- `debug.SetMemoryLimit(150 << 20)` limita memória a ~150 MiB
+
+### Servidor HTTP (rawhttp)
+
+Arquivo principal: `internal/rawhttp/server.go`
+
+Responsabilidades:
+
+- parser HTTP manual orientado a bytes (sem dependência de `net/http` ou `fasthttp`)
+- buffer reutilizável via `sync.Pool`
+- leitura com deadline de 10s
+- escrita com deadline de 750ms
+- respostas pré-computadas em memória (6 variantes JSON + OK + Not Found)
+- tamanho máximo de request: 2 KiB
 
 ### Vectorizer
 
@@ -110,12 +126,13 @@ Arquivos principais:
 - `internal/knn/grid_build.go` — construção do índice
 - `internal/knn/grid_amd64.go` — dispatch AVX2 (amd64)
 - `internal/knn/grid_kernel.s` — assembly SIMD para block scan
+- `internal/knn/grid_test.go` — testes unitários
 
 Formato atual do índice:
 
 - versão `v2` (KD-tree)
-- 192 partições por chave de 8 bits
-- 61.122 nós KD-tree
+- ~192 partições por chave de 8 bits
+- ~61.122 nós KD-tree
 - 3.000.000 vetores em layout block-major
 - Labels bit-packed
 
@@ -135,7 +152,9 @@ Otimizações de busca:
 
 - KD-tree com median split na dimensão mais larga
 - Leaf size: 128 vetores por nó folha
-- Precomputed f32 bbox bounds para evitar conversão no hot path
+- Lookup direto de partição via `partitionsByKey[256]` (O(1))
+- Bounds computation com aritmética int16 (sem conversão f32 no hot path)
+- `gridBBoxLowerBound` desenrolado para 14 dimensões
 - Early exit no bounds computation durante scanning de partições
 - Early exit quando worstDist = 0 (match exato encontrado)
 - Bounds pruning durante travessia da árvore KD
@@ -147,9 +166,9 @@ Em CPUs amd64 com AVX2, o kernel `ScanBlock8AVX2` acelera o scanning de folhas:
 
 | Função | Assembly | Operação |
 |--------|----------|----------|
-| `ScanBlock8AVX2` | `VPMOVSXWD` + `VCVTDQ2PS` + `VFMADD231PS` | Distância L2 entre 8 vetores simultaneamente com early exit em dim 8 |
+| `ScanBlock8AVX2` | `VPMOVSXWD` + `VCVTDQ2PS` + `VFMADD231PS` | Distância L2 entre 8 vetores simultaneamente com early exit na dim 8 |
 
-O dispatch é feito via flag `useAVX2Scan` setada no `init()`. Em CPUs sem AVX2 ou arquiteturas não-amd64, a implementação genérica `scanClusterGeneric` é usada automaticamente.
+O dispatch é feito via flag `useAVX2Scan` setada no `init()`. Em CPUs sem AVX2 ou arquiteturas não-amd64, a implementação genérica em Go puro é usada automaticamente.
 
 ### IVF KNN (Fallback)
 
@@ -214,6 +233,6 @@ O build atual:
 
 ## Observações de Estado Atual
 
-- O README e os docs antigos citavam `nginx` ou `haproxy` como caminho principal; isso não corresponde mais ao stack atual.
+- O servidor HTTP é uma implementação custom (`rawhttp`), não `fasthttp` ou `net/http`.
 - O código de `dataset` ainda sabe carregar `gbdt.bin` e `model.bin`, mas o handler atual não usa esse prefilter.
 - Existe divergência entre defaults internos do pacote `dataset` e eventuais experimentos locais; a documentação desta pasta descreve o código atual, não experimentos passados.

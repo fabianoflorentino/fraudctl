@@ -1,4 +1,4 @@
-# Custom Load Balancer
+# Load Balancer Custom
 
 ## Visão Geral
 
@@ -10,7 +10,7 @@ Ele não faz proxy HTTP. Em vez disso:
 2. escolhe uma API por round-robin
 3. passa o descritor da conexão para a API via `SCM_RIGHTS`
 
-Isso permite que a API processe a conexão diretamente com `ServeConn`.
+Isso permite que a API processe a conexão diretamente com `rawhttp.Server.ServeConn`.
 
 ## Por que existe
 
@@ -36,7 +36,7 @@ sequenceDiagram
     LB->>U: WriteMsgUnix + SCM_RIGHTS
     U->>API: entrega fd recebido
     API->>API: net.FileConn(file)
-    API->>API: fasthttp.Server.ServeConn(conn)
+    API->>API: rawhttp.Server.ServeConn(conn)
     API-->>C: resposta HTTP
 ```
 
@@ -72,7 +72,7 @@ No runtime da API:
 - `CTRL_SOCKET` define o socket Unix de controle
 - a API faz `net.Listen("unix", CTRL_SOCKET)`
 - `serveControl` recebe `SCM_RIGHTS`
-- `parseUnixRights` extrai os FDs
+- `parseUnixRights` extrai os FDs (parse manual para evitar alocação)
 - a conexão vira `net.Conn` com `net.FileConn`
 - um worker chama `srv.ServeConn(conn)`
 
@@ -83,7 +83,6 @@ O stack atual usa:
 - `tmpfs` compartilhado para `/sockets`
 - `nofile=65536`
 - `net.core.somaxconn=4096` no container do LB
-- `GOMAXPROCS=1`
 
 ## Limitações e Observações
 
@@ -99,8 +98,6 @@ Características:
 
 - build em Go puro
 - imagem final `distroless/base-debian12`
-- `GOMAXPROCS=1`
-- `GOMEMLIMIT=10MiB`
 
 ## Compose
 
