@@ -171,12 +171,12 @@ func (s *Server) ServeConn(conn net.Conn) error {
 }
 
 func indexHeaderEnd(b []byte) int {
-	for i := 0; i+3 < len(b); i++ {
+	n := len(b) - 3
+	for i := 0; i < n; i++ {
 		if b[i] == '\r' && b[i+1] == '\n' && b[i+2] == '\r' && b[i+3] == '\n' {
 			return i
 		}
 	}
-
 	return -1
 }
 
@@ -220,22 +220,55 @@ func findContentLength(buf []byte) int {
 }
 
 func isContentLength(b []byte) bool {
-	const prefix = "content-length:"
-
-	if len(b) < len(prefix) {
+	if len(b) < 16 {
 		return false
 	}
-
-	for i := range len(prefix) {
-		c := b[i]
-		if c >= 'A' && c <= 'Z' {
-			c += 'a' - 'A'
-		}
-		if c != prefix[i] {
-			return false
-		}
+	c0 := b[0]
+	if c0 != 'C' && c0 != 'c' {
+		return false
 	}
-
+	if b[1] != 'o' && b[1] != 'O' {
+		return false
+	}
+	if b[2] != 'n' && b[2] != 'N' {
+		return false
+	}
+	if b[3] != 't' && b[3] != 'T' {
+		return false
+	}
+	if b[4] != 'e' && b[4] != 'E' {
+		return false
+	}
+	if b[5] != 'n' && b[5] != 'N' {
+		return false
+	}
+	if b[6] != 't' && b[6] != 'T' {
+		return false
+	}
+	if b[7] != '-' {
+		return false
+	}
+	if b[8] != 'l' && b[8] != 'L' {
+		return false
+	}
+	if b[9] != 'e' && b[9] != 'E' {
+		return false
+	}
+	if b[10] != 'n' && b[10] != 'N' {
+		return false
+	}
+	if b[11] != 'g' && b[11] != 'G' {
+		return false
+	}
+	if b[12] != 't' && b[12] != 'T' {
+		return false
+	}
+	if b[13] != 'h' && b[13] != 'H' {
+		return false
+	}
+	if b[14] != ':' {
+		return false
+	}
 	return true
 }
 
