@@ -14,6 +14,40 @@ import (
 const gridMagic = uint32(0x4B445452)
 const gridVersion = uint32(2)
 
+var hammingOrder [256][256]uint8
+
+type hammingEntry struct {
+	key  uint8
+	dist uint8
+}
+
+func init() {
+	var entries [256]hammingEntry
+	for i := 0; i < 256; i++ {
+		for j := 0; j < 256; j++ {
+			entries[j] = hammingEntry{key: uint8(j), dist: popcount8(uint8(i) ^ uint8(j))}
+		}
+		sortEntries8(entries[:])
+		for j := 0; j < 256; j++ {
+			hammingOrder[i][j] = entries[j].key
+		}
+	}
+}
+
+func popcount8(x uint8) uint8 {
+	x = x - ((x >> 1) & 0x55)
+	x = (x & 0x33) + ((x >> 2) & 0x33)
+	return (x + (x >> 4)) & 0x0F
+}
+
+func sortEntries8(e []hammingEntry) {
+	for i := 1; i < len(e); i++ {
+		for j := i; j > 0 && e[j].dist < e[j-1].dist; j-- {
+			e[j], e[j-1] = e[j-1], e[j]
+		}
+	}
+}
+
 // GridIndex is an exact KNN index using a KD-tree with 8-bit partition keys.
 // It stores 3M vectors in block-major layout for AVX2-accelerated leaf scanning.
 // Partition lookup is O(1) via a direct-indexed array.
@@ -22,6 +56,8 @@ type GridIndex struct {
 	nodes           []gridNode
 	partitions      []gridPartition
 	partitionsByKey [256]int32
+	existingKeys    [256]uint8
+	nExisting       int
 	vectors         []int16
 	labels          []byte
 }
@@ -95,14 +131,16 @@ func (idx *GridIndex) PredictRaw(query model.Vector14, _ int) int {
 		}
 	}
 
-	for i := range idx.partitions {
-		if int32(i) == sameIdx {
-			continue
-		}
+	for j := 1; j < 256; j++ {
 		if h.worstDist() == 0 {
 			break
 		}
-		p := &idx.partitions[i]
+		candKey := hammingOrder[key][j]
+		candIdx := idx.partitionsByKey[candKey]
+		if candIdx < 0 {
+			continue
+		}
+		p := &idx.partitions[candIdx]
 		var lb uint64
 		worst := h.worstDist()
 		for d := 0; d < 14; d++ {
@@ -453,6 +491,14 @@ func LoadGrid(path string) (*GridIndex, error) {
 			p.bboxMaxF32[d] = float32(p.bboxMax[d])
 		}
 		idx.partitionsByKey[p.key] = int32(i)
+	}
+
+	idx.nExisting = 0
+	for key := uint32(0); key < 256; key++ {
+		if idx.partitionsByKey[key] >= 0 {
+			idx.existingKeys[idx.nExisting] = uint8(key)
+			idx.nExisting++
+		}
 	}
 
 	for i := uint32(0); i < nnodes; i++ {
