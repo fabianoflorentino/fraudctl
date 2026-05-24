@@ -482,6 +482,21 @@ func scanCluster(vectors []int16, labels []byte, start, end int, q [DIM]int16, h
 	}
 }
 
+// radiiPrune returns true if the cluster at centroidDist from query with
+// given radius cannot contain a vector closer than worstDist.
+// Uses triangle inequality: ||q-v|| >= ||q-c|| - ||v-c|| = sqrt(cd) - radius.
+// Skip if this lower bound exceeds the current K-th best distance.
+//
+//go:inline
+func radiiPrune(cd float32, radius float32, worstDist uint64) bool {
+	if radius <= 0 || worstDist == 0 {
+		return false
+	}
+	cdSqrt := math.Sqrt(float64(cd))
+	worstSqrt := math.Sqrt(float64(worstDist)) / 10000.0
+	return cdSqrt-float64(radius) > worstSqrt
+}
+
 func quantizeQuery(query model.Vector14) [DIM]int16 {
 	var q [DIM]int16
 	for i := 0; i < DIM; i++ {
@@ -558,6 +573,7 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 
 	h := newTopK5()
 	hasBbox := len(idx.bboxMin) > 0
+	hasRadii := len(idx.radii) > 0
 
 	for pi := 0; pi < quickProbe; pi++ {
 		ci := probes[pi]
@@ -571,17 +587,22 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 				continue
 			}
 		}
+		if hasRadii && h.count == K {
+			if radiiPrune(centroidDist[ci], idx.radii[ci], h.worstDist()) {
+				continue
+			}
+		}
 		scanCluster(idx.vectors, idx.labels, start, end, qi, &h)
 	}
 
 	fraud := h.fraudCount(idx.labels)
 
-	centroidPool.Put(centroidBuf)
-
 	if fraud < idx.boundaryLo || fraud > idx.boundaryHi {
+		centroidPool.Put(centroidBuf)
 		return fraud
 	}
 	if quickProbe == nprobe {
+		centroidPool.Put(centroidBuf)
 		return fraud
 	}
 
@@ -597,8 +618,14 @@ func (idx *IVFIndex) PredictRaw(query model.Vector14, nprobe int) int {
 				continue
 			}
 		}
+		if hasRadii && h.count == K {
+			if radiiPrune(centroidDist[ci], idx.radii[ci], h.worstDist()) {
+				continue
+			}
+		}
 		scanCluster(idx.vectors, idx.labels, start, end, qi, &h)
 	}
 
+	centroidPool.Put(centroidBuf)
 	return h.fraudCount(idx.labels)
 }

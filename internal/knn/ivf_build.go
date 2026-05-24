@@ -109,12 +109,13 @@ func BuildIVF(refsGz, outPath string, nlist, iterations int) error {
 		clusterLists[ci] = append(clusterLists[ci], i)
 	}
 
-	// Build AoS vectors, bit-packed labels, and bbox per cluster.
+	// Build AoS vectors, bit-packed labels, bbox per cluster, and radii.
 	aosVectors := make([]int16, n*DIM)
 	bitLabels := make([]byte, (n+7)/8)
 	offsets := make([]uint32, nlist+1)
 	bboxMin := make([]int16, nlist*DIM)
 	bboxMax := make([]int16, nlist*DIM)
+	radii := make([]float32, nlist)
 
 	// Initialize bbox to extreme values.
 	for i := range bboxMin {
@@ -125,7 +126,9 @@ func BuildIVF(refsGz, outPath string, nlist, iterations int) error {
 	pos := 0
 	for ci := 0; ci < nlist; ci++ {
 		offsets[ci] = uint32(pos)
+		maxSqDist := float32(0)
 		for _, vi := range clusterLists[ci] {
+			var sqDist float32
 			for d := 0; d < DIM; d++ {
 				q := quantizeFloat32(flat[vi*DIM+d])
 				aosVectors[pos*DIM+d] = q
@@ -135,12 +138,18 @@ func BuildIVF(refsGz, outPath string, nlist, iterations int) error {
 				if q > bboxMax[ci*DIM+d] {
 					bboxMax[ci*DIM+d] = q
 				}
+				diff := flat[vi*DIM+d] - centroids[d*nlist+ci]
+				sqDist += diff * diff
+			}
+			if sqDist > maxSqDist {
+				maxSqDist = sqDist
 			}
 			if fraudFlags[vi] {
 				bitLabels[pos>>3] |= 1 << uint(pos&7)
 			}
 			pos++
 		}
+		radii[ci] = float32(math.Sqrt(float64(maxSqDist)))
 		// Empty cluster: set bbox to zero range.
 		if offsets[ci] == uint32(pos) {
 			for d := 0; d < DIM; d++ {
@@ -151,7 +160,7 @@ func BuildIVF(refsGz, outPath string, nlist, iterations int) error {
 	}
 	offsets[nlist] = uint32(pos)
 
-	fmt.Printf("BuildIVF: writing %s (v5, AoS, bit-packed, bbox) ...\n", outPath)
+	fmt.Printf("BuildIVF: writing %s (v6, AoS, bit-packed, bbox, radii) ...\n", outPath)
 	out, err := os.Create(outPath)
 	if err != nil {
 		return err
@@ -162,7 +171,7 @@ func BuildIVF(refsGz, outPath string, nlist, iterations int) error {
 	if err := write32(ivfMagic); err != nil {
 		return err
 	}
-	if err := write32(5); err != nil {
+	if err := write32(6); err != nil {
 		return err
 	}
 	if err := write32(uint32(nlist)); err != nil {
@@ -184,6 +193,9 @@ func BuildIVF(refsGz, outPath string, nlist, iterations int) error {
 		return err
 	}
 	if err := binary.Write(out, binary.LittleEndian, bboxMax); err != nil {
+		return err
+	}
+	if err := binary.Write(out, binary.LittleEndian, radii); err != nil {
 		return err
 	}
 	if err := binary.Write(out, binary.LittleEndian, aosVectors); err != nil {

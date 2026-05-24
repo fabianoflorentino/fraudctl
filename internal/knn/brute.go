@@ -6,7 +6,8 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"time"
+	"syscall"
+	"unsafe"
 
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
@@ -25,8 +26,9 @@ type IVFIndex struct {
 	vectors       []int16   // AoS: [N * DIM]
 	labels        []byte    // bit-packed: [ceil(N/8)]
 	offsets       []uint32
-	bboxMin       []int16 // AoI: [nlist * DIM]
-	bboxMax       []int16 // AoI: [nlist * DIM]
+	bboxMin       []int16   // AoI: [nlist * DIM]
+	bboxMax       []int16   // AoI: [nlist * DIM]
+	radii         []float32 // per-cluster radius for triangle-inequality pruning
 	nlist         int
 	nprobe        int
 	quickProbe    int
@@ -58,7 +60,7 @@ func (idx *IVFIndex) SetRetry(quick, lo, hi int) {
 // NewIVFIndex creates an empty IVFIndex.
 func NewIVFIndex() *IVFIndex { return &IVFIndex{} }
 
-// LoadIVF loads an IVF index in format v5 (AoS, bit-packed labels, bbox per cluster).
+// LoadIVF loads an IVF index in format v5 or v6 (v6 adds per-cluster radii).
 func LoadIVF(path string) (*IVFIndex, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -70,8 +72,11 @@ func LoadIVF(path string) (*IVFIndex, error) {
 	if err := binary.Read(f, binary.LittleEndian, &magic); err != nil || magic != ivfMagic {
 		return nil, fmt.Errorf("invalid ivf magic (got 0x%08x)", magic)
 	}
-	if err := binary.Read(f, binary.LittleEndian, &version); err != nil || version != 5 {
-		return nil, fmt.Errorf("unsupported ivf version %d (expected 5)", version)
+	if err := binary.Read(f, binary.LittleEndian, &version); err != nil {
+		return nil, fmt.Errorf("read version: %w", err)
+	}
+	if version != 5 && version != 6 {
+		return nil, fmt.Errorf("unsupported ivf version %d", version)
 	}
 	if err := binary.Read(f, binary.LittleEndian, &nlist); err != nil {
 		return nil, fmt.Errorf("read nlist: %w", err)
@@ -80,14 +85,11 @@ func LoadIVF(path string) (*IVFIndex, error) {
 		return nil, fmt.Errorf("expected dim=14, got %d", dim)
 	}
 
-	// Total number of vectors
 	var n uint32
 	if err := binary.Read(f, binary.LittleEndian, &n); err != nil {
 		return nil, fmt.Errorf("read n: %w", err)
 	}
 
-	// Centroids: nlist * DIM float32 (on-disk: AoI row-major, ci-major)
-	// Transpose to SoA (dim-major) for cache-friendly selectProbes.
 	rawCentroids := make([]float32, nlist*dim)
 	if err := binary.Read(f, binary.LittleEndian, rawCentroids); err != nil {
 		return nil, fmt.Errorf("read centroids: %w", err)
@@ -99,13 +101,11 @@ func LoadIVF(path string) (*IVFIndex, error) {
 		}
 	}
 
-	// Offsets: (nlist+1) uint32
 	offsets := make([]uint32, nlist+1)
 	if err := binary.Read(f, binary.LittleEndian, offsets); err != nil {
 		return nil, fmt.Errorf("read offsets: %w", err)
 	}
 
-	// BBox: nlist * DIM int16 each
 	bboxMin := make([]int16, int(nlist)*DIM)
 	if err := binary.Read(f, binary.LittleEndian, bboxMin); err != nil {
 		return nil, fmt.Errorf("read bbox_min: %w", err)
@@ -115,20 +115,25 @@ func LoadIVF(path string) (*IVFIndex, error) {
 		return nil, fmt.Errorf("read bbox_max: %w", err)
 	}
 
-	// Vectors: n * DIM int16 (AoS)
+	var radii []float32
+	if version >= 6 {
+		radii = make([]float32, nlist)
+		if err := binary.Read(f, binary.LittleEndian, radii); err != nil {
+			return nil, fmt.Errorf("read radii: %w", err)
+		}
+	}
+
 	vectors := make([]int16, int(n)*DIM)
 	if err := binary.Read(f, binary.LittleEndian, vectors); err != nil {
 		return nil, fmt.Errorf("read vectors: %w", err)
 	}
 
-	// Labels: ceil(n/8) bytes, bit-packed
 	labelBytes := (int(n) + 7) / 8
 	labels := make([]byte, labelBytes)
 	if _, err := io.ReadFull(f, labels); err != nil {
 		return nil, fmt.Errorf("read labels: %w", err)
 	}
 
-	// Pre-compute centroid norms for dot-to-L2 conversion: sum(c²) per centroid.
 	centroidNorms := make([]float32, nlist)
 	for ci := 0; ci < int(nlist); ci++ {
 		var sum float32
@@ -149,6 +154,7 @@ func LoadIVF(path string) (*IVFIndex, error) {
 		offsets:       offsets,
 		bboxMin:       bboxMin,
 		bboxMax:       bboxMax,
+		radii:         radii,
 	}
 
 	// Pre-touch all pages to avoid page faults during queries.
@@ -159,16 +165,10 @@ func LoadIVF(path string) (*IVFIndex, error) {
 		_ = labels[i]
 	}
 
-	// Keep pages hot to prevent swapping under memory pressure.
-	go func() {
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
-		for range ticker.C {
-			for i := 0; i < len(vectors); i += 2048 {
-				_ = vectors[i]
-			}
-		}
-	}()
+	if len(vectors) > 0 {
+		vb := unsafe.Slice((*byte)(unsafe.Pointer(&vectors[0])), len(vectors)*2)
+		_ = syscall.Madvise(vb, syscall.MADV_WILLNEED)
+	}
 
 	return idx, nil
 }
