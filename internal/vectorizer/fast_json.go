@@ -409,43 +409,47 @@ type invalidJSONError struct{}
 
 func (e *invalidJSONError) Error() string { return "invalid json" }
 
-func parseHourAndWeekdayBytes(b []byte) (hour, weekday int) {
-	if len(b) < 13 || b[10] != 'T' {
-		return 0, 0
-	}
-	h := int(b[11]-'0')*10 + int(b[12]-'0')
-	if len(b) < 10 {
-		return h, 0
-	}
-	year := int(b[0]-'0')*1000 + int(b[1]-'0')*100 + int(b[2]-'0')*10 + int(b[3]-'0')
-	month := int(b[5]-'0')*10 + int(b[6]-'0')
-	day := int(b[8]-'0')*10 + int(b[9]-'0')
-	t := [12]int{0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4}
-	if month < 3 {
-		year--
-	}
-	wd := (year + year/4 - year/100 + year/400 + t[month-1] + day) % 7
-	return h, (wd + 6) % 7
+type parsedTimestamp struct {
+	hour, weekday int
+	unixSec       int64
 }
 
-func parseUnixSecondsBytes(b []byte) int64 {
+func parseTimestampBytes(b []byte) (ts parsedTimestamp) {
 	if len(b) < 19 || b[10] != 'T' {
-		return 0
+		return
 	}
-	year := int64(b[0]-'0')*1000 + int64(b[1]-'0')*100 + int64(b[2]-'0')*10 + int64(b[3]-'0')
-	month := int64(b[5]-'0')*10 + int64(b[6]-'0')
-	day := int64(b[8]-'0')*10 + int64(b[9]-'0')
-	hour := int64(b[11]-'0')*10 + int64(b[12]-'0')
+	h := int(b[11]-'0')*10 + int(b[12]-'0')
 	min := int64(b[14]-'0')*10 + int64(b[15]-'0')
 	sec := int64(b[17]-'0')*10 + int64(b[18]-'0')
 
-	y, m := year, month
-	if m <= 2 {
-		y--
-		m += 12
+	year := int(b[0]-'0')*1000 + int(b[1]-'0')*100 + int(b[2]-'0')*10 + int(b[3]-'0')
+	month := int(b[5]-'0')*10 + int(b[6]-'0')
+	day := int(b[8]-'0')*10 + int(b[9]-'0')
+
+	t := [12]int{0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4}
+	mAdj := month
+	yAdj := year
+	if mAdj < 3 {
+		yAdj--
 	}
-	days := y*365 + y/4 - y/100 + y/400 + (153*(m-3)+2)/5 + day - 719469
-	return days*86400 + hour*3600 + min*60 + sec
+	wd := (yAdj + yAdj/4 - yAdj/100 + yAdj/400 + t[mAdj-1] + day) % 7
+
+	iYear := int64(year)
+	iMonth := int64(month)
+	if iMonth <= 2 {
+		iYear--
+		iMonth += 12
+	}
+	days := iYear*365 + iYear/4 - iYear/100 + iYear/400 + (153*(iMonth-3)+2)/5 + int64(day) - 719469
+
+	ts.hour = h
+	ts.weekday = (wd + 6) % 7
+	ts.unixSec = days*86400 + int64(h)*3600 + min*60 + sec
+	return
+}
+
+func parseUnixSecondsBytes(b []byte) int64 {
+	return parseTimestampBytes(b).unixSec
 }
 
 // VectorizeJSON parses a raw JSON request body and returns a 14-dimensional
@@ -496,17 +500,16 @@ func (v *Vectorizer) VectorizeJSON(data []byte) (model.Vector14, error) {
 		}
 	}
 
-	hour, dayOfWeek := parseHourAndWeekdayBytes(txRequestedAt)
-	vec[3] = float32(hour) / 23.0
-	vec[4] = float32(dayOfWeek) / 6.0
+	reqTS := parseTimestampBytes(txRequestedAt)
+	vec[3] = float32(reqTS.hour) / 23.0
+	vec[4] = float32(reqTS.weekday) / 6.0
 
 	if lastTxObj != nil {
 		lastTxTime := parseJSONStringBytes(lastTxObj, jsonFieldTimestamp)
 		lastTxKm := parseJSONFloat64Fast(lastTxObj, jsonFieldKmFromCurr)
 
-		reqSec := parseUnixSecondsBytes(txRequestedAt)
 		lastSec := parseUnixSecondsBytes(lastTxTime)
-		minutes := float32(reqSec-lastSec) / 60.0
+		minutes := float32(reqTS.unixSec-lastSec) / 60.0
 		vec[5] = clampFloat32(minutes * v.invMaxMinutes)
 		vec[6] = clampFloat32(float32(lastTxKm) * v.invMaxKm)
 	} else {
