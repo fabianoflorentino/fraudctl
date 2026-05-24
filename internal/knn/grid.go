@@ -58,6 +58,7 @@ type GridIndex struct {
 	partitionsByKey [256]int32
 	existingKeys    [256]uint8
 	nExisting       int
+	hammingExisting [256][]uint8 // existing keys in Hamming order per query key
 	vectors         []int16
 	labels          []byte
 }
@@ -131,18 +132,19 @@ func (idx *GridIndex) PredictRaw(query model.Vector14, _ int) int {
 		}
 	}
 
-	for j := 1; j < 256; j++ {
-		if h.worstDist() == 0 {
+	existing := idx.hammingExisting[key]
+	start := 0
+	if sameIdx >= 0 {
+		start = 1
+	}
+	for j := start; j < len(existing); j++ {
+		worst := h.worstDist()
+		if worst == 0 {
 			break
 		}
-		candKey := hammingOrder[key][j]
-		candIdx := idx.partitionsByKey[candKey]
-		if candIdx < 0 {
-			continue
-		}
-		p := &idx.partitions[candIdx]
+		candKey := existing[j]
+		p := &idx.partitions[idx.partitionsByKey[candKey]]
 		var lb uint64
-		worst := h.worstDist()
 		for d := 0; d < 14; d++ {
 			qd := qi[d]
 			if qd < p.bboxMin[d] {
@@ -498,6 +500,24 @@ func LoadGrid(path string) (*GridIndex, error) {
 		if idx.partitionsByKey[key] >= 0 {
 			idx.existingKeys[idx.nExisting] = uint8(key)
 			idx.nExisting++
+		}
+	}
+
+	for key := uint32(0); key < 256; key++ {
+		n := 0
+		for j := 0; j < 256; j++ {
+			if idx.partitionsByKey[hammingOrder[key][j]] >= 0 {
+				n++
+			}
+		}
+		if n > 0 {
+			idx.hammingExisting[key] = make([]uint8, 0, n)
+			for j := 0; j < 256; j++ {
+				cand := hammingOrder[key][j]
+				if idx.partitionsByKey[cand] >= 0 {
+					idx.hammingExisting[key] = append(idx.hammingExisting[key], cand)
+				}
+			}
 		}
 	}
 

@@ -16,15 +16,10 @@ import (
 // ============================================================================
 //
 // nlist=4096 (~732 vetores/cluster).
-// IVF_NPROBE=36 cobre ~0.88% dos clusters.
-// IVF_QUICK_PROBE=16 cobre ~0.39% dos clusters.
-// Total vetores quick scan: 16×732 = 11.712.
-//============================================================================
-
-// IVF_NPROBE is the default number of IVF clusters to probe during search.
+// IVF_NPROBE is the number of IVF clusters to probe (fallback only; Grid is primary).
 const IVF_NPROBE = 128
 
-// IVF_QUICK_PROBE is the default number of IVF clusters for the quick probe pass.
+// IVF_QUICK_PROBE is the number of IVF clusters for the quick probe pass (fallback).
 const IVF_QUICK_PROBE = 80
 
 // IVF_BOUNDARY_LO is the lower bound of the ambiguous fraud count zone.
@@ -139,24 +134,24 @@ func LoadDefault(path string) (*Dataset, error) {
 
 	var idx KNNIndex
 
-	// Priority 1: IVF index (approximate, fastest)
-	ivfPath := filepath.Join(path, "ivf.bin")
-	if _, err := os.Stat(ivfPath); err == nil {
-		ivf, err := knn.LoadIVF(ivfPath)
+	// Priority 1: Grid index (exact KD-tree, fastest)
+	gridPath := filepath.Join(path, "grid.bin")
+	if _, err := os.Stat(gridPath); err == nil {
+		grid, err := knn.LoadGrid(gridPath)
 		if err == nil {
-			ivf.SetNProbe(IVF_NPROBE)
-			ivf.SetRetry(IVF_QUICK_PROBE, IVF_BOUNDARY_LO, IVF_BOUNDARY_HI)
-			idx = ivf
+			idx = grid
 		}
 	}
 
-	// Priority 2: Grid index (exact, fast)
+	// Priority 2: IVF index (approximate, fallback)
+	ivfPath := filepath.Join(path, "ivf.bin")
 	if idx == nil {
-		gridPath := filepath.Join(path, "grid.bin")
-		if _, err := os.Stat(gridPath); err == nil {
-			grid, err := knn.LoadGrid(gridPath)
+		if _, err := os.Stat(ivfPath); err == nil {
+			ivf, err := knn.LoadIVF(ivfPath)
 			if err == nil {
-				idx = grid
+				ivf.SetNProbe(IVF_NPROBE)
+				ivf.SetRetry(IVF_QUICK_PROBE, IVF_BOUNDARY_LO, IVF_BOUNDARY_HI)
+				idx = ivf
 			}
 		}
 	}
