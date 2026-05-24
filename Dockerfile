@@ -17,7 +17,7 @@ RUN go mod download
 COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOAMD64=v3 \
-    go build -ldflags="-s -w" -o fraudctl ./cmd/api
+    go build -pgo=default.pgo -ldflags="-s -w" -o fraudctl ./cmd/api
 
 # ── Stage 2: production ────────────────────────────────────────────────────────
 FROM gcr.io/distroless/base-debian13 AS production
@@ -28,7 +28,7 @@ COPY resources /resources
 ENV RESOURCES=/resources
 ENV GOMAXPROCS=1
 ENV GOGC=off
-ENV GOMEMLIMIT=145MiB
+ENV GOMEMLIMIT=140MiB
 
 EXPOSE 9999
 

@@ -36,7 +36,26 @@ func main() {
 	if err != nil {
 		log.Fatalf("listen: %v", err)
 	}
+
+	tcpLn := ln.(*net.TCPListener)
+	if raw, err := tcpLn.SyscallConn(); err == nil {
+		_ = raw.Control(func(fd uintptr) {
+			_ = syscall.SetsockoptInt(int(fd), syscall.IPPROTO_TCP, syscall.TCP_DEFER_ACCEPT, 3)
+		})
+	}
+
 	log.Printf("listening on %s", *listenAddr)
+
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			deadline := time.Now().Add(60 * time.Second)
+			for _, c := range cons {
+				c.SetWriteDeadline(deadline)
+			}
+		}
+	}()
 
 	var rr uint64
 	sigCh := make(chan os.Signal, 1)
@@ -73,7 +92,6 @@ func main() {
 		}
 
 		rights := syscall.UnixRights(fd)
-		cons[wi].SetWriteDeadline(time.Now().Add(50 * time.Millisecond))
 		if _, _, err = cons[wi].WriteMsgUnix(nil, rights, nil); err != nil {
 			log.Printf("write to worker %d: %v", wi, err)
 		}

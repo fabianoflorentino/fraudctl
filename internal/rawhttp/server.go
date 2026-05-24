@@ -8,6 +8,7 @@ import (
 	"net"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -43,7 +44,7 @@ func init() {
 }
 
 func buildOKResponse(ct, body string) []byte {
-	hdr := "HTTP/1.1 200 OK\r\n"
+	hdr := "HTTP/1.1 200 OK\r\nConnection: keep-alive\r\nKeep-Alive: timeout=60\r\n"
 
 	if ct != "" {
 		hdr += "Content-Type: " + ct + "\r\n"
@@ -100,7 +101,13 @@ func New(handler Handler) *Server {
 // ServeConn processes an HTTP connection, parsing requests and writing
 // precomputed responses. It supports pipelined requests on a single connection.
 func (s *Server) ServeConn(conn net.Conn) error {
-	defer func() { _ = conn.Close() }()
+	var reqCount int
+	defer func() {
+		_ = conn.Close()
+		if reqCount > 1 {
+			pipelinedConns.Add(1)
+		}
+	}()
 
 	bp := bufPool.Get().(*[]byte)
 	buf := *bp
@@ -108,12 +115,14 @@ func (s *Server) ServeConn(conn net.Conn) error {
 	used := 0
 	defer bufPool.Put(bp)
 
+	totalConns.Add(1)
 	for {
-		if err := conn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
-			return err
-		}
-
 		headEnd := indexHeaderEnd(buf[pos:used])
+		if headEnd < 0 {
+			if err := conn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+				return err
+			}
+		}
 		for headEnd < 0 {
 			if n, err := conn.Read(buf[used:]); n > 0 {
 				used += n
@@ -155,13 +164,11 @@ func (s *Server) ServeConn(conn net.Conn) error {
 			resp = notFoundResponse
 		}
 
-		if err := conn.SetWriteDeadline(time.Now().Add(750 * time.Millisecond)); err != nil {
-			return err
-		}
 		if _, err := conn.Write(resp); err != nil {
 			return err
 		}
 
+		reqCount++
 		pos = bodyEnd
 		if pos >= used {
 			pos = 0
@@ -169,6 +176,9 @@ func (s *Server) ServeConn(conn net.Conn) error {
 		}
 	}
 }
+
+var pipelinedConns atomic.Int64
+var totalConns atomic.Int64
 
 func indexHeaderEnd(b []byte) int {
 	n := len(b) - 3

@@ -31,7 +31,6 @@ x-api-defaults: &api-defaults
   deploy: *api-resources
   restart: unless-stopped
 
-
 services:
   api-1:
     <<: *api-defaults
@@ -71,7 +70,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.04"
+          cpus: "0.05"
           memory: 10M
     restart: unless-stopped
 
