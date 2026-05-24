@@ -352,8 +352,8 @@ Resultado: 0 B/op, 0 allocs/op no hot path.
 | Variável | Valor | Motivo |
 |----------|-------|--------|
 | `GOMAXPROCS` | 1 (por container) | Evita overhead de scheduling |
-| `GOGC` | off (via SetMemoryLimit) | Controle fino de memória |
-| `debug.SetMemoryLimit` | 150 MiB | GC agressivo antes do limite |
+| `GOGC` | off (via SetGCPercent(-1)) | GC desabilitado no hot path |
+| `debug.SetMemoryLimit` | 168 MiB | Safety net para evitar OOM |
 | `TELEMETRY_ENABLED` | false | Sem overhead de logging |
 
 ---
@@ -377,3 +377,9 @@ Resultado: 0 B/op, 0 allocs/op no hot path.
 - [x] PREFETCHT0 para próximo bloco
 - [x] Background page touching
 - [x] SetMemoryLimit para controle de GC
+- [x] GC desabilitado (SetGCPercent=-1) para zero pausas
+- [x] SetReadDeadline condicional (pipelining)
+- [x] SetWriteDeadline removido (1 syscall a menos)
+- [x] Parse de timestamp combinado (hour+weekday+unix)
+- [x] Hamming traversal otimizado (só partitions existentes)
+- [x] parseErr propagado do HandleFraudScore (sem scan redundante)
