@@ -52,13 +52,14 @@ func NewFraudScoreHandler(vec Vectorizer, knn KNNIndex) *FraudScoreHandler {
 }
 
 // HandleFraudScore processes a raw JSON request body and returns the count
-// of fraudulent neighbors (0-5). Returns 0 on parse errors as a fallback.
-func (h *FraudScoreHandler) HandleFraudScore(body []byte) int {
+// of fraudulent neighbors (0-5) and whether a parse error occurred.
+// Returns 0 on parse errors as a fallback.
+func (h *FraudScoreHandler) HandleFraudScore(body []byte) (int, bool) {
 	vec, err := h.vec.VectorizeJSON(body)
 	if err != nil {
-		return 0
+		return 0, true
 	}
-	return h.knn.PredictRaw(vec, h.knn.NProbe())
+	return h.knn.PredictRaw(vec, h.knn.NProbe()), false
 }
 
 // ResponseForCount returns the precomputed JSON response for the given

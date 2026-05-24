@@ -109,15 +109,14 @@ type httpHandler struct {
 
 func (h *httpHandler) ServeFraudScore(body []byte) []byte {
 	if !middleware.IsEnabled() {
-		count := h.fraudHandler.HandleFraudScore(body)
+		count, _ := h.fraudHandler.HandleFraudScore(body)
 		return rawhttp.FraudResponse(count)
 	}
 
 	start := time.Now()
-	count := h.fraudHandler.HandleFraudScore(body)
+	count, parseErr := h.fraudHandler.HandleFraudScore(body)
 	elapsed := time.Since(start)
 	approved := count < 3
-	parseErr := count == 0 && !isLikelyValidJSON(body)
 	middleware.Record(elapsed, elapsed/2, elapsed/2, count, approved, parseErr)
 
 	return rawhttp.FraudResponse(count)
@@ -125,18 +124,6 @@ func (h *httpHandler) ServeFraudScore(body []byte) []byte {
 
 func (h *httpHandler) ServeReady() []byte {
 	return rawhttp.ReadyResponse()
-}
-
-func isLikelyValidJSON(body []byte) bool {
-	for _, b := range body {
-		if b == '{' {
-			return true
-		}
-		if b != ' ' && b != '\t' && b != '\n' && b != '\r' {
-			return false
-		}
-	}
-	return false
 }
 
 func serveControl(ctrlConn net.Conn, srv *rawhttp.Server) {

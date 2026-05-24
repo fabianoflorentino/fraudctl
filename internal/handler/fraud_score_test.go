@@ -2,9 +2,12 @@ package handler
 
 import (
 	"math"
+	"os"
 	"testing"
 
+	"github.com/fabianoflorentino/fraudctl/internal/knn"
 	"github.com/fabianoflorentino/fraudctl/internal/model"
+	"github.com/fabianoflorentino/fraudctl/internal/vectorizer"
 )
 
 type mockVec struct{}
@@ -49,7 +52,7 @@ const validPayload = `{
 
 func TestHandleFraudScore_ValidJSON_Approved(t *testing.T) {
 	h := NewFraudScoreHandler(&mockVec{}, &mockKNN{0.4})
-	count := h.HandleFraudScore([]byte(validPayload))
+	count, _ := h.HandleFraudScore([]byte(validPayload))
 	if count >= 3 {
 		t.Errorf("expected approved (count < 3), got count=%d", count)
 	}
@@ -61,7 +64,7 @@ func TestHandleFraudScore_ValidJSON_Approved(t *testing.T) {
 
 func TestHandleFraudScore_ValidJSON_Denied(t *testing.T) {
 	h := NewFraudScoreHandler(&mockVec{}, &mockKNN{0.6})
-	count := h.HandleFraudScore([]byte(validPayload))
+	count, _ := h.HandleFraudScore([]byte(validPayload))
 	if count < 3 {
 		t.Errorf("expected denied (count >= 3), got count=%d", count)
 	}
@@ -73,17 +76,23 @@ func TestHandleFraudScore_ValidJSON_Denied(t *testing.T) {
 
 func TestHandleFraudScore_InvalidJSON(t *testing.T) {
 	h := NewFraudScoreHandler(&mockVec{}, &mockKNN{0.0})
-	count := h.HandleFraudScore([]byte("not json"))
+	count, parseErr := h.HandleFraudScore([]byte("not json"))
 	if count != 0 {
 		t.Errorf("expected fallback count=0, got %d", count)
+	}
+	if !parseErr {
+		t.Error("expected parseErr=true for invalid JSON")
 	}
 }
 
 func TestHandleFraudScore_EmptyBody(t *testing.T) {
 	h := NewFraudScoreHandler(&mockVec{}, &mockKNN{0.0})
-	count := h.HandleFraudScore([]byte{})
+	count, parseErr := h.HandleFraudScore([]byte{})
 	if count != 0 {
 		t.Errorf("expected fallback count=0, got %d", count)
+	}
+	if !parseErr {
+		t.Error("expected parseErr=true for empty body")
 	}
 }
 
@@ -137,7 +146,7 @@ func TestFraudScoreHandler_Fields(t *testing.T) {
 
 func TestHandleFraudScore_BoundaryScore_Low(t *testing.T) {
 	h := NewFraudScoreHandler(&mockVec{}, &mockKNN{0.0})
-	count := h.HandleFraudScore([]byte(validPayload))
+	count, _ := h.HandleFraudScore([]byte(validPayload))
 	if count < 0 || count > 5 {
 		t.Errorf("count out of range: %d", count)
 	}
@@ -145,7 +154,7 @@ func TestHandleFraudScore_BoundaryScore_Low(t *testing.T) {
 
 func TestHandleFraudScore_BoundaryScore_High(t *testing.T) {
 	h := NewFraudScoreHandler(&mockVec{}, &mockKNN{1.0})
-	count := h.HandleFraudScore([]byte(validPayload))
+	count, _ := h.HandleFraudScore([]byte(validPayload))
 	if count < 0 || count > 5 {
 		t.Errorf("count out of range: %d", count)
 	}
@@ -153,7 +162,7 @@ func TestHandleFraudScore_BoundaryScore_High(t *testing.T) {
 
 func TestHandleFraudScore_MidScore(t *testing.T) {
 	h := NewFraudScoreHandler(&mockVec{}, &mockKNN{0.5})
-	count := h.HandleFraudScore([]byte(validPayload))
+	count, _ := h.HandleFraudScore([]byte(validPayload))
 	if count < 0 || count > 5 {
 		t.Errorf("count out of range: %d", count)
 	}
@@ -171,7 +180,7 @@ func TestResponseForCount_AllValues(t *testing.T) {
 
 func TestHandleFraudScore_SetsCount(t *testing.T) {
 	h := NewFraudScoreHandler(&mockVec{}, &mockKNN{0.7})
-	count := h.HandleFraudScore([]byte(validPayload))
+	count, _ := h.HandleFraudScore([]byte(validPayload))
 	// Score 0.7 * 5 (knnK) = 3.5, rounds to 4
 	if count == -1 {
 		t.Error("count not set")
@@ -267,7 +276,7 @@ func BenchmarkHandleFraudScore(b *testing.B) {
 	payload := []byte(validPayload)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = h.HandleFraudScore(payload)
+		_, _ = h.HandleFraudScore(payload)
 	}
 }
 
@@ -277,4 +286,70 @@ func BenchmarkResponseForCount(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_ = h.ResponseForCount(3)
 	}
+}
+
+func BenchmarkHandleFraudScore_FullPipeline(b *testing.B) {
+	gridPath := "../../resources/grid.bin"
+	if _, err := os.Stat(gridPath); os.IsNotExist(err) {
+		b.Skipf("grid.bin not found at %s (build with: make grid)", gridPath)
+	}
+
+	idx, err := knn.LoadGrid(gridPath)
+	if err != nil {
+		b.Fatalf("LoadGrid: %v", err)
+	}
+
+	norm := model.NormalizationConstants{
+		MaxAmount:            100000,
+		MaxInstallments:      12,
+		AmountVsAvgRatio:     50,
+		MaxMinutes:           10080,
+		MaxKm:                10000,
+		MaxTxCount24h:        100,
+		MaxMerchantAvgAmount: 100000,
+	}
+	vec := vectorizer.New(norm, model.MCCRisk{})
+
+	h := NewFraudScoreHandler(vec, idx)
+	payload := []byte(validPayload)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_, _ = h.HandleFraudScore(payload)
+	}
+}
+
+func BenchmarkHandleFraudScore_FullPipeline_Parallel(b *testing.B) {
+	gridPath := "../../resources/grid.bin"
+	if _, err := os.Stat(gridPath); os.IsNotExist(err) {
+		b.Skipf("grid.bin not found at %s (build with: make grid)", gridPath)
+	}
+
+	idx, err := knn.LoadGrid(gridPath)
+	if err != nil {
+		b.Fatalf("LoadGrid: %v", err)
+	}
+
+	norm := model.NormalizationConstants{
+		MaxAmount:            100000,
+		MaxInstallments:      12,
+		AmountVsAvgRatio:     50,
+		MaxMinutes:           10080,
+		MaxKm:                10000,
+		MaxTxCount24h:        100,
+		MaxMerchantAvgAmount: 100000,
+	}
+	vec := vectorizer.New(norm, model.MCCRisk{})
+
+	h := NewFraudScoreHandler(vec, idx)
+	payload := []byte(validPayload)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_, _ = h.HandleFraudScore(payload)
+		}
+	})
 }
