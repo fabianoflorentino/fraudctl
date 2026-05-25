@@ -22,12 +22,12 @@ type hammingEntry struct {
 
 func init() {
 	var entries [256]hammingEntry
-	for i := 0; i < 256; i++ {
-		for j := 0; j < 256; j++ {
+	for i := range entries {
+		for j := range entries {
 			entries[j] = hammingEntry{key: uint8(j), dist: popcount8(uint8(i) ^ uint8(j))}
 		}
 		sortEntries8(entries[:])
-		for j := 0; j < 256; j++ {
+		for j := range entries {
 			hammingOrder[i][j] = entries[j].key
 		}
 	}
@@ -93,7 +93,7 @@ func (idx *GridIndex) Count() int { return idx.n }
 // FraudCount returns the total number of fraud-labeled vectors in the index.
 func (idx *GridIndex) FraudCount() int {
 	n := 0
-	for i := 0; i < idx.n; i++ {
+	for i := range idx.n {
 		if (idx.labels[i>>3] & (1 << uint(i&7))) != 0 {
 			n++
 		}

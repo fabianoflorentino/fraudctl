@@ -76,7 +76,7 @@ func BuildIVF(refsGz, outPath string, nlist, iterations int) error {
 		if err := dec.Decode(&entry); err != nil {
 			break
 		}
-		for i := 0; i < 14; i++ {
+		for i := range 14 {
 			if i < len(entry.Vector) {
 				flat = append(flat, float32(entry.Vector[i]))
 			} else {
@@ -91,7 +91,7 @@ func BuildIVF(refsGz, outPath string, nlist, iterations int) error {
 	centroids := kmeansInit(flat, n, nlist)
 
 	assign := make([]int, n)
-	for iter := 0; iter < iterations; iter++ {
+	for iter := range iterations {
 		changed := kmeansAssign(flat, n, centroids, nlist, assign)
 		kmeansUpdate(flat, n, centroids, nlist, assign)
 		fmt.Printf("  iter %d: %d reassigned\n", iter+1, changed)
@@ -102,7 +102,7 @@ func BuildIVF(refsGz, outPath string, nlist, iterations int) error {
 
 	// Build per-cluster vector index lists.
 	clusterLists := make([][]int, nlist)
-	for i := 0; i < nlist; i++ {
+	for i := range nlist {
 		clusterLists[i] = make([]int, 0, n/nlist+1)
 	}
 	for i, ci := range assign {
@@ -124,12 +124,12 @@ func BuildIVF(refsGz, outPath string, nlist, iterations int) error {
 	}
 
 	pos := 0
-	for ci := 0; ci < nlist; ci++ {
+	for ci := range nlist {
 		offsets[ci] = uint32(pos)
 		maxSqDist := float32(0)
 		for _, vi := range clusterLists[ci] {
 			var sqDist float32
-			for d := 0; d < DIM; d++ {
+			for d := range DIM {
 				q := quantizeFloat32(flat[vi*DIM+d])
 				aosVectors[pos*DIM+d] = q
 				if q < bboxMin[ci*DIM+d] {
@@ -152,7 +152,7 @@ func BuildIVF(refsGz, outPath string, nlist, iterations int) error {
 		radii[ci] = float32(math.Sqrt(float64(maxSqDist)))
 		// Empty cluster: set bbox to zero range.
 		if offsets[ci] == uint32(pos) {
-			for d := 0; d < DIM; d++ {
+			for d := range DIM {
 				bboxMin[ci*DIM+d] = 0
 				bboxMax[ci*DIM+d] = 0
 			}
@@ -226,21 +226,20 @@ func kmeansAssign(flat []float32, n int, centroids []float32, k int, assign []in
 	changedPerWorker := make([]int, workers)
 	var wg sync.WaitGroup
 
-	for w := 0; w < workers; w++ {
+	for w := range workers {
 		wg.Add(1)
 		go func(w int) {
 			defer wg.Done()
 			lo := w * chunkSize
 			hi := lo + chunkSize
-			if hi > n {
-				hi = n
-			}
+			hi = min(hi, n)
 			local := 0
+
 			for i := lo; i < hi; i++ {
 				best := 0
 				bestD := float32(math.MaxFloat32)
 				base := i * 14
-				for ci := 0; ci < k; ci++ {
+				for ci := range k {
 					cb := ci * 14
 					// Partial Distance Elimination (PDE): accumulate dims
 					// one at a time and bail out as soon as d ≥ bestD.
