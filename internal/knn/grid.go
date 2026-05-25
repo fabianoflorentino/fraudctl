@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"syscall"
-	"time"
 	"unsafe"
 
 	"github.com/fabianoflorentino/fraudctl/internal/model"
@@ -578,19 +577,13 @@ func LoadGrid(path string) (*GridIndex, error) {
 		for i := 0; i < len(idx.vectors); i += 4096 {
 			_ = idx.vectors[i]
 		}
-	}
 
-	// Periodically touch mmap'd vectors to prevent kernel eviction under
-	// cgroup memory pressure (container limit 170M = heap 86M + cache 84M).
-	go func() {
-		const stride = 2048
-		for {
-			time.Sleep(10 * time.Second)
-			for i := 0; i < len(idx.vectors); i += stride {
-				_ = idx.vectors[i]
-			}
+		// Pin pages in RAM to prevent kernel eviction under cgroup memory
+		// pressure (container limit 170M = heap 86M + mmap 84M).
+		if err := syscall.Mlock(mmapData); err != nil {
+			fmt.Fprintf(os.Stderr, "grid mlock (non-fatal): %v\n", err)
 		}
-	}()
+	}
 
 	return idx, nil
 }
