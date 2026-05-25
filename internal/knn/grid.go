@@ -3,9 +3,8 @@ package knn
 import (
 	"encoding/binary"
 	"fmt"
-	"io"
 	"os"
-	"time"
+	"syscall"
 	"unsafe"
 
 	"github.com/fabianoflorentino/fraudctl/internal/model"
@@ -61,6 +60,7 @@ type GridIndex struct {
 	hammingExisting [256][]uint8 // existing keys in Hamming order per query key
 	vectors         []int16
 	labels          []byte
+	mmapData        []byte // holds mmap'd region for munmap on Close
 }
 
 type gridNode struct {
@@ -553,31 +553,50 @@ func LoadGrid(path string) (*GridIndex, error) {
 	vecBytes := fileSize - nodesEnd - int64(labelBytes)
 	vecCount := int(vecBytes) / 2
 
-	vectors := make([]int16, vecCount)
-	if err := binary.Read(f, binary.LittleEndian, vectors); err != nil {
-		return nil, fmt.Errorf("read vectors: %w", err)
-	}
-	idx.vectors = vectors
+	// Memory-map the vectors and labels region (nodesEnd to EOF).
+	// Keeps ~84MB of vector data off the Go heap — the GC never scans
+	// mmap'd memory, reducing live heap from ~170MB to ~86MB.
+	if vecCount > 0 {
+		pageSize := int64(os.Getpagesize())
+		mmapStart := (nodesEnd / pageSize) * pageSize
+		mmapAdjust := nodesEnd - mmapStart
+		mmapLen := int(vecBytes + int64(labelBytes) + mmapAdjust)
 
-	labels := make([]byte, labelBytes)
-	if _, err := io.ReadFull(f, labels); err != nil {
-		return nil, fmt.Errorf("read labels: %w", err)
-	}
-	idx.labels = labels
-
-	for i := 0; i < len(vectors); i += 4096 {
-		_ = vectors[i]
-	}
-
-	go func() {
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
-		for range ticker.C {
-			for i := 0; i < len(vectors); i += 2048 {
-				_ = vectors[i]
-			}
+		mmapData, err := syscall.Mmap(int(f.Fd()), mmapStart, mmapLen,
+			syscall.PROT_READ, syscall.MAP_PRIVATE|syscall.MAP_POPULATE)
+		if err != nil {
+			return nil, fmt.Errorf("mmap grid data: %w", err)
 		}
-	}()
+		idx.mmapData = mmapData
+
+		vecSlice := mmapData[mmapAdjust : mmapAdjust+vecBytes]
+		idx.vectors = unsafe.Slice((*int16)(unsafe.Pointer(&vecSlice[0])), vecCount)
+		idx.labels = mmapData[mmapAdjust+vecBytes : mmapAdjust+vecBytes+int64(labelBytes)]
+
+		// Fault in all pages once (MAP_POPULATE is a hint on some kernels).
+		for i := 0; i < len(idx.vectors); i += 4096 {
+			_ = idx.vectors[i]
+		}
+
+		// Pin pages in RAM to prevent kernel eviction under cgroup memory
+		// pressure (container limit 170M = heap 86M + mmap 84M).
+		if err := syscall.Mlock(mmapData); err != nil {
+			fmt.Fprintf(os.Stderr, "grid mlock (non-fatal): %v\n", err)
+		}
+	}
 
 	return idx, nil
+}
+
+// Close unmaps the memory-mapped regions. Safe to call multiple times.
+func (idx *GridIndex) Close() error {
+	if idx.mmapData != nil {
+		if err := syscall.Munmap(idx.mmapData); err != nil {
+			return fmt.Errorf("munmap grid: %w", err)
+		}
+		idx.mmapData = nil
+		idx.vectors = nil
+		idx.labels = nil
+	}
+	return nil
 }
