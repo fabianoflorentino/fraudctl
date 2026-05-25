@@ -410,11 +410,13 @@ func gridScanLeaf(vectors []int16, labels []byte, startBlock, vecOffset, nVecs i
 	}
 }
 
+//go:inline
 func exactI64Dist(qi *[DIM]int16, block *int16, lane int) uint64 {
 	var ssd uint64
 	blockArr := (*[DIM * gridBlockLANES]int16)(unsafe.Pointer(block))
+	// int32 is sufficient: max diff ±20000 (int16Scale), max sq 400M < 2³¹.
 	for d := 0; d < DIM; d++ {
-		diff := int64(qi[d]) - int64(blockArr[d*gridBlockLANES+lane])
+		diff := int32(qi[d]) - int32(blockArr[d*gridBlockLANES+lane])
 		ssd += uint64(diff * diff)
 	}
 	return ssd
