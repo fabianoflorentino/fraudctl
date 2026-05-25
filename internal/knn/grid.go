@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/fabianoflorentino/fraudctl/internal/model"
@@ -578,6 +579,18 @@ func LoadGrid(path string) (*GridIndex, error) {
 			_ = idx.vectors[i]
 		}
 	}
+
+	// Periodically touch mmap'd vectors to prevent kernel eviction under
+	// cgroup memory pressure (container limit 170M = heap 86M + cache 84M).
+	go func() {
+		const stride = 2048
+		for {
+			time.Sleep(10 * time.Second)
+			for i := 0; i < len(idx.vectors); i += stride {
+				_ = idx.vectors[i]
+			}
+		}
+	}()
 
 	return idx, nil
 }
