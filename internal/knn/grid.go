@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"syscall"
-	"time"
 	"unsafe"
 
 	"github.com/fabianoflorentino/fraudctl/internal/model"
@@ -575,22 +574,15 @@ func LoadGrid(path string) (*GridIndex, error) {
 		idx.labels = mmapData[mmapAdjust+vecBytes : mmapAdjust+vecBytes+int64(labelBytes)]
 
 		// Fault in all pages once (MAP_POPULATE is a hint on some kernels).
-		for i := 0; i < len(idx.vectors); i += 4096 {
+		// Stride = 2048 = 4096 bytes per touch = every page (int16 is 2 bytes).
+		for i := 0; i < len(idx.vectors); i += 2048 {
 			_ = idx.vectors[i]
 		}
-	}
-
-	// Periodically touch mmap'd vectors to prevent kernel eviction under
-	// cgroup memory pressure (container limit 170M = heap 86M + cache 84M).
-	go func() {
-		const stride = 2048
-		for {
-			time.Sleep(10 * time.Second)
-			for i := 0; i < len(idx.vectors); i += stride {
-				_ = idx.vectors[i]
-			}
+		// Also touch label pages so bit-field reads never fault.
+		for i := 0; i < len(idx.labels); i += 4096 {
+			_ = idx.labels[i]
 		}
-	}()
+	}
 
 	return idx, nil
 }
