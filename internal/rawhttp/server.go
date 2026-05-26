@@ -4,6 +4,7 @@
 package rawhttp
 
 import (
+	"bytes"
 	"io"
 	"net"
 	"strconv"
@@ -82,9 +83,11 @@ var bufPool = sync.Pool{
 	},
 }
 
+var headerEndMarker = []byte("\r\n\r\n")
+
 const (
-	readBufSize    = 1024
-	maxRequestSize = 2 * 1024
+	readBufSize    = 4096
+	maxRequestSize = 8 * 1024
 )
 
 // Server is a minimal HTTP/1.1 server that processes connections directly
@@ -181,13 +184,7 @@ var pipelinedConns atomic.Int64
 var totalConns atomic.Int64
 
 func indexHeaderEnd(b []byte) int {
-	n := len(b) - 3
-	for i := 0; i < n; i++ {
-		if b[i] == '\r' && b[i+1] == '\n' && b[i+2] == '\r' && b[i+3] == '\n' {
-			return i
-		}
-	}
-	return -1
+	return bytes.Index(b, headerEndMarker)
 }
 
 func parseRequestLine(buf []byte) (method, path []byte, contentLen int) {
