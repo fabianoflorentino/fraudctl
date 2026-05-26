@@ -137,30 +137,176 @@ func (idx *GridIndex) PredictRaw(query model.Vector14, _ int) int {
 	if sameIdx >= 0 {
 		start = 1
 	}
-	for j := start; j < len(existing); j++ {
+	probes := 0
+	for j := start; j < len(existing) && probes < maxHammingProbes; j++ {
 		worst := h.worstDist()
 		if worst == 0 {
 			break
 		}
 		candKey := existing[j]
 		p := &idx.partitions[idx.partitionsByKey[candKey]]
+
+		// Unrolled bbox lower-bound in variance order (matches bboxMayImprove).
+		// High-variance dimensions first: 5,6,2,0,7,8,11,12,9,10,1,13,3,4
 		var lb uint64
-		for d := 0; d < 14; d++ {
-			qd := qi[d]
-			if qd < p.bboxMin[d] {
-				diff := int32(p.bboxMin[d]) - int32(qd)
-				lb += uint64(diff) * uint64(diff)
-			} else if qd > p.bboxMax[d] {
-				diff := int32(qd) - int32(p.bboxMax[d])
-				lb += uint64(diff) * uint64(diff)
-			}
-			if lb >= worst {
-				break
-			}
+		var diff int32
+
+		diff = 0
+		if qi[5] < p.bboxMin[5] {
+			diff = int32(p.bboxMin[5]) - int32(qi[5])
+		} else if qi[5] > p.bboxMax[5] {
+			diff = int32(qi[5]) - int32(p.bboxMax[5])
 		}
-		if lb < worst {
-			gridSearchKDTree(p.root, lb, &qi, &h, idx, &scratch)
+		lb += uint64(diff) * uint64(diff)
+		if lb >= worst {
+			continue
 		}
+
+		diff = 0
+		if qi[6] < p.bboxMin[6] {
+			diff = int32(p.bboxMin[6]) - int32(qi[6])
+		} else if qi[6] > p.bboxMax[6] {
+			diff = int32(qi[6]) - int32(p.bboxMax[6])
+		}
+		lb += uint64(diff) * uint64(diff)
+		if lb >= worst {
+			continue
+		}
+
+		diff = 0
+		if qi[2] < p.bboxMin[2] {
+			diff = int32(p.bboxMin[2]) - int32(qi[2])
+		} else if qi[2] > p.bboxMax[2] {
+			diff = int32(qi[2]) - int32(p.bboxMax[2])
+		}
+		lb += uint64(diff) * uint64(diff)
+		if lb >= worst {
+			continue
+		}
+
+		diff = 0
+		if qi[0] < p.bboxMin[0] {
+			diff = int32(p.bboxMin[0]) - int32(qi[0])
+		} else if qi[0] > p.bboxMax[0] {
+			diff = int32(qi[0]) - int32(p.bboxMax[0])
+		}
+		lb += uint64(diff) * uint64(diff)
+		if lb >= worst {
+			continue
+		}
+
+		diff = 0
+		if qi[7] < p.bboxMin[7] {
+			diff = int32(p.bboxMin[7]) - int32(qi[7])
+		} else if qi[7] > p.bboxMax[7] {
+			diff = int32(qi[7]) - int32(p.bboxMax[7])
+		}
+		lb += uint64(diff) * uint64(diff)
+		if lb >= worst {
+			continue
+		}
+
+		diff = 0
+		if qi[8] < p.bboxMin[8] {
+			diff = int32(p.bboxMin[8]) - int32(qi[8])
+		} else if qi[8] > p.bboxMax[8] {
+			diff = int32(qi[8]) - int32(p.bboxMax[8])
+		}
+		lb += uint64(diff) * uint64(diff)
+		if lb >= worst {
+			continue
+		}
+
+		diff = 0
+		if qi[11] < p.bboxMin[11] {
+			diff = int32(p.bboxMin[11]) - int32(qi[11])
+		} else if qi[11] > p.bboxMax[11] {
+			diff = int32(qi[11]) - int32(p.bboxMax[11])
+		}
+		lb += uint64(diff) * uint64(diff)
+		if lb >= worst {
+			continue
+		}
+
+		diff = 0
+		if qi[12] < p.bboxMin[12] {
+			diff = int32(p.bboxMin[12]) - int32(qi[12])
+		} else if qi[12] > p.bboxMax[12] {
+			diff = int32(qi[12]) - int32(p.bboxMax[12])
+		}
+		lb += uint64(diff) * uint64(diff)
+		if lb >= worst {
+			continue
+		}
+
+		diff = 0
+		if qi[9] < p.bboxMin[9] {
+			diff = int32(p.bboxMin[9]) - int32(qi[9])
+		} else if qi[9] > p.bboxMax[9] {
+			diff = int32(qi[9]) - int32(p.bboxMax[9])
+		}
+		lb += uint64(diff) * uint64(diff)
+		if lb >= worst {
+			continue
+		}
+
+		diff = 0
+		if qi[10] < p.bboxMin[10] {
+			diff = int32(p.bboxMin[10]) - int32(qi[10])
+		} else if qi[10] > p.bboxMax[10] {
+			diff = int32(qi[10]) - int32(p.bboxMax[10])
+		}
+		lb += uint64(diff) * uint64(diff)
+		if lb >= worst {
+			continue
+		}
+
+		diff = 0
+		if qi[1] < p.bboxMin[1] {
+			diff = int32(p.bboxMin[1]) - int32(qi[1])
+		} else if qi[1] > p.bboxMax[1] {
+			diff = int32(qi[1]) - int32(p.bboxMax[1])
+		}
+		lb += uint64(diff) * uint64(diff)
+		if lb >= worst {
+			continue
+		}
+
+		diff = 0
+		if qi[13] < p.bboxMin[13] {
+			diff = int32(p.bboxMin[13]) - int32(qi[13])
+		} else if qi[13] > p.bboxMax[13] {
+			diff = int32(qi[13]) - int32(p.bboxMax[13])
+		}
+		lb += uint64(diff) * uint64(diff)
+		if lb >= worst {
+			continue
+		}
+
+		diff = 0
+		if qi[3] < p.bboxMin[3] {
+			diff = int32(p.bboxMin[3]) - int32(qi[3])
+		} else if qi[3] > p.bboxMax[3] {
+			diff = int32(qi[3]) - int32(p.bboxMax[3])
+		}
+		lb += uint64(diff) * uint64(diff)
+		if lb >= worst {
+			continue
+		}
+
+		diff = 0
+		if qi[4] < p.bboxMin[4] {
+			diff = int32(p.bboxMin[4]) - int32(qi[4])
+		} else if qi[4] > p.bboxMax[4] {
+			diff = int32(qi[4]) - int32(p.bboxMax[4])
+		}
+		lb += uint64(diff) * uint64(diff)
+		if lb >= worst {
+			continue
+		}
+
+		gridSearchKDTree(p.root, lb, &qi, &h, idx, &scratch)
+		probes++
 	}
 
 	return h.fraudCount(idx.labels)
@@ -370,6 +516,7 @@ func gridPartitionKey(v *[DIM]int16) uint32 {
 }
 
 const gridBlockLANES = 8
+const maxHammingProbes = 64 // cap partition probes to limit p99 tail latency (safety limit, reached rarely)
 
 func gridScanLeaf(vectors []int16, labels []byte, startBlock, vecOffset, nVecs int, q [DIM]int16, h *topK5, scratch *[8]float32) {
 	if nVecs == 0 {
