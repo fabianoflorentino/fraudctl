@@ -168,6 +168,77 @@ func TestVectorizeJSON_EmptyKnownMerchants(t *testing.T) {
 	}
 }
 
+func TestVectorizeJSON_UnknownFieldTypes(t *testing.T) {
+	vec := New(testNorm, testMCCRisk)
+
+	jsonStr := `{
+		"transaction": {"amount": 100, "installments": 1, "requested_at": "2026-03-11T10:00:00Z",
+			"extra_str": "hello", "extra_num": 42, "extra_bool": true, "extra_null": null},
+		"customer": {"avg_amount": 100, "tx_count_24h": 1, "known_merchants": [],
+			"nested_extra": {"a":1}, "arr_extra": [1,2,3]},
+		"merchant": {"id": "m1", "mcc": "5411", "avg_amount": 50},
+		"terminal": {"is_online": false, "card_present": true, "km_from_home": 10}
+	}`
+
+	_, err := vec.VectorizeJSON([]byte(jsonStr))
+	if err != nil {
+		t.Errorf("unexpected error with unknown field types: %v", err)
+	}
+}
+
+func TestVectorizeJSON_SkipValuePaths(t *testing.T) {
+	vec := New(testNorm, testMCCRisk)
+
+	jsonStr := `{
+		"transaction": {"amount": 100, "installments": 1, "requested_at": "2026-03-11T10:00:00Z"},
+		"customer": {"avg_amount": 100, "tx_count_24h": 1, "known_merchants": ["m1"]},
+		"merchant": {"id": "m1", "mcc": "5411", "avg_amount": 50},
+		"terminal": {"is_online": true, "card_present": false, "km_from_home": 10},
+		"extra_string_field": "just a string",
+		"extra_obj_field": {"nested": {"deep": 1, "arr": [1,2]}},
+		"extra_arr_field": [1, "two", true, null, {"k": "v"}]
+	}`
+
+	_, err := vec.VectorizeJSON([]byte(jsonStr))
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestVectorizeJSON_EscapedString(t *testing.T) {
+	vec := New(testNorm, testMCCRisk)
+
+	jsonStr := `{
+		"transaction": {"amount": 100, "installments": 1, "requested_at": "2026-03-11T10:00:00Z"},
+		"customer": {"avg_amount": 100, "tx_count_24h": 1, "known_merchants": ["m1", "m2"]},
+		"merchant": {"id": "m1", "mcc": "5411", "avg_amount": 50},
+		"terminal": {"is_online": false, "card_present": true, "km_from_home": 10},
+		"last_transaction": {"timestamp": "2026-03-11T09:00:00Z", "km_from_current": 5.5}
+	}`
+
+	_, err := vec.VectorizeJSON([]byte(jsonStr))
+	if err != nil {
+		t.Errorf("unexpected error with last_tx: %v", err)
+	}
+}
+
+func TestVectorizeJSON_HighValues(t *testing.T) {
+	vec := New(testNorm, testMCCRisk)
+
+	jsonStr := `{
+		"transaction": {"amount": 9999.99, "installments": 12, "requested_at": "2026-12-31T23:59:00Z"},
+		"customer": {"avg_amount": 1.0, "tx_count_24h": 20, "known_merchants": ["m1"]},
+		"merchant": {"id": "m1", "mcc": "7995", "avg_amount": 9999.99},
+		"terminal": {"is_online": true, "card_present": false, "km_from_home": 999.9},
+		"last_transaction": {"timestamp": "2026-12-31T20:00:00Z", "km_from_current": 500}
+	}`
+
+	_, err := vec.VectorizeJSON([]byte(jsonStr))
+	if err != nil {
+		t.Errorf("unexpected error with high values: %v", err)
+	}
+}
+
 func TestVectorizeJSON_NumberParsing(t *testing.T) {
 	vec := New(testNorm, testMCCRisk)
 

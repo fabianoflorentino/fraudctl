@@ -6,21 +6,562 @@ import (
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
 
-var (
-	jsonFieldAmount       = []byte(`"amount":`)
-	jsonFieldInstallments = []byte(`"installments":`)
-	jsonFieldRequestedAt  = []byte(`"requested_at":`)
-	jsonFieldAvgAmount    = []byte(`"avg_amount":`)
-	jsonFieldTxCount24h   = []byte(`"tx_count_24h":`)
-	jsonFieldKnownMerch   = []byte(`"known_merchants":`)
-	jsonFieldID           = []byte(`"id":`)
-	jsonFieldMCC          = []byte(`"mcc":`)
-	jsonFieldIsOnline     = []byte(`"is_online":`)
-	jsonFieldCardPresent  = []byte(`"card_present":`)
-	jsonFieldKmFromHome   = []byte(`"km_from_home":`)
-	jsonFieldTimestamp    = []byte(`"timestamp":`)
-	jsonFieldKmFromCurr   = []byte(`"km_from_current":`)
-)
+// parsedTx holds all transaction fields extracted in a single forward scan.
+type parsedTx struct {
+	amount       float64
+	installments int
+	requestedAt  []byte
+}
+
+type parsedCust struct {
+	avgAmount      float64
+	txCount24h     int
+	knownMerchants []byte // raw JSON array bytes
+}
+
+type parsedMerch struct {
+	id        []byte
+	mcc       []byte
+	avgAmount float64
+}
+
+type parsedTerm struct {
+	isOnline    bool
+	cardPresent bool
+	kmFromHome  float64
+}
+
+type parsedLastTx struct {
+	timestamp     []byte
+	kmFromCurrent float64
+}
+
+// parseTxFields extracts all transaction fields in a single forward scan.
+func parseTxFields(tx []byte) parsedTx {
+	var f parsedTx
+	i := 0
+	n := len(tx)
+	for i < n && tx[i] != '{' {
+		i++
+	}
+	if i >= n {
+		return f
+	}
+	i++
+	for i < n {
+		for i < n && (tx[i] == ' ' || tx[i] == '\t' || tx[i] == '\n' || tx[i] == '\r' || tx[i] == ',') {
+			i++
+		}
+		if i >= n || tx[i] == '}' {
+			break
+		}
+		if tx[i] != '"' {
+			i++
+			continue
+		}
+		i++
+		keyStart := i
+		for i < n && tx[i] != '"' {
+			if tx[i] == '\\' {
+				i++
+			}
+			i++
+		}
+		key := tx[keyStart:i]
+		i++
+		for i < n && tx[i] != ':' {
+			i++
+		}
+		i++
+		for i < n && (tx[i] == ' ' || tx[i] == '\t' || tx[i] == '\n' || tx[i] == '\r') {
+			i++
+		}
+		if i >= n {
+			break
+		}
+		switch {
+		case len(key) == 6 && key[0] == 'a':
+			f.amount, i = parseFloatValueInline(tx, i, n)
+		case len(key) == 12 && key[0] == 'i':
+			f.installments, i = parseIntValueInline(tx, i, n)
+		case len(key) == 12 && key[0] == 'r':
+			f.requestedAt, i = parseStringValueInline(tx, i, n)
+		default:
+			i = skipValueInline(tx, i, n)
+		}
+	}
+	return f
+}
+
+func parseCustFields(cust []byte) parsedCust {
+	var f parsedCust
+	i := 0
+	n := len(cust)
+	for i < n && cust[i] != '{' {
+		i++
+	}
+	if i >= n {
+		return f
+	}
+	i++
+	for i < n {
+		for i < n && (cust[i] == ' ' || cust[i] == '\t' || cust[i] == '\n' || cust[i] == '\r' || cust[i] == ',') {
+			i++
+		}
+		if i >= n || cust[i] == '}' {
+			break
+		}
+		if cust[i] != '"' {
+			i++
+			continue
+		}
+		i++
+		keyStart := i
+		for i < n && cust[i] != '"' {
+			if cust[i] == '\\' {
+				i++
+			}
+			i++
+		}
+		key := cust[keyStart:i]
+		i++
+		for i < n && cust[i] != ':' {
+			i++
+		}
+		i++
+		for i < n && (cust[i] == ' ' || cust[i] == '\t' || cust[i] == '\n' || cust[i] == '\r') {
+			i++
+		}
+		if i >= n {
+			break
+		}
+		switch {
+		case len(key) == 10 && key[0] == 'a':
+			f.avgAmount, i = parseFloatValueInline(cust, i, n)
+		case len(key) == 12 && key[0] == 't':
+			f.txCount24h, i = parseIntValueInline(cust, i, n)
+		case len(key) == 15 && key[0] == 'k':
+			f.knownMerchants, i = parseArrayValueInline(cust, i, n)
+		default:
+			i = skipValueInline(cust, i, n)
+		}
+	}
+	return f
+}
+
+func parseMerchFields(merch []byte) parsedMerch {
+	var f parsedMerch
+	i := 0
+	n := len(merch)
+	for i < n && merch[i] != '{' {
+		i++
+	}
+	if i >= n {
+		return f
+	}
+	i++
+	for i < n {
+		for i < n && (merch[i] == ' ' || merch[i] == '\t' || merch[i] == '\n' || merch[i] == '\r' || merch[i] == ',') {
+			i++
+		}
+		if i >= n || merch[i] == '}' {
+			break
+		}
+		if merch[i] != '"' {
+			i++
+			continue
+		}
+		i++
+		keyStart := i
+		for i < n && merch[i] != '"' {
+			if merch[i] == '\\' {
+				i++
+			}
+			i++
+		}
+		key := merch[keyStart:i]
+		i++
+		for i < n && merch[i] != ':' {
+			i++
+		}
+		i++
+		for i < n && (merch[i] == ' ' || merch[i] == '\t' || merch[i] == '\n' || merch[i] == '\r') {
+			i++
+		}
+		if i >= n {
+			break
+		}
+		switch {
+		case len(key) == 2 && key[0] == 'i':
+			f.id, i = parseStringValueInline(merch, i, n)
+		case len(key) == 3 && key[0] == 'm':
+			f.mcc, i = parseStringValueInline(merch, i, n)
+		case len(key) == 10 && key[0] == 'a':
+			f.avgAmount, i = parseFloatValueInline(merch, i, n)
+		default:
+			i = skipValueInline(merch, i, n)
+		}
+	}
+	return f
+}
+
+func parseTermFields(term []byte) parsedTerm {
+	var f parsedTerm
+	i := 0
+	n := len(term)
+	for i < n && term[i] != '{' {
+		i++
+	}
+	if i >= n {
+		return f
+	}
+	i++
+	for i < n {
+		for i < n && (term[i] == ' ' || term[i] == '\t' || term[i] == '\n' || term[i] == '\r' || term[i] == ',') {
+			i++
+		}
+		if i >= n || term[i] == '}' {
+			break
+		}
+		if term[i] != '"' {
+			i++
+			continue
+		}
+		i++
+		keyStart := i
+		for i < n && term[i] != '"' {
+			if term[i] == '\\' {
+				i++
+			}
+			i++
+		}
+		key := term[keyStart:i]
+		i++
+		for i < n && term[i] != ':' {
+			i++
+		}
+		i++
+		for i < n && (term[i] == ' ' || term[i] == '\t' || term[i] == '\n' || term[i] == '\r') {
+			i++
+		}
+		if i >= n {
+			break
+		}
+		switch {
+		case len(key) == 9 && key[0] == 'i':
+			f.isOnline, i = parseBoolValueInline(term, i, n)
+		case len(key) == 12 && key[0] == 'c':
+			f.cardPresent, i = parseBoolValueInline(term, i, n)
+		case len(key) == 12 && key[0] == 'k':
+			f.kmFromHome, i = parseFloatValueInline(term, i, n)
+		default:
+			i = skipValueInline(term, i, n)
+		}
+	}
+	return f
+}
+
+func parseLastTxFields(ltx []byte) parsedLastTx {
+	var f parsedLastTx
+	i := 0
+	n := len(ltx)
+	for i < n && ltx[i] != '{' {
+		i++
+	}
+	if i >= n {
+		return f
+	}
+	i++
+	for i < n {
+		for i < n && (ltx[i] == ' ' || ltx[i] == '\t' || ltx[i] == '\n' || ltx[i] == '\r' || ltx[i] == ',') {
+			i++
+		}
+		if i >= n || ltx[i] == '}' {
+			break
+		}
+		if ltx[i] != '"' {
+			i++
+			continue
+		}
+		i++
+		keyStart := i
+		for i < n && ltx[i] != '"' {
+			if ltx[i] == '\\' {
+				i++
+			}
+			i++
+		}
+		key := ltx[keyStart:i]
+		i++
+		for i < n && ltx[i] != ':' {
+			i++
+		}
+		i++
+		for i < n && (ltx[i] == ' ' || ltx[i] == '\t' || ltx[i] == '\n' || ltx[i] == '\r') {
+			i++
+		}
+		if i >= n {
+			break
+		}
+		switch {
+		case len(key) == 9 && key[0] == 't':
+			f.timestamp, i = parseStringValueInline(ltx, i, n)
+		case len(key) == 15 && key[0] == 'k':
+			f.kmFromCurrent, i = parseFloatValueInline(ltx, i, n)
+		default:
+			i = skipValueInline(ltx, i, n)
+		}
+	}
+	return f
+}
+
+// Inline value parsers — return (value, nextIndex) for single-pass scanning.
+func parseFloatValueInline(data []byte, i, n int) (float64, int) {
+	start := -1
+	for i < n {
+		b := data[i]
+		if (b >= '0' && b <= '9') || b == '.' || b == '-' || b == '+' {
+			start = i
+			break
+		}
+		if b != ' ' && b != '\t' && b != '\n' && b != '\r' {
+			return 0, i
+		}
+		i++
+	}
+	if start == -1 {
+		return 0, i
+	}
+	end := start
+	for i = start; i < n; i++ {
+		b := data[i]
+		if (b >= '0' && b <= '9') || b == '.' || b == 'e' || b == 'E' || b == '-' || b == '+' {
+			end = i
+		} else {
+			break
+		}
+	}
+	i = end + 1
+	return parseFloatFast(data[start : end+1]), i
+}
+
+func parseIntValueInline(data []byte, i, n int) (int, int) {
+	start := -1
+	for i < n {
+		b := data[i]
+		if (b >= '0' && b <= '9') || b == '-' {
+			start = i
+			break
+		}
+		if b != ' ' && b != '\t' && b != '\n' && b != '\r' {
+			return 0, i
+		}
+		i++
+	}
+	if start == -1 {
+		return 0, i
+	}
+	end := start
+	for i = start; i < n; i++ {
+		b := data[i]
+		if b >= '0' && b <= '9' {
+			end = i
+		} else {
+			break
+		}
+	}
+	i = end + 1
+	return int(parseFloatFast(data[start : end+1])), i
+}
+
+func parseStringValueInline(data []byte, i, n int) ([]byte, int) {
+	for i < n {
+		if data[i] == '"' {
+			i++
+			start := i
+			for i < n {
+				if data[i] == '"' && data[i-1] != '\\' {
+					return data[start:i], i + 1
+				}
+				i++
+			}
+			return nil, i
+		}
+		if data[i] != ' ' && data[i] != '\t' && data[i] != '\n' && data[i] != '\r' {
+			return nil, i
+		}
+		i++
+	}
+	return nil, i
+}
+
+func parseBoolValueInline(data []byte, i, n int) (bool, int) {
+	for i < n {
+		b := data[i]
+		if b == ' ' || b == '\t' || b == '\n' || b == '\r' {
+			i++
+			continue
+		}
+		if b == 't' && i+3 < n && data[i+1] == 'r' && data[i+2] == 'u' && data[i+3] == 'e' {
+			return true, i + 4
+		}
+		return false, i
+	}
+	return false, i
+}
+
+func parseArrayValueInline(data []byte, i, n int) ([]byte, int) {
+	for i < n {
+		if data[i] == '[' {
+			start := i
+			depth := 1
+			i++
+			for i < n && depth > 0 {
+				switch data[i] {
+				case '[':
+					depth++
+				case ']':
+					depth--
+				case '"':
+					i++
+					for i < n {
+						if data[i] == '\\' {
+							i += 2
+							continue
+						}
+						if data[i] == '"' {
+							break
+						}
+						i++
+					}
+				}
+				i++
+			}
+			return data[start : i-1], i
+		}
+		if data[i] != ' ' && data[i] != '\t' && data[i] != '\n' && data[i] != '\r' {
+			return nil, i
+		}
+		i++
+	}
+	return nil, i
+}
+
+func skipValueInline(data []byte, i, n int) int {
+	if i >= n {
+		return i
+	}
+	switch data[i] {
+	case '"':
+		i++
+		for i < n {
+			if data[i] == '\\' {
+				i += 2
+				continue
+			}
+			if data[i] == '"' {
+				i++
+				break
+			}
+			i++
+		}
+	case 't':
+		i += 4
+	case 'f':
+		i += 5
+	case 'n':
+		i += 4
+	case '[':
+		depth := 1
+		i++
+		for i < n && depth > 0 {
+			switch data[i] {
+			case '[':
+				depth++
+			case ']':
+				depth--
+			case '"':
+				i++
+				for i < n {
+					if data[i] == '\\' {
+						i += 2
+						continue
+					}
+					if data[i] == '"' {
+						break
+					}
+					i++
+				}
+			}
+			i++
+		}
+	case '{':
+		depth := 1
+		i++
+		for i < n && depth > 0 {
+			switch data[i] {
+			case '{':
+				depth++
+			case '}':
+				depth--
+			case '"':
+				i++
+				for i < n {
+					if data[i] == '\\' {
+						i += 2
+						continue
+					}
+					if data[i] == '"' {
+						break
+					}
+					i++
+				}
+			}
+			i++
+		}
+	default:
+		for i < n {
+			b := data[i]
+			if (b >= '0' && b <= '9') || b == '.' || b == '-' || b == '+' || b == 'e' || b == 'E' {
+				i++
+			} else {
+				break
+			}
+		}
+	}
+	for i < n && (data[i] == ' ' || data[i] == '\t' || data[i] == '\n' || data[i] == '\r' || data[i] == ',') {
+		i++
+	}
+	return i
+}
+
+func merchantIDInArrayRaw(arrBytes []byte, target []byte) bool {
+	i := 0
+	n := len(arrBytes)
+	for i < n {
+		if arrBytes[i] == '"' {
+			i++
+			start := i
+			for i < n {
+				if arrBytes[i] == '\\' {
+					i += 2
+					continue
+				}
+				if arrBytes[i] == '"' {
+					break
+				}
+				i++
+			}
+			if bytes.Equal(arrBytes[start:i], target) {
+				return true
+			}
+			i++
+		} else {
+			i++
+		}
+	}
+	return false
+}
 
 // scanTopLevel finds all top-level JSON objects in ONE forward scan.
 func scanTopLevel(data []byte) (tx, cust, merch, term, lastTx []byte) {
@@ -189,40 +730,6 @@ func skipValue(data []byte, i *int, n int) {
 	}
 }
 
-func parseJSONFloat64Fast(obj []byte, field []byte) float64 {
-	idx := bytes.Index(obj, field)
-	if idx == -1 {
-		return 0
-	}
-	rest := obj[idx+len(field):]
-
-	start := -1
-	for i, b := range rest {
-		if (b >= '0' && b <= '9') || b == '.' || b == '-' || b == '+' {
-			start = i
-			break
-		}
-		if b != ' ' && b != '\t' && b != '\n' && b != '\r' {
-			return 0
-		}
-	}
-	if start == -1 {
-		return 0
-	}
-
-	end := start
-	for i := start; i < len(rest); i++ {
-		b := rest[i]
-		if (b >= '0' && b <= '9') || b == '.' || b == 'e' || b == 'E' || b == '-' || b == '+' {
-			end = i
-		} else {
-			break
-		}
-	}
-
-	return parseFloatFast(rest[start : end+1])
-}
-
 func parseFloatFast(b []byte) float64 {
 	if len(b) == 0 {
 		return 0
@@ -276,131 +783,6 @@ func parseFloatFast(b []byte) float64 {
 		val = -val
 	}
 	return val
-}
-
-func parseJSONIntFast(obj []byte, field []byte) int {
-	idx := bytes.Index(obj, field)
-	if idx == -1 {
-		return 0
-	}
-	rest := obj[idx+len(field):]
-
-	start := -1
-	for i, b := range rest {
-		if (b >= '0' && b <= '9') || b == '-' {
-			start = i
-			break
-		}
-		if b != ' ' && b != '\t' && b != '\n' && b != '\r' {
-			return 0
-		}
-	}
-	if start == -1 {
-		return 0
-	}
-
-	end := start
-	for i := start; i < len(rest); i++ {
-		b := rest[i]
-		if b >= '0' && b <= '9' {
-			end = i
-		} else {
-			break
-		}
-	}
-
-	return int(parseFloatFast(rest[start : end+1]))
-}
-
-func parseJSONStringBytes(obj []byte, field []byte) []byte {
-	idx := bytes.Index(obj, field)
-	if idx == -1 {
-		return nil
-	}
-	rest := obj[idx+len(field):]
-
-	quoteStart := -1
-	for i, b := range rest {
-		if b == '"' {
-			quoteStart = i
-			break
-		}
-		if b != ' ' && b != '\t' && b != '\n' && b != '\r' {
-			return nil
-		}
-	}
-	if quoteStart == -1 {
-		return nil
-	}
-
-	for i := quoteStart + 1; i < len(rest); i++ {
-		if rest[i] == '"' && rest[i-1] != '\\' {
-			return rest[quoteStart+1 : i]
-		}
-	}
-	return nil
-}
-
-func parseJSONBoolFast(obj []byte, field []byte) bool {
-	idx := bytes.Index(obj, field)
-	if idx == -1 {
-		return false
-	}
-	rest := obj[idx+len(field):]
-
-	for i := 0; i < len(rest); i++ {
-		b := rest[i]
-		if b == ' ' || b == '\t' || b == '\n' || b == '\r' {
-			continue
-		}
-		if b == 't' && i+3 < len(rest) && rest[i+1] == 'r' && rest[i+2] == 'u' && rest[i+3] == 'e' {
-			return true
-		}
-		return false
-	}
-	return false
-}
-
-func merchantIDInArray(obj []byte, field []byte, target []byte) bool {
-	idx := bytes.Index(obj, field)
-	if idx == -1 {
-		return false
-	}
-	rest := obj[idx+len(field):]
-
-	bracketStart := -1
-	for i, b := range rest {
-		if b == '[' {
-			bracketStart = i
-			break
-		}
-		if b != ' ' && b != '\t' && b != '\n' && b != '\r' {
-			return false
-		}
-	}
-	if bracketStart == -1 {
-		return false
-	}
-
-	inStr := false
-	var strStart int
-	for i := bracketStart + 1; i < len(rest); i++ {
-		b := rest[i]
-		if b == '"' && (i == 0 || rest[i-1] != '\\') {
-			if !inStr {
-				inStr = true
-				strStart = i + 1
-			} else {
-				if bytes.Equal(rest[strStart:i], target) {
-					return true
-				}
-				inStr = false
-			}
-		} else if b == ']' && !inStr {
-			return false
-		}
-	}
-	return false
 }
 
 var errInvalidJSON = &invalidJSONError{}
@@ -468,66 +850,59 @@ func (v *Vectorizer) VectorizeJSON(data []byte) (model.Vector14, error) {
 		return vec, nil
 	}
 
-	txAmount := parseJSONFloat64Fast(txObj, jsonFieldAmount)
-	txInstallments := parseJSONIntFast(txObj, jsonFieldInstallments)
-	txRequestedAt := parseJSONStringBytes(txObj, jsonFieldRequestedAt)
-
-	vec[0] = clampFloat32(float32(txAmount) * v.invMaxAmount)
-	vec[1] = clampFloat32(float32(txInstallments) * v.invMaxInstall)
+	tx := parseTxFields(txObj)
+	vec[0] = clampFloat32(float32(tx.amount) * v.invMaxAmount)
+	vec[1] = clampFloat32(float32(tx.installments) * v.invMaxInstall)
 
 	if custObj != nil {
-		custAvgAmount := parseJSONFloat64Fast(custObj, jsonFieldAvgAmount)
-		custTxCount24h := parseJSONIntFast(custObj, jsonFieldTxCount24h)
+		cust := parseCustFields(custObj)
 
 		var amountVsAvg float64
-		if custAvgAmount > 0 {
-			amountVsAvg = txAmount / custAvgAmount
+		if cust.avgAmount > 0 {
+			amountVsAvg = tx.amount / cust.avgAmount
 		}
 		vec[2] = clampFloat32(float32(amountVsAvg) * v.invAmountRatio)
-		vec[8] = clampFloat32(float32(custTxCount24h) * v.invMaxTxCount)
+		vec[8] = clampFloat32(float32(cust.txCount24h) * v.invMaxTxCount)
 
 		if merchObj != nil {
-			merchID := parseJSONStringBytes(merchObj, jsonFieldID)
-			merchMCC := parseJSONStringBytes(merchObj, jsonFieldMCC)
-			merchAvg := parseJSONFloat64Fast(merchObj, jsonFieldAvgAmount)
+			merch := parseMerchFields(merchObj)
 
-			if len(merchID) > 0 && !merchantIDInArray(custObj, jsonFieldKnownMerch, merchID) {
+			if len(merch.id) > 0 && len(cust.knownMerchants) > 0 {
+				if !merchantIDInArrayRaw(cust.knownMerchants, merch.id) {
+					vec[11] = 1
+				}
+			} else if len(merch.id) > 0 {
 				vec[11] = 1
 			}
 
-			vec[12] = float32(v.mccRisk.Get(merchMCC))
-			vec[13] = clampFloat32(float32(merchAvg) * v.invMaxMerchantAvg)
+			vec[12] = float32(v.mccRisk.Get(merch.mcc))
+			vec[13] = clampFloat32(float32(merch.avgAmount) * v.invMaxMerchantAvg)
 		}
 	}
 
-	reqTS := parseTimestampBytes(txRequestedAt)
+	reqTS := parseTimestampBytes(tx.requestedAt)
 	vec[3] = float32(reqTS.hour) / 23.0
 	vec[4] = float32(reqTS.weekday) / 6.0
 
 	if lastTxObj != nil {
-		lastTxTime := parseJSONStringBytes(lastTxObj, jsonFieldTimestamp)
-		lastTxKm := parseJSONFloat64Fast(lastTxObj, jsonFieldKmFromCurr)
-
-		lastSec := parseUnixSecondsBytes(lastTxTime)
+		ltx := parseLastTxFields(lastTxObj)
+		lastSec := parseUnixSecondsBytes(ltx.timestamp)
 		minutes := float32(reqTS.unixSec-lastSec) / 60.0
 		vec[5] = clampFloat32(minutes * v.invMaxMinutes)
-		vec[6] = clampFloat32(float32(lastTxKm) * v.invMaxKm)
+		vec[6] = clampFloat32(float32(ltx.kmFromCurrent) * v.invMaxKm)
 	} else {
 		vec[5] = -1
 		vec[6] = -1
 	}
 
 	if termObj != nil {
-		termIsOnline := parseJSONBoolFast(termObj, jsonFieldIsOnline)
-		termCardPresent := parseJSONBoolFast(termObj, jsonFieldCardPresent)
-		termKmFromHome := parseJSONFloat64Fast(termObj, jsonFieldKmFromHome)
+		term := parseTermFields(termObj)
+		vec[7] = clampFloat32(float32(term.kmFromHome) * v.invMaxKm)
 
-		vec[7] = clampFloat32(float32(termKmFromHome) * v.invMaxKm)
-
-		if termIsOnline {
+		if term.isOnline {
 			vec[9] = 1
 		}
-		if termCardPresent {
+		if term.cardPresent {
 			vec[10] = 1
 		}
 	}
