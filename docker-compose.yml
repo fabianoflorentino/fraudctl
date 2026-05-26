@@ -36,17 +36,23 @@ services:
     <<: *api-defaults
     container_name: fraudctl-api-1
     hostname: api-1
+    command: ["-pprof", ":6060"]
     environment:
       <<: *api-env
       CTRL_SOCKET: /sockets/lb-ctrl-1.sock
+    ports:
+      - "6061:6060"
 
   api-2:
     <<: *api-defaults
     container_name: fraudctl-api-2
     hostname: api-2
+    command: ["-pprof", ":6060"]
     environment:
       <<: *api-env
       CTRL_SOCKET: /sockets/lb-ctrl-2.sock
+    ports:
+      - "6062:6060"
 
   lb:
     build:
@@ -58,8 +64,7 @@ services:
       - "/sockets/lb-ctrl-1.sock,/sockets/lb-ctrl-2.sock"
     container_name: fraudctl-lb
     hostname: lb
-    ports:
-      - "9999:9999"
+    network_mode: host
     volumes:
       - sockets:/sockets
     depends_on:
