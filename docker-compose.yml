@@ -50,7 +50,7 @@ services:
       CTRL_SOCKET: /sockets/lb-ctrl-2.sock
 
   lb:
-    image: fabianoflorentino/fraudctl-lb:lb-v1.0.1
+    image: fabianoflorentino/fraudctl-lb:lb-v1.0.3
     command:
       - "-workers"
       - "/sockets/lb-ctrl-1.sock,/sockets/lb-ctrl-2.sock"
