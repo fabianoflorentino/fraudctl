@@ -21,7 +21,6 @@ type Vectorizer interface {
 type KNNIndex interface {
 	Predict(query model.Vector14, k int) float64
 	PredictRaw(query model.Vector14, nprobe int) int
-	NProbe() int
 }
 
 const knnK = 5
@@ -59,7 +58,7 @@ func (h *FraudScoreHandler) HandleFraudScore(body []byte) (int, bool) {
 	if err != nil {
 		return 0, true
 	}
-	return h.knn.PredictRaw(vec, h.knn.NProbe()), false
+	return h.knn.PredictRaw(vec, 0), false
 }
 
 // ResponseForCount returns the precomputed JSON response for the given
