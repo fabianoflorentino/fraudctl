@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"math"
 	"os"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
@@ -983,5 +986,127 @@ func BenchmarkGridIndex_PredictRaw(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = idx.PredictRaw(query, 0)
+	}
+}
+
+// BenchmarkGridIndex_PredictRaw_Histogram measures per-call latency of PredictRaw
+// with internally recorded μs-resolution histogram, exported via b.ReportMetric.
+// Uses a pool of 512 pseudo-random queries to simulate realistic workload.
+// Reports overall p50/p95/p99 and per-second p99 (to detect tail stability under
+// GOMAXPROCS=1).
+func BenchmarkGridIndex_PredictRaw_Histogram(b *testing.B) {
+	gridPath := "../../resources/grid.bin"
+	idx, err := LoadGrid(gridPath)
+	if err != nil {
+		b.Fatalf("LoadGrid failed: %v", err)
+	}
+
+	// Pre-generate 512 queries spread across the [0,1]ⁱ⁴ hypercube with a bias
+	// toward the origin (where most real transactions cluster).
+	var queries [512]model.Vector14
+	for i := range queries {
+		for d := 0; d < DIM; d++ {
+			queries[i][d] = float32(math.Abs(math.Sin(float64(i*17+d*31)))) * 0.3
+		}
+	}
+	queryBuf := queries[:]
+
+	// Histogram: 5μs buckets from 0 to 2000μs (more than enough for p99).
+	const (
+		bucketWidth = 5   // μs per bucket
+		maxBucket   = 400 // 400 * 5 = 2000μs
+	)
+
+	type secondsHist struct {
+		mu   sync.Mutex
+		secs [][maxBucket]uint64
+	}
+
+	var sh secondsHist
+
+	b.ResetTimer()
+	start := time.Now()
+	for i := 0; i < b.N; i++ {
+		q := queryBuf[i&511]
+		t0 := time.Now()
+		_ = idx.PredictRaw(q, 0)
+		elapsed := time.Since(t0)
+		bucket := int(elapsed.Microseconds()) / bucketWidth
+		if bucket >= maxBucket {
+			bucket = maxBucket - 1
+		}
+		sec := int(time.Since(start).Seconds())
+
+		sh.mu.Lock()
+		for sec >= len(sh.secs) {
+			sh.secs = append(sh.secs, [maxBucket]uint64{})
+		}
+		sh.secs[sec][bucket]++
+		sh.mu.Unlock()
+	}
+	b.StopTimer()
+
+	nsec := len(sh.secs)
+	if nsec == 0 {
+		return
+	}
+
+	// Merge all per-second histograms into the first entry.
+	merged := sh.secs[0]
+	for s := 1; s < nsec; s++ {
+		for bk := range merged {
+			merged[bk] += sh.secs[s][bk]
+		}
+	}
+
+	total := uint64(0)
+	for _, c := range merged {
+		total += c
+	}
+
+	// Compute overall percentiles.
+	type pct struct {
+		rank  int64 // per-mille rank (500 = p50, 950 = p95, 999 = p99.9)
+		label string
+	}
+	marks := []pct{
+		{500, "p50_ms"},
+		{950, "p95_ms"},
+		{990, "p99_ms"},
+		{999, "p99_9_ms"},
+	}
+	var cumulative uint64
+	mi := 0
+	for bk, c := range merged {
+		if c == 0 {
+			continue
+		}
+		cumulative += c
+		for mi < len(marks) && cumulative*1000 >= uint64(marks[mi].rank)*total {
+			val := float64(bk*bucketWidth) / 1000
+			b.ReportMetric(val, marks[mi].label)
+			mi++
+		}
+	}
+
+	// Per-second p99 — print to b.Log for inspection.
+	p99Rank := uint64(990)
+	b.Logf("\nper-second p99 (ms):")
+	for s := 0; s < nsec; s++ {
+		var sTotal, sCum uint64
+		for _, c := range sh.secs[s] {
+			sTotal += c
+		}
+		if sTotal == 0 {
+			continue
+		}
+		p99th := (sTotal*p99Rank + 500) / 1000
+		for bk, c := range sh.secs[s] {
+			sCum += c
+			if sCum >= p99th {
+				b.Logf("  sec %2d: %5.2fms  (n=%d)", s, float64(bk*bucketWidth)/1000, sTotal)
+				break
+			}
+		}
 	}
 }
