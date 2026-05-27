@@ -75,6 +75,14 @@ func main() {
 			break
 		}
 
+		// Disable Nagle on the accepted client connection before passing the
+		// FD via SCM_RIGHTS. Without this, the first response byte can be
+		// delayed by up to 40ms (Nagle + delayed ACK interaction) when the
+		// API writes a small HTTP response (< MSS + not full-sized segment).
+		if tc, ok := tcpConn.(*net.TCPConn); ok {
+			_ = tc.SetNoDelay(true)
+		}
+
 		wi := atomic.AddUint64(&rr, 1) % uint64(len(cons))
 
 		raw, err := tcpConn.(*net.TCPConn).SyscallConn()
