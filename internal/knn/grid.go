@@ -523,6 +523,12 @@ func gridScanLeaf(vectors []int16, labels []byte, startBlock, vecOffset, nVecs i
 		return
 	}
 
+	// BCE: assert the last vector block and label are in bounds so the compiler
+	// eliminates per-iteration bounds checks inside the loop.
+	lastBlock := startBlock + ((nVecs + gridBlockLANES - 1) / gridBlockLANES) - 1
+	_ = labels[(vecOffset+nVecs-1)>>3]
+	_ = vectors[lastBlock*DIM*gridBlockLANES+DIM*gridBlockLANES-1]
+
 	qf := [16]float32{
 		float32(q[0]), float32(q[1]), float32(q[2]), float32(q[3]),
 		float32(q[4]), float32(q[5]), float32(q[6]), float32(q[7]),
