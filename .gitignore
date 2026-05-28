@@ -16,3 +16,4 @@ third_party/**/*.o
 *.log
 !resources/ivf.bin
 !resources/grid.bin
+!resources/gbdt.bin
