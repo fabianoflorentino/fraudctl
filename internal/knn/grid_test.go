@@ -42,67 +42,52 @@ func TestGridPartitionKey(t *testing.T) {
 		{
 			name: "all zeros",
 			v:    [DIM]int16{},
-			want: 1 << 0,
+			want: 0,
 		},
 		{
-			name: "last_tx positive",
-			v:    [DIM]int16{0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0},
-			want: 1 << 0,
+			name: "hour bucket 2",
+			v:    [DIM]int16{0, 0, 0, 3000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+			want: 2,
 		},
 		{
-			name: "last_tx negative",
-			v:    [DIM]int16{0, 0, 0, 0, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0},
+			name: "hour bucket 7",
+			v:    [DIM]int16{0, 0, 0, 9000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+			want: 7,
+		},
+		{
+			name: "installments bucket 2",
+			v:    [DIM]int16{0, 6000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+			want: 2 << 3,
+		},
+		{
+			name: "mcc high",
+			v:    [DIM]int16{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5000, 0},
+			want: 1 << 5,
+		},
+		{
+			name: "mcc low",
+			v:    [DIM]int16{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1000, 0},
+			want: 0,
+		},
+		{
+			name: "mcc threshold exactly 3000",
+			v:    [DIM]int16{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3000, 0},
 			want: 0,
 		},
 		{
 			name: "online positive",
 			v:    [DIM]int16{0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0},
-			want: (1 << 0) | (1 << 1),
-		},
-		{
-			name: "card present",
-			v:    [DIM]int16{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0},
-			want: (1 << 0) | (1 << 2),
+			want: 1 << 6,
 		},
 		{
 			name: "unknown merchant",
 			v:    [DIM]int16{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0},
-			want: (1 << 0) | (1 << 3),
-		},
-		{
-			name: "mcc bucket 0",
-			v:    [DIM]int16{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1000, 0},
-			want: (1 << 0) | (0 << 4),
-		},
-		{
-			name: "mcc bucket 1",
-			v:    [DIM]int16{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3000, 0},
-			want: (1 << 0) | (1 << 4),
-		},
-		{
-			name: "mcc bucket 2",
-			v:    [DIM]int16{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6000, 0},
-			want: (1 << 0) | (2 << 4),
-		},
-		{
-			name: "mcc bucket 3",
-			v:    [DIM]int16{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9000, 0},
-			want: (1 << 0) | (3 << 4),
-		},
-		{
-			name: "amount high",
-			v:    [DIM]int16{0, 0, 6000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-			want: (1 << 0) | (1 << 6),
-		},
-		{
-			name: "tx_count high",
-			v:    [DIM]int16{0, 0, 0, 0, 0, 0, 0, 0, 3000, 0, 0, 0, 0, 0},
-			want: (1 << 0) | (1 << 7),
+			want: 1 << 7,
 		},
 		{
 			name: "all flags",
-			v:    [DIM]int16{0, 0, 6000, 0, 0, 1, 0, 0, 3000, 1, 1, 1, 3000, 0},
-			want: (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 6) | (1 << 7),
+			v:    [DIM]int16{0, 6000, 0, 9000, 0, 0, 0, 0, 0, 1, 0, 1, 5000, 0},
+			want: (7 << 0) | (2 << 3) | (1 << 5) | (1 << 6) | (1 << 7),
 		},
 	}
 
@@ -547,42 +532,30 @@ func TestBuildGrid_LargeDataset(t *testing.T) {
 }
 
 func TestGridPartitionKey_AllCombinations(t *testing.T) {
-	for lastTx := int16(-1); lastTx <= 1; lastTx += 2 {
-		for online := int16(0); online <= 1; online++ {
-			for card := int16(0); card <= 1; card++ {
+	for hour := int16(0); hour <= 10000; hour += 2500 {
+		for installments := int16(0); installments <= 10000; installments += 2500 {
+			for online := int16(0); online <= 1; online++ {
 				for merchant := int16(0); merchant <= 1; merchant++ {
-					for mccBucket := 0; mccBucket < 4; mccBucket++ {
-						for amount := int16(0); amount <= 6000; amount += 6000 {
-							for txCount := int16(0); txCount <= 3000; txCount += 3000 {
-								v := [DIM]int16{0, 0, amount, 0, 0, lastTx, 0, 0, txCount, online, card, merchant, int16(mccBucket * 2500), 0}
-								key := gridPartitionKey(&v)
+					for mccVal := int16(0); mccVal <= 8000; mccVal += 2000 {
+						v := [DIM]int16{0, installments, 0, hour, 0, 0, 0, 0, 0, online, 0, merchant, mccVal, 0}
+						key := gridPartitionKey(&v)
 
-								expected := uint32(0)
-								if lastTx >= 0 {
-									expected |= 1 << 0
-								}
-								if online > 0 {
-									expected |= 1 << 1
-								}
-								if card > 0 {
-									expected |= 1 << 2
-								}
-								if merchant > 0 {
-									expected |= 1 << 3
-								}
-								expected |= uint32(mccBucket) << 4
-								if amount > 5000 {
-									expected |= 1 << 6
-								}
-								if txCount > 2500 {
-									expected |= 1 << 7
-								}
+						expected := uint32(0)
+						expected |= uint32(hour/1250) << 0
+						expected |= uint32(installments/2500) << 3
+						if mccVal > 3000 {
+							expected |= 1 << 5
+						}
+						if online > 0 {
+							expected |= 1 << 6
+						}
+						if merchant > 0 {
+							expected |= 1 << 7
+						}
 
-								if key != expected {
-									t.Errorf("key mismatch for lastTx=%d online=%d card=%d merchant=%d mcc=%d amount=%d txCount=%d: got %d, want %d",
-										lastTx, online, card, merchant, mccBucket, amount, txCount, key, expected)
-								}
-							}
+						if key != expected {
+							t.Errorf("key mismatch for hour=%d inst=%d online=%d merch=%d mcc=%d: got %d, want %d",
+								hour, installments, online, merchant, mccVal, key, expected)
 						}
 					}
 				}
@@ -713,17 +686,30 @@ func TestGridIndex_Predict_ExactMatch(t *testing.T) {
 }
 
 func TestGridPartitionKey_EdgeCases(t *testing.T) {
-	v := [DIM]int16{0, 0, 5000, 0, 0, 0, 0, 0, 2500, 0, 0, 0, 0, 0}
+	// hour bucket boundaries: v[3]/1250
+	v := [DIM]int16{0, 0, 0, 1249, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 	key := gridPartitionKey(&v)
-	if key != (1 << 0) {
-		t.Errorf("key for boundary values = %d, want %d", key, 1<<0)
+	if want := uint32(0); key != want {
+		t.Errorf("key for hour=1249 = %d, want %d", key, want)
 	}
 
-	v[2] = 5001
-	v[8] = 2501
+	v[3] = 1250
 	key = gridPartitionKey(&v)
-	if key != (1<<0)|(1<<6)|(1<<7) {
-		t.Errorf("key for above-boundary values = %d, want %d", key, (1<<0)|(1<<6)|(1<<7))
+	if want := uint32(1); key != want {
+		t.Errorf("key for hour=1250 = %d, want %d", key, want)
+	}
+
+	// mcc high threshold at > 3000
+	v = [DIM]int16{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3000, 0}
+	key = gridPartitionKey(&v)
+	if key&(1<<5) != 0 {
+		t.Errorf("key for mcc=3000 should not set bit 5")
+	}
+
+	v[12] = 3001
+	key = gridPartitionKey(&v)
+	if key&(1<<5) == 0 {
+		t.Errorf("key for mcc=3001 should set bit 5")
 	}
 }
 
@@ -852,13 +838,15 @@ func TestGridIndex_Predict_MultipleFraud(t *testing.T) {
 }
 
 func TestGridPartitionKey_NegativeValues(t *testing.T) {
-	v := [DIM]int16{0, 0, 0, 0, 0, -1, 0, 0, 0, 0, 0, 0, -1000, 0}
+	v := [DIM]int16{0, 0, 0, -100, 0, 0, 0, 0, 0, 0, 0, 0, -1000, 0}
 	key := gridPartitionKey(&v)
-	if key&(1<<0) != 0 {
-		t.Error("last_tx=-1 should not set bit 0")
+	// Negative hour: int16(-100)/1250 = 0 in Go (truncation toward zero)
+	if key&7 != 0 {
+		t.Errorf("negative hour should give bucket 0, got %d", key&7)
 	}
-	if key&(0xF<<4) != 0 {
-		t.Error("mcc=-1000 should not set mcc bits")
+	// Negative mcc: -1000 <= 3000, should not set bit 5
+	if key&(1<<5) != 0 {
+		t.Error("mcc=-1000 should not set bit 5")
 	}
 }
 

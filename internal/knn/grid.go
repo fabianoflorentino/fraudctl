@@ -481,35 +481,17 @@ func gridBBoxLowerBound(q *[DIM]int16, bmin, bmax *[DIM]int16) uint64 {
 
 func gridPartitionKey(v *[DIM]int16) uint32 {
 	var key uint32
-	if v[5] >= 0 {
-		key |= 1 << 0
+	// dim[3]=hour, dim[1]=installments, dim[12]=mcc_risk,
+	// dim[9]=is_online, dim[11]=unknown_merchant
+	key |= uint32(v[3]/1250) << 0
+	key |= uint32(v[1]/2500) << 3
+	if v[12] > 3000 {
+		key |= 1 << 5
 	}
 	if v[9] > 0 {
-		key |= 1 << 1
-	}
-	if v[10] > 0 {
-		key |= 1 << 2
-	}
-	if v[11] > 0 {
-		key |= 1 << 3
-	}
-	mcc := v[12]
-	var mccBucket uint32
-	switch {
-	case mcc <= 2499:
-		mccBucket = 0
-	case mcc <= 4999:
-		mccBucket = 1
-	case mcc <= 7499:
-		mccBucket = 2
-	default:
-		mccBucket = 3
-	}
-	key |= mccBucket << 4
-	if v[2] > 5000 {
 		key |= 1 << 6
 	}
-	if v[8] > 2500 {
+	if v[11] > 0 {
 		key |= 1 << 7
 	}
 	return key
