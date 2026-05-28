@@ -30,6 +30,12 @@ type GBDT struct {
 	trees       []tree
 }
 
+// Sigmoid returns whether the model uses sigmoid activation.
+func (g *GBDT) Sigmoid() bool { return g.sigmoid }
+
+// NumFeatures returns the number of input features.
+func (g *GBDT) NumFeatures() int { return g.numFeatures }
+
 // Load reads a GBDT model from a binary file.
 //
 // Supports two binary formats (little-endian):
@@ -194,6 +200,10 @@ func loadV2(data []byte) (*GBDT, error) {
 
 // Predict computes the fraud score for a 14-dim feature vector.
 // Returns a value in [0, 1].
+//
+// For multi-tree ensembles (Random Forest), tree outputs are averaged
+// in regression mode (sigmoid=false) to produce the ensemble prediction.
+// In sigmoid mode, tree outputs are summed as log-odds before sigmoid.
 func (g *GBDT) Predict(vec [14]float32) float32 {
 	pred := g.initPred
 
@@ -221,7 +231,11 @@ func (g *GBDT) Predict(vec [14]float32) float32 {
 		return float32(1.0 / (1.0 + math.Exp(-float64(pred))))
 	}
 
-	// Regression: clamp to [0, 1]
+	// Regression mode: average tree outputs (backward-compatible for single tree).
+	// For sigmoid=false models, leaf values are fraud probabilities (0-1).
+	// Dividing by numTrees gives the ensemble average.
+	pred /= float32(len(g.trees))
+
 	if pred < 0 {
 		return 0
 	}
