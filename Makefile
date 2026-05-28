@@ -120,6 +120,16 @@ build-grid: ## Build grid index locally (resources/grid.bin)
 	@go run ./cmd/build-index/ -grid -resources ./resources
 	@echo -e "$(GREEN)✓ Grid index built at resources/grid.bin$(NC)"
 
+build-gbdt: ## Train GBDT decision tree prefilter (resources/gbdt.bin)
+	@echo -e "$(BLUE)🌳 Training GBDT decision tree prefilter (3M samples, depth=24)...$(NC)"
+	@go run ./cmd/train/ -resources ./resources -sample 0 -depth 24 -mingain 1e-05 -minsamples 100
+	@echo -e "$(GREEN)✓ GBDT model built at resources/gbdt.bin$(NC)"
+
+build-rf: ## Train Random Forest ensemble prefilter (resources/gbdt.bin)
+	@echo -e "$(BLUE)🌲 Training Random Forest (30 trees, depth=8, bootstrap=500K)...$(NC)"
+	@go run ./cmd/train/ -resources ./resources -sample 0 -trees 30 -depth 8 -seed 42 -bootstrap 500000
+	@echo -e "$(GREEN)✓ RF model built at resources/gbdt.bin$(NC)"
+
 all: fmt vet test build ## Format, vet, test and build
 
 ##@ Benchmarks
