@@ -394,3 +394,263 @@ func TestLoadV1_TruncatedTree(t *testing.T) {
 func data8(v uint64) []byte {
 	return []byte{byte(v), byte(v >> 8), byte(v >> 16), byte(v >> 24), byte(v >> 32), byte(v >> 40), byte(v >> 48), byte(v >> 56)}
 }
+
+func TestGBDT_Sigmoid(t *testing.T) {
+	g := &GBDT{sigmoid: true, numFeatures: 14, NumTrees: 1}
+	if !g.Sigmoid() {
+		t.Error("Sigmoid() = false, want true")
+	}
+	if g.NumFeatures() != 14 {
+		t.Errorf("NumFeatures() = %d, want 14", g.NumFeatures())
+	}
+
+	g.sigmoid = false
+	if g.Sigmoid() {
+		t.Error("Sigmoid() = true, want false")
+	}
+}
+
+func TestGBDT_Predict_RegressionMultiTree(t *testing.T) {
+	// Two trees, each a single leaf node, sigmoid=false.
+	// Tree 0: value 0.2, Tree 1: value 0.6
+	// Ensemble average: (0.2 + 0.6) / 2 = 0.4
+	path := t.TempDir() + "/rf_avg.bin"
+	data := make([]byte, 0, 256)
+	data = append(data, []byte("GBDT")...)
+	data = append(data, byte(2), 0, 0, 0)  // version=2
+	data = append(data, byte(2), 0, 0, 0)  // numTrees=2
+	data = append(data, byte(14), 0, 0, 0) // numFeatures=14
+	data = append(data, 0, 0, 0, 0)        // initPred=0
+	data = append(data, 0, 0, 0, 0)        // sigmoid=0, pad
+
+	writeTreeNode := func(value float32) {
+		data = append(data, byte(1), 0, 0, 0) // 1 node
+		data = append(data, 0)                // feat=0
+		data = append(data, 0)                // pad
+		data = append(data, 0, 0)             // left=0
+		data = append(data, 0, 0)             // right=0
+		data = append(data, 1)                // leaf=1
+		data = append(data, 0)                // pad
+		v := math.Float32bits(value)
+		data = append(data, byte(v), byte(v>>8), byte(v>>16), byte(v>>24))
+	}
+	writeTreeNode(0.2)
+	writeTreeNode(0.6)
+
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	g, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	got := g.Predict([14]float32{})
+	want := float32(0.4)
+	if math.Abs(float64(got)-float64(want)) > 0.0001 {
+		t.Errorf("Predict = %v, want %v", got, want)
+	}
+}
+
+// testTrainAndExport is a helper that trains a decision tree on the given
+// samples and exports it, then loads the model back.
+func testTrainAndExport(t *testing.T, samples []Sample, maxDepth, minSamples int, minGain float64) *GBDT {
+	t.Helper()
+	path := t.TempDir() + "/trained.bin"
+	if err := TrainAndExport(samples, path, maxDepth, minSamples, minGain); err != nil {
+		t.Fatalf("TrainAndExport: %v", err)
+	}
+	g, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	return g
+}
+
+func TestTrainAndExport_SmallTree(t *testing.T) {
+	// 200 samples: first 100 fraud (label=true), last 100 legit (label=false)
+	// Feature 0 is the only discriminant: fraud has high value (0.9), legit has low value (0.1).
+	// All other features are set to 0 to avoid accidental separation.
+	samples := make([]Sample, 200)
+	for i := range 100 {
+		samples[i] = Sample{
+			Vector: [14]float32{0.9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+			Label:  true,
+		}
+	}
+	for i := 100; i < 200; i++ {
+		samples[i] = Sample{
+			Vector: [14]float32{0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+			Label:  false,
+		}
+	}
+
+	g := testTrainAndExport(t, samples, 4, 10, 0.01)
+
+	// Fraud sample should predict > 0.5
+	gotFraud := g.Predict([14]float32{0.9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})
+	if gotFraud <= 0.5 {
+		t.Errorf("fraud sample predicted %v, want > 0.5", gotFraud)
+	}
+
+	// Legit sample should predict < 0.5
+	gotLegit := g.Predict([14]float32{0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})
+	if gotLegit >= 0.5 {
+		t.Errorf("legit sample predicted %v, want < 0.5", gotLegit)
+	}
+}
+
+func TestTrainAndExport_UniformLabel(t *testing.T) {
+	// All fraud — tree should be a single leaf with value 1.0
+	samples := make([]Sample, 50)
+	for i := range 50 {
+		samples[i] = Sample{Label: true}
+	}
+	g := testTrainAndExport(t, samples, 4, 5, 0.01)
+	got := g.Predict([14]float32{})
+	if got != 1.0 {
+		t.Errorf("uniform fraud predicted %v, want 1.0", got)
+	}
+}
+
+func TestTrainRandomForest(t *testing.T) {
+	samples := make([]Sample, 200)
+	for i := range 100 {
+		samples[i] = Sample{
+			Vector: [14]float32{0.9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+			Label:  true,
+		}
+	}
+	for i := 100; i < 200; i++ {
+		samples[i] = Sample{
+			Vector: [14]float32{0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+			Label:  false,
+		}
+	}
+
+	path := t.TempDir() + "/rf_trained.bin"
+	if err := TrainRandomForest(samples, path, 3, 3, 10, 0.01, 42, 100); err != nil {
+		t.Fatalf("TrainRandomForest: %v", err)
+	}
+	g, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if g.NumTrees != 3 {
+		t.Errorf("NumTrees = %d, want 3", g.NumTrees)
+	}
+
+	// Fraud sample
+	gotFraud := g.Predict([14]float32{0.9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})
+	if gotFraud <= 0.5 {
+		t.Errorf("fraud sample predicted %v, want > 0.5", gotFraud)
+	}
+}
+
+func TestGiniImpurity(t *testing.T) {
+	tests := []struct {
+		fraud, total int
+		want         float64
+	}{
+		{0, 100, 0.0},    // pure legit
+		{100, 100, 0.0},  // pure fraud
+		{50, 100, 0.5},   // 50/50 split -> 1 - 0.25 - 0.25 = 0.5
+		{25, 100, 0.375}, // 1 - 0.0625 - 0.5625 = 0.375
+		{0, 0, 0.0},      // edge: empty
+	}
+	for _, tt := range tests {
+		got := giniImpurity(tt.fraud, tt.total)
+		if math.Abs(got-tt.want) > 1e-10 {
+			t.Errorf("giniImpurity(%d,%d) = %v, want %v", tt.fraud, tt.total, got, tt.want)
+		}
+	}
+}
+
+func TestExportV2Multi_RoundTrip(t *testing.T) {
+	// Create a flat node structure matching what flattenTree produces
+	// One tree: internal node split on feat=0 at thresh=0.5, left leaf=0.2, right leaf=0.8
+	flatTree := []flatNode{
+		{feat: 0, thresh: 0.5, left: 1, right: 2}, // root
+		{leaf: true, value: 0.2},                  // left child
+		{leaf: true, value: 0.8},                  // right child
+	}
+
+	path := t.TempDir() + "/rt.bin"
+	if err := exportV2Multi(path, [][]flatNode{flatTree}); err != nil {
+		t.Fatalf("exportV2Multi: %v", err)
+	}
+
+	g, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	gotLeft := g.Predict([14]float32{0.0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})
+	if gotLeft != 0.2 {
+		t.Errorf("left branch predict = %v, want 0.2", gotLeft)
+	}
+	gotRight := g.Predict([14]float32{1.0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})
+	if gotRight != 0.8 {
+		t.Errorf("right branch predict = %v, want 0.8", gotRight)
+	}
+}
+
+func TestTrainAndExport_Empty(t *testing.T) {
+	// Empty sample set produces a single leaf with NaN value (0/0).
+	path := t.TempDir() + "/empty.bin"
+	if err := TrainAndExport(nil, path, 4, 5, 0.01); err != nil {
+		t.Fatalf("TrainAndExport nil: %v", err)
+	}
+	g, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got := g.Predict([14]float32{})
+	if !math.IsNaN(float64(got)) {
+		t.Errorf("expected NaN for empty training set, got %v", got)
+	}
+}
+
+func TestFindBestSplit_AllSameLabel(t *testing.T) {
+	samples := make([]Sample, 20)
+	for i := range 20 {
+		samples[i] = Sample{Label: true}
+	}
+	indices := make([]int, 20)
+	for i := range indices {
+		indices[i] = i
+	}
+	feat, thresh, gain := findBestSplit(samples, indices)
+	if feat != -1 {
+		t.Errorf("findBestSplit with uniform labels: feat=%d, want -1", feat)
+	}
+	if thresh != 0 {
+		t.Errorf("findBestSplit with uniform labels: thresh=%v, want 0", thresh)
+	}
+	if gain != 0 {
+		t.Errorf("findBestSplit with uniform labels: gain=%v, want 0", gain)
+	}
+}
+
+func TestPartition(t *testing.T) {
+	samples := []Sample{
+		{Vector: [14]float32{0.1}},
+		{Vector: [14]float32{0.9}},
+		{Vector: [14]float32{0.3}},
+		{Vector: [14]float32{0.7}},
+	}
+	indices := []int{0, 1, 2, 3}
+	split := partition(indices, samples, 0, 0.5)
+	// After partition: indices[:split] should have values <= 0.5
+	for i := range split {
+		if samples[indices[i]].Vector[0] > 0.5 {
+			t.Errorf("index %d (val=%v) should be in left (<=0.5) but is in right", i, samples[indices[i]].Vector[0])
+		}
+	}
+	for i := split; i < len(indices); i++ {
+		if samples[indices[i]].Vector[0] <= 0.5 {
+			t.Errorf("index %d (val=%v) should be in right (>0.5) but is in left", i, samples[indices[i]].Vector[0])
+		}
+	}
+}
