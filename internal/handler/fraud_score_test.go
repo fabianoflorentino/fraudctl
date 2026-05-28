@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/fabianoflorentino/fraudctl/internal/gbdt"
 	"github.com/fabianoflorentino/fraudctl/internal/knn"
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 	"github.com/fabianoflorentino/fraudctl/internal/vectorizer"
@@ -268,6 +269,118 @@ func TestInvalidJSONError(t *testing.T) {
 	err := &invalidJSONError{}
 	if err.Error() != "invalid json" {
 		t.Errorf("Error() = %q, want 'invalid json'", err.Error())
+	}
+}
+
+// gbdtHelper creates a temporary GBDT model file with a single leaf node
+// returning the given score in regression mode (sigmoid=false).
+func gbdtHelper(t *testing.T, score float32) string {
+	t.Helper()
+	path := t.TempDir() + "/gbdt_test.bin"
+	data := make([]byte, 0, 64)
+	data = append(data, []byte("GBDT")...)
+	data = append(data, byte(2), 0, 0, 0)  // version=2
+	data = append(data, byte(1), 0, 0, 0)  // numTrees=1
+	data = append(data, byte(14), 0, 0, 0) // numFeatures=14
+	data = append(data, 0, 0, 0, 0)        // initPred=0
+	data = append(data, 0, 0, 0, 0)        // sigmoid=0, pad
+	data = append(data, byte(1), 0, 0, 0)  // 1 node
+	data = append(data, 0)                 // feat=0
+	data = append(data, 0)                 // pad
+	data = append(data, 0, 0)              // left=0
+	data = append(data, 0, 0)              // right=0
+	data = append(data, 1)                 // leaf=1
+	data = append(data, 0)                 // pad
+	v := math.Float32bits(score)
+	data = append(data, byte(v), byte(v>>8), byte(v>>16), byte(v>>24))
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	return path
+}
+
+func TestHandleFraudScore_GBDT_Prefilter_Low(t *testing.T) {
+	// GBDT predicts score <= confLow (0.08) — should return 0 without calling KNN
+	path := gbdtHelper(t, 0.0)
+	g, err := gbdt.Load(path)
+	if err != nil {
+		t.Fatalf("LoadGBDT: %v", err)
+	}
+	h := NewFraudScoreHandler(&mockVec{}, &mockKNN{1.0}) // KNN would return 5 if called
+	h.SetGBDT(g)
+	count, parseErr := h.HandleFraudScore([]byte(validPayload))
+	if count != 0 {
+		t.Errorf("expected count=0 (prefilter low), got %d", count)
+	}
+	if parseErr {
+		t.Error("expected parseErr=false")
+	}
+}
+
+func TestHandleFraudScore_GBDT_Prefilter_High(t *testing.T) {
+	// GBDT predicts score >= confHigh (0.92) — should return 5 without calling KNN
+	path := gbdtHelper(t, 1.0)
+	g, err := gbdt.Load(path)
+	if err != nil {
+		t.Fatalf("LoadGBDT: %v", err)
+	}
+	h := NewFraudScoreHandler(&mockVec{}, &mockKNN{0.0}) // KNN would return 0 if called
+	h.SetGBDT(g)
+	count, parseErr := h.HandleFraudScore([]byte(validPayload))
+	if count != 5 {
+		t.Errorf("expected count=5 (prefilter high), got %d", count)
+	}
+	if parseErr {
+		t.Error("expected parseErr=false")
+	}
+}
+
+func TestHandleFraudScore_GBDT_Prefilter_Mid(t *testing.T) {
+	// GBDT predicts score in (confLow, confHigh) — KNN should be called
+	path := gbdtHelper(t, 0.5)
+	g, err := gbdt.Load(path)
+	if err != nil {
+		t.Fatalf("LoadGBDT: %v", err)
+	}
+	h := NewFraudScoreHandler(&mockVec{}, &mockKNN{0.6}) // KNN returns score=0.6 → count=3
+	h.SetGBDT(g)
+	count, parseErr := h.HandleFraudScore([]byte(validPayload))
+	if count != 3 {
+		t.Errorf("expected count=3 (KNN called), got %d", count)
+	}
+	if parseErr {
+		t.Error("expected parseErr=false")
+	}
+}
+
+func TestSetGBDT_Nil(t *testing.T) {
+	h := NewFraudScoreHandler(&mockVec{}, &mockKNN{0.5})
+	h.SetGBDT(nil)
+	// Should still work without GBDT
+	count, parseErr := h.HandleFraudScore([]byte(validPayload))
+	if parseErr {
+		t.Error("expected parseErr=false")
+	}
+	if count == -1 {
+		t.Error("count not set")
+	}
+}
+
+func TestHandleFraudScore_GBDT_Prefilter_InvalidJSON(t *testing.T) {
+	// Even with GBDT prefilter, invalid JSON should return parse error
+	path := gbdtHelper(t, 0.0)
+	g, err := gbdt.Load(path)
+	if err != nil {
+		t.Fatalf("LoadGBDT: %v", err)
+	}
+	h := NewFraudScoreHandler(&mockVec{}, &mockKNN{0.0})
+	h.SetGBDT(g)
+	count, parseErr := h.HandleFraudScore([]byte("not json"))
+	if count != 0 {
+		t.Errorf("expected fallback count=0, got %d", count)
+	}
+	if !parseErr {
+		t.Error("expected parseErr=true for invalid JSON")
 	}
 }
 

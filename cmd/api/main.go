@@ -53,6 +53,10 @@ func main() {
 	debug.FreeOSMemory()
 
 	fraudHandler := handler.NewFraudScoreHandler(ds.Vectorizer(), ds.KNN())
+	if g := ds.GBDT(); g != nil {
+		fraudHandler.SetGBDT(g)
+		log.Printf("GBDT prefilter loaded: %.1fms inference budget", 0.01)
+	}
 
 	if telemetryEnabled {
 		middleware.StartReporter(10 * time.Second)

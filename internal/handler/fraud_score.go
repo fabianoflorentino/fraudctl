@@ -1,11 +1,8 @@
 // Package handler provides HTTP request handlers for the fraud detection API.
-//
-// The main handler, FraudScoreHandler, processes incoming fraud score requests
-// by vectorizing the JSON payload and querying the KNN index to determine
-// the fraud score based on the 5 nearest neighbors.
 package handler
 
 import (
+	"github.com/fabianoflorentino/fraudctl/internal/gbdt"
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
 
@@ -17,13 +14,20 @@ type Vectorizer interface {
 }
 
 // KNNIndex defines the interface for the k-nearest neighbors search index.
-// Implementations can be GridIndex (KD-tree), IVFIndex, or BruteIndex.
 type KNNIndex interface {
 	Predict(query model.Vector14, k int) float64
 	PredictRaw(query model.Vector14, nprobe int) int
 }
 
 const knnK = 5
+
+// GBDT prefilter confidence thresholds.
+// When gbdt.Predict returns a score outside [confLow, confHigh], we skip KNN.
+// Values calibrated after training: chosen conservatively for 0 FP/FN.
+const (
+	confLow  = 0.08
+	confHigh = 0.92
+)
 
 var precomputedResp [knnK + 1][]byte
 
@@ -37,11 +41,12 @@ func init() {
 }
 
 // FraudScoreHandler handles fraud score requests by vectorizing the input
-// and querying the KNN index. It returns the count of fraudulent neighbors
-// among the K=5 nearest neighbors.
+// and querying the KNN index. Optionally uses a GBDT prefilter to skip KNN
+// for high-confidence predictions.
 type FraudScoreHandler struct {
-	vec Vectorizer
-	knn KNNIndex
+	vec  Vectorizer
+	knn  KNNIndex
+	gbdt *gbdt.GBDT
 }
 
 // NewFraudScoreHandler creates a new FraudScoreHandler with the given
@@ -50,14 +55,34 @@ func NewFraudScoreHandler(vec Vectorizer, knn KNNIndex) *FraudScoreHandler {
 	return &FraudScoreHandler{vec: vec, knn: knn}
 }
 
+// SetGBDT attaches a GBDT prefilter model. When set, HandleFraudScore will
+// bypass KNN for predictions with confidence outside [confLow, confHigh].
+func (h *FraudScoreHandler) SetGBDT(g *gbdt.GBDT) {
+	h.gbdt = g
+}
+
 // HandleFraudScore processes a raw JSON request body and returns the count
 // of fraudulent neighbors (0-5) and whether a parse error occurred.
 // Returns 0 on parse errors as a fallback.
+//
+// When a GBDT prefilter is configured, predictions with confidence outside
+// [confLow, confHigh] bypass KNN entirely for lower latency.
 func (h *FraudScoreHandler) HandleFraudScore(body []byte) (int, bool) {
 	vec, err := h.vec.VectorizeJSON(body)
 	if err != nil {
 		return 0, true
 	}
+
+	if h.gbdt != nil {
+		score := h.gbdt.Predict(vec)
+		if score <= confLow {
+			return 0, false
+		}
+		if score >= confHigh {
+			return 5, false
+		}
+	}
+
 	return h.knn.PredictRaw(vec, 0), false
 }
 
