@@ -31,16 +31,10 @@ x-api-defaults: &api-defaults
   healthcheck: *api-healthcheck
   deploy: *api-resources
   restart: unless-stopped
-  ulimits:
-    memlock: -1
-    nofile:
-      soft: 65535
-      hard: 65535
 
 services:
   api-1:
     <<: *api-defaults
-    cpuset: "0"
     container_name: fraudctl-api-1
     hostname: api-1
     environment:
@@ -49,7 +43,6 @@ services:
 
   api-2:
     <<: *api-defaults
-    cpuset: "1"
     container_name: fraudctl-api-2
     hostname: api-2
     environment:
