@@ -2,6 +2,7 @@
 package dataset
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -11,26 +12,6 @@ import (
 	"github.com/fabianoflorentino/fraudctl/internal/vectorizer"
 )
 
-// ============================================================================
-// IVF KNN Performance Tuning Constants — 2-tier with EARLY EXIT
-// ============================================================================
-//
-// nlist=4096 (~732 vetores/cluster).
-// IVF_NPROBE is the number of IVF clusters to probe (fallback only; Grid is primary).
-const IVF_NPROBE = 128
-
-// IVF_QUICK_PROBE is the number of IVF clusters for the quick probe pass (fallback).
-const IVF_QUICK_PROBE = 80
-
-// IVF_BOUNDARY_LO is the lower bound of the ambiguous fraud count zone.
-const IVF_BOUNDARY_LO = 2
-
-// IVF_BOUNDARY_HI is the upper bound of the ambiguous fraud count zone.
-const IVF_BOUNDARY_HI = 3
-
-// IVF_RETRY_EXTRA is the number of extra clusters to probe on retry (currently 0).
-const IVF_RETRY_EXTRA = 0
-
 // Dataset holds config and the KNN index needed to serve requests.
 type Dataset struct {
 	norm    model.NormalizationConstants
@@ -39,7 +20,7 @@ type Dataset struct {
 	gbdt    *gbdt.GBDT
 }
 
-// KNNIndex is implemented by IVFIndex.
+// KNNIndex is implemented by GridIndex.
 type KNNIndex interface {
 	Predict(query model.Vector14, k int) float64
 	PredictRaw(query model.Vector14, nprobe int) int
@@ -48,19 +29,9 @@ type KNNIndex interface {
 	FraudCount() int
 }
 
-// NewDataset creates a Dataset with an empty BruteIndex (for testing).
-func NewDataset(refs []model.Reference) *Dataset {
-	idx := knn.NewBruteIndex()
-	if len(refs) > 0 {
-		vectors := make([]model.Vector14, len(refs))
-		labels := make([]bool, len(refs))
-		for i, r := range refs {
-			vectors[i] = r.Vector
-			labels[i] = r.Label == "fraud"
-		}
-		idx.Build(vectors, labels)
-	}
-	return &Dataset{index: idx}
+// NewDataset creates a Dataset with an empty index (for testing).
+func NewDataset(_ []model.Reference) *Dataset {
+	return &Dataset{index: new(knn.GridIndex)}
 }
 
 // SetConfig sets normalization constants and MCC risk scores.
@@ -94,8 +65,8 @@ func (d *Dataset) LegitCount() int { return d.index.Count() - d.index.FraudCount
 
 // LoadVectorizerOnly loads only the normalization constants and MCC risk scores
 // needed for the vectorizer, without loading the KNN index.
-// Use this when the predictor is a standalone model (GBDT/LightGBM) that does
-// not need the KNN index at runtime. This avoids loading the ~95MB ivf.bin.
+// Use this when the predictor is a standalone model (GBDT) that does
+// not need the KNN index at runtime.
 func LoadVectorizerOnly(path string) (*Dataset, error) {
 	loader := NewLoader(path)
 
@@ -109,16 +80,16 @@ func LoadVectorizerOnly(path string) (*Dataset, error) {
 		return nil, err
 	}
 
-	// Use an empty KNN index (never queried in production with GBDT/LightGBM)
+	// Use an empty KNN index (never queried in production with GBDT)
 	return &Dataset{
 		norm:    norm,
 		mccRisk: mccRisk,
-		index:   knn.NewBruteIndex(),
+		index:   new(knn.GridIndex),
 	}, nil
 }
 
 // LoadDefault loads the dataset from path.
-// Priority: grid.bin (exact grid) > ivf.bin (IVF approximate) > references.json.gz (fallback).
+// Expects grid.bin to be present (built at Docker build time).
 func LoadDefault(path string) (*Dataset, error) {
 	loader := NewLoader(path)
 
@@ -132,44 +103,16 @@ func LoadDefault(path string) (*Dataset, error) {
 		return nil, err
 	}
 
-	var idx KNNIndex
-
-	// Priority 1: Grid index (exact KD-tree, fastest)
 	gridPath := filepath.Join(path, "grid.bin")
-	if _, err := os.Stat(gridPath); err == nil {
-		grid, err := knn.LoadGrid(gridPath)
-		if err == nil {
-			idx = grid
-		}
-	}
-
-	// Priority 2: IVF index (approximate, fallback)
-	ivfPath := filepath.Join(path, "ivf.bin")
-	if idx == nil {
-		if _, err := os.Stat(ivfPath); err == nil {
-			ivf, err := knn.LoadIVF(ivfPath)
-			if err == nil {
-				ivf.SetNProbe(IVF_NPROBE)
-				ivf.SetRetry(IVF_QUICK_PROBE, IVF_BOUNDARY_LO, IVF_BOUNDARY_HI)
-				idx = ivf
-			}
-		}
-	}
-
-	// Priority 3: Brute force from gzip (fallback)
-	if idx == nil {
-		brute := knn.NewBruteIndex()
-		gzPath := filepath.Join(path, "references.json.gz")
-		if err := brute.BuildFromGzip(gzPath, 3_000_000); err != nil {
-			return nil, err
-		}
-		idx = brute
+	gridIdx, err := knn.LoadGrid(gridPath)
+	if err != nil {
+		return nil, fmt.Errorf("load %s: %w", gridPath, err)
 	}
 
 	ds := &Dataset{
 		norm:    norm,
 		mccRisk: mccRisk,
-		index:   idx,
+		index:   gridIdx,
 	}
 
 	// Optional: GBDT pre-filter model (gbdt.bin or model.bin in resources dir)

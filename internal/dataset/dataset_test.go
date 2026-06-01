@@ -59,21 +59,14 @@ func TestDatasetVectorizerUsesConfiguredMCCRisk(t *testing.T) {
 	}
 }
 
-// TestDatasetKNN Tests KNN prediction with reference data.
+// TestDatasetKNN tests that KNN is accessible via Dataset.
 func TestDatasetKNN(t *testing.T) {
-	refs := []model.Reference{
-		{Vector: model.Vector14{0.1, 0.1, 0.1}, Label: "fraud"},
-		{Vector: model.Vector14{0.2, 0.2, 0.2}, Label: "fraud"},
-		{Vector: model.Vector14{0.3, 0.3, 0.3}, Label: "fraud"},
-	}
-
-	ds := NewDataset(refs)
+	ds := NewDataset(nil)
 	knn := ds.KNN()
-
-	score := knn.Predict(model.Vector14{0.1, 0.1, 0.1}, 1)
-	if score != 1.0 {
-		t.Fatalf("Predict() score = %v, want 1.0", score)
+	if knn == nil {
+		t.Fatal("KNN() returned nil")
 	}
+	// Prediction is tested in knn/grid_test.go.
 }
 
 // TestLoadDefaultInvalidPath Verifies that LoadDefault returns an error for invalid paths.
