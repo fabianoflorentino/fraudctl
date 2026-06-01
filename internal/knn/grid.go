@@ -10,8 +10,12 @@ import (
 	"github.com/fabianoflorentino/fraudctl/internal/model"
 )
 
-const gridMagic = uint32(0x4B445452)
-const gridVersion = uint32(2)
+const (
+	gridMagic        = uint32(0x4B445452)
+	gridVersion      = uint32(2)
+	gridBlockLANES   = 8
+	maxHammingProbes = 128 // cap partition probes to limit p99 tail latency (safety limit, reached rarely)
+)
 
 var hammingOrder [256][256]uint8
 
@@ -93,11 +97,13 @@ func (idx *GridIndex) Count() int { return idx.n }
 // FraudCount returns the total number of fraud-labeled vectors in the index.
 func (idx *GridIndex) FraudCount() int {
 	n := 0
+
 	for i := range idx.n {
 		if (idx.labels[i>>3] & (1 << uint(i&7))) != 0 {
 			n++
 		}
 	}
+
 	return n
 }
 
@@ -124,9 +130,11 @@ func (idx *GridIndex) PredictRaw(query model.Vector14, _ int) int {
 	if sameIdx >= 0 {
 		p := &idx.partitions[sameIdx]
 		lb := gridBBoxLowerBound(&qi, &p.bboxMin, &p.bboxMax)
+
 		if lb < h.worstDist() {
 			gridSearchKDTree(p.root, lb, &qi, &h, idx, &scratch)
 		}
+
 		if h.worstDist() == 0 {
 			return h.fraudCount(idx.labels)
 		}
@@ -137,6 +145,7 @@ func (idx *GridIndex) PredictRaw(query model.Vector14, _ int) int {
 	if sameIdx >= 0 {
 		start = 1
 	}
+
 	probes := 0
 	for j := start; j < len(existing) && probes < maxHammingProbes; j++ {
 		worst := h.worstDist()
@@ -364,6 +373,7 @@ func gridSearchKDTree(root int32, rootBound uint64, qi *[DIM]int16, h *topK5, id
 
 func gridBBoxLowerBound(q *[DIM]int16, bmin, bmax *[DIM]int16) uint64 {
 	var d uint64
+
 	qi0 := int32(q[0])
 	if qi0 < int32(bmin[0]) {
 		diff := int32(bmin[0]) - qi0
@@ -372,6 +382,7 @@ func gridBBoxLowerBound(q *[DIM]int16, bmin, bmax *[DIM]int16) uint64 {
 		diff := qi0 - int32(bmax[0])
 		d += uint64(diff) * uint64(diff)
 	}
+
 	qi1 := int32(q[1])
 	if qi1 < int32(bmin[1]) {
 		diff := int32(bmin[1]) - qi1
@@ -380,6 +391,7 @@ func gridBBoxLowerBound(q *[DIM]int16, bmin, bmax *[DIM]int16) uint64 {
 		diff := qi1 - int32(bmax[1])
 		d += uint64(diff) * uint64(diff)
 	}
+
 	qi2 := int32(q[2])
 	if qi2 < int32(bmin[2]) {
 		diff := int32(bmin[2]) - qi2
@@ -388,6 +400,7 @@ func gridBBoxLowerBound(q *[DIM]int16, bmin, bmax *[DIM]int16) uint64 {
 		diff := qi2 - int32(bmax[2])
 		d += uint64(diff) * uint64(diff)
 	}
+
 	qi3 := int32(q[3])
 	if qi3 < int32(bmin[3]) {
 		diff := int32(bmin[3]) - qi3
@@ -396,6 +409,7 @@ func gridBBoxLowerBound(q *[DIM]int16, bmin, bmax *[DIM]int16) uint64 {
 		diff := qi3 - int32(bmax[3])
 		d += uint64(diff) * uint64(diff)
 	}
+
 	qi4 := int32(q[4])
 	if qi4 < int32(bmin[4]) {
 		diff := int32(bmin[4]) - qi4
@@ -404,6 +418,7 @@ func gridBBoxLowerBound(q *[DIM]int16, bmin, bmax *[DIM]int16) uint64 {
 		diff := qi4 - int32(bmax[4])
 		d += uint64(diff) * uint64(diff)
 	}
+
 	qi5 := int32(q[5])
 	if qi5 < int32(bmin[5]) {
 		diff := int32(bmin[5]) - qi5
@@ -412,6 +427,7 @@ func gridBBoxLowerBound(q *[DIM]int16, bmin, bmax *[DIM]int16) uint64 {
 		diff := qi5 - int32(bmax[5])
 		d += uint64(diff) * uint64(diff)
 	}
+
 	qi6 := int32(q[6])
 	if qi6 < int32(bmin[6]) {
 		diff := int32(bmin[6]) - qi6
@@ -420,6 +436,7 @@ func gridBBoxLowerBound(q *[DIM]int16, bmin, bmax *[DIM]int16) uint64 {
 		diff := qi6 - int32(bmax[6])
 		d += uint64(diff) * uint64(diff)
 	}
+
 	qi7 := int32(q[7])
 	if qi7 < int32(bmin[7]) {
 		diff := int32(bmin[7]) - qi7
@@ -428,6 +445,7 @@ func gridBBoxLowerBound(q *[DIM]int16, bmin, bmax *[DIM]int16) uint64 {
 		diff := qi7 - int32(bmax[7])
 		d += uint64(diff) * uint64(diff)
 	}
+
 	qi8 := int32(q[8])
 	if qi8 < int32(bmin[8]) {
 		diff := int32(bmin[8]) - qi8
@@ -436,6 +454,7 @@ func gridBBoxLowerBound(q *[DIM]int16, bmin, bmax *[DIM]int16) uint64 {
 		diff := qi8 - int32(bmax[8])
 		d += uint64(diff) * uint64(diff)
 	}
+
 	qi9 := int32(q[9])
 	if qi9 < int32(bmin[9]) {
 		diff := int32(bmin[9]) - qi9
@@ -444,6 +463,7 @@ func gridBBoxLowerBound(q *[DIM]int16, bmin, bmax *[DIM]int16) uint64 {
 		diff := qi9 - int32(bmax[9])
 		d += uint64(diff) * uint64(diff)
 	}
+
 	qi10 := int32(q[10])
 	if qi10 < int32(bmin[10]) {
 		diff := int32(bmin[10]) - qi10
@@ -452,6 +472,7 @@ func gridBBoxLowerBound(q *[DIM]int16, bmin, bmax *[DIM]int16) uint64 {
 		diff := qi10 - int32(bmax[10])
 		d += uint64(diff) * uint64(diff)
 	}
+
 	qi11 := int32(q[11])
 	if qi11 < int32(bmin[11]) {
 		diff := int32(bmin[11]) - qi11
@@ -460,6 +481,7 @@ func gridBBoxLowerBound(q *[DIM]int16, bmin, bmax *[DIM]int16) uint64 {
 		diff := qi11 - int32(bmax[11])
 		d += uint64(diff) * uint64(diff)
 	}
+
 	qi12 := int32(q[12])
 	if qi12 < int32(bmin[12]) {
 		diff := int32(bmin[12]) - qi12
@@ -468,6 +490,7 @@ func gridBBoxLowerBound(q *[DIM]int16, bmin, bmax *[DIM]int16) uint64 {
 		diff := qi12 - int32(bmax[12])
 		d += uint64(diff) * uint64(diff)
 	}
+
 	qi13 := int32(q[13])
 	if qi13 < int32(bmin[13]) {
 		diff := int32(bmin[13]) - qi13
@@ -476,6 +499,7 @@ func gridBBoxLowerBound(q *[DIM]int16, bmin, bmax *[DIM]int16) uint64 {
 		diff := qi13 - int32(bmax[13])
 		d += uint64(diff) * uint64(diff)
 	}
+
 	return d
 }
 
@@ -496,9 +520,6 @@ func gridPartitionKey(v *[DIM]int16) uint32 {
 	}
 	return key
 }
-
-const gridBlockLANES = 8
-const maxHammingProbes = 64 // cap partition probes to limit p99 tail latency (safety limit, reached rarely)
 
 func gridScanLeaf(vectors []int16, labels []byte, startBlock, vecOffset, nVecs int, q [DIM]int16, h *topK5, scratch *[8]float32) {
 	if nVecs == 0 {

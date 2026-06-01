@@ -280,6 +280,7 @@ func BuildGrid(refsGz, outPath string) error {
 func widestDim(nmin, nmax *[DIM]int16) int {
 	best := 0
 	bestWidth := int32(nmax[0]) - int32(nmin[0])
+
 	for d := 1; d < DIM; d++ {
 		w := int32(nmax[d]) - int32(nmin[d])
 		if w > bestWidth {
@@ -287,5 +288,6 @@ func widestDim(nmin, nmax *[DIM]int16) int {
 			best = d
 		}
 	}
+
 	return best
 }
