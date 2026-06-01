@@ -6,7 +6,7 @@
 
 .PHONY: help build run test test-short test-race coverage fmt vet lint tidy clean \
 	bench bench-knn bench-vectorizer all docker-build docker-build-all docker-push docker-run docker-lint \
-	docker-clean docker-size docker-up docker-down submit submission-update \
+	docker-clean docker-size docker-up docker-down submit submission-update build-grid \
 	submission-test submission-result k6-smoke k6-full k6-results \
 	lb-build lb-vet lb-docker-build
 
@@ -110,25 +110,10 @@ tidy: ## Tidy and verify Go modules
 	@go mod verify
 	@echo -e "$(GREEN)✓ Modules up to date!$(NC)"
 
-build-index: ## Build IVF index locally (resources/ivf.bin)
-	@echo -e "$(BLUE)🔨 Building IVF index (nlist=4096, 36 iters)...$(NC)"
-	@go run ./cmd/build-index/ -resources ./resources -nlist 4096 -iterations 36
-	@echo -e "$(GREEN)✓ Index built at resources/ivf.bin$(NC)"
-
 build-grid: ## Build grid index locally (resources/grid.bin)
 	@echo -e "$(BLUE)🔨 Building grid index...$(NC)"
-	@go run ./cmd/build-index/ -grid -resources ./resources
+	@go run ./cmd/build-index/ -resources ./resources
 	@echo -e "$(GREEN)✓ Grid index built at resources/grid.bin$(NC)"
-
-build-gbdt: ## Train GBDT decision tree prefilter (resources/gbdt.bin)
-	@echo -e "$(BLUE)🌳 Training GBDT decision tree prefilter (3M samples, depth=24)...$(NC)"
-	@go run ./cmd/train/ -resources ./resources -sample 0 -depth 24 -mingain 1e-05 -minsamples 100
-	@echo -e "$(GREEN)✓ GBDT model built at resources/gbdt.bin$(NC)"
-
-build-rf: ## Train Random Forest ensemble prefilter (resources/gbdt.bin)
-	@echo -e "$(BLUE)🌲 Training Random Forest (30 trees, depth=8, bootstrap=500K)...$(NC)"
-	@go run ./cmd/train/ -resources ./resources -sample 0 -trees 30 -depth 8 -seed 42 -bootstrap 500000
-	@echo -e "$(GREEN)✓ RF model built at resources/gbdt.bin$(NC)"
 
 all: fmt vet test build ## Format, vet, test and build
 
