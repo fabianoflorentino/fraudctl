@@ -66,7 +66,7 @@ func (m *Model) Train(vectors []float32, labels []bool, n int) {
 	rng := randNew(42)
 
 	posCount := 0
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if labels[i] {
 			posCount++
 		}
@@ -77,9 +77,9 @@ func (m *Model) Train(vectors []float32, labels []bool, n int) {
 
 	feat := make([]float64, dimExpanded)
 
-	for iter := 0; iter < iterations; iter++ {
+	for iter := range iterations {
 		indices := make([]int, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			indices[i] = i
 		}
 		for i := n - 1; i > 0; i-- {
@@ -87,10 +87,7 @@ func (m *Model) Train(vectors []float32, labels []bool, n int) {
 			indices[i], indices[j] = indices[j], indices[i]
 		}
 
-		sampleN := n
-		if n > 300000 {
-			sampleN = 300000
-		}
+		sampleN := min(n, 300000)
 
 		var totalLoss float64
 		var correct int
