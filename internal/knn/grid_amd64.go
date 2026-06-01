@@ -2,11 +2,6 @@
 
 package knn
 
-func init() {
-	useAVX2 = true
-	useAVX2Scan = true
-}
-
 // ScanBlock8AVX2 computes squared L2 distances between a query vector and 8
 // reference vectors stored in block-major int16 layout. It uses AVX2 SIMD
 // instructions to process 8 vectors simultaneously with early exit at dim 8.
