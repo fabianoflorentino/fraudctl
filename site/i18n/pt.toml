@@ -3,10 +3,12 @@ aria = "Navegação principal"
 github = "GitHub"
 rinha = "Rinha 2026"
 logo_home = "fraudctl — página inicial"
+back_to_top = "Voltar ao topo"
 
 [hero]
 badge = "Rinha de Backend 2026"
 badge_rank = "19º de 322"
+kicker = "Case study · Rinha de Backend 2026"
 title_a = "Detecção de fraude"
 title_b = "em"
 title_gradient = "1,16 ms"
@@ -25,6 +27,27 @@ p99_label = "p99 observado"
 p99_note = "penalidade só acima de 2.000 ms"
 errors_label = "Erros de decisão"
 errors_note = "FP + FN + HTTP em 50 mil requests"
+
+[band]
+aria = "Números oficiais da submissão"
+rank = "colocação"
+score = "score final"
+p99 = "p99"
+errors = "erros"
+vectors = "vetores"
+
+[verdict]
+aria = "Exemplo de decisão do fraudctl"
+method = "POST"
+path = "/fraud-score"
+ready = "200 OK"
+vector_label = "vetor 14D normalizado"
+neighbors_label = "5 vizinhos mais próximos"
+fraud = "fraude"
+legit = "legítima"
+denied = "NEGADO"
+score = "fraud_score 0,6"
+footer = "3 de 5 vizinhos são fraude"
 
 [challenge]
 eyebrow = "O desafio"
@@ -53,6 +76,12 @@ fd_code = "SCM_RIGHTS"
 index_code = "PredictRaw"
 caption = "O LB não lê o payload: apenas distribui conexões em round-robin e entrega o socket para a API."
 callout = "Sem proxy HTTP entre load balancer e API, o caminho crítico elimina uma camada inteira de parsing e cópia de request."
+note1_title = "LB sem proxy HTTP"
+note1_text = "O socket é transferido via SCM_RIGHTS e a API fala direto com o cliente."
+note2_title = "Servidor sob medida"
+note2_text = "Parser HTTP orientado a bytes, buffer via sync.Pool e respostas pré-montadas."
+note3_title = "Índice em memória"
+note3_text = "grid.bin gerado no build: 3M vetores em int16 e ~88 MB."
 
 [pipeline]
 eyebrow = "Caminho da requisição"
@@ -132,6 +161,7 @@ row_fn = "Falsos negativos"
 row_http = "Erros HTTP"
 row_commit = "Commit avaliado"
 note = "Dados extraídos de final-results-2026.json. A edição teve 322 submissões válidas."
+zero_text = "falsos positivos, falsos negativos e erros HTTP em 50 mil requisições avaliadas."
 
 [timeline]
 eyebrow = "Iterações"

@@ -6,20 +6,20 @@ weight: 20
 
 O caminho principal do fraudctl tem três peças: um load balancer TCP próprio, um servidor HTTP escrito à mão e um índice de busca carregado em memória no startup.
 
-<div class="arch-diagram">
-  <div class="arch-node"><span class="arch-node-label">Cliente</span><span class="arch-node-code">HTTP</span></div>
-  <div class="arch-arrow" aria-hidden="true"><svg width="34" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 34 16"><path d="M1 8h30M25 3l6 5-6 5"/></svg></div>
-  <div class="arch-node arch-node-sidecar"><span class="arch-node-label">fraudctl-lb</span><span class="arch-node-code">TCP :9999</span></div>
-  <div class="arch-arrow" aria-hidden="true"><svg width="34" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 34 16"><path d="M1 8h30M25 3l6 5-6 5"/></svg></div>
-  <div class="arch-pod">
-    <span class="arch-pod-title">SCM_RIGHTS</span>
-    <div class="arch-pod-inner">
-      <div class="arch-node"><span class="arch-node-label">api-1</span><small>rawhttp</small></div>
-      <div class="arch-node"><span class="arch-node-label">api-2</span><small>rawhttp</small></div>
+<div class="flow">
+  <div class="flow-node"><span class="k">client</span><span class="v">Cliente</span><span class="s">HTTP</span></div>
+  <div class="flow-arrow" aria-hidden="true"><svg width="30" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 30 14"><path d="M1 7h26M22 3l5 4-5 4"/></svg></div>
+  <div class="flow-node is-accent"><span class="k">load balancer</span><span class="v">fraudctl-lb</span><span class="s">TCP :9999</span></div>
+  <div class="flow-arrow" aria-hidden="true"><svg width="30" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 30 14"><path d="M1 7h26M22 3l5 4-5 4"/></svg></div>
+  <div class="flow-group">
+    <span class="g-label">SCM_RIGHTS</span>
+    <div class="g-row">
+      <div class="flow-node"><span class="k">api</span><span class="v">api-1</span><span class="s">rawhttp</span></div>
+      <div class="flow-node"><span class="k">api</span><span class="v">api-2</span><span class="s">rawhttp</span></div>
     </div>
   </div>
-  <div class="arch-arrow" aria-hidden="true"><svg width="34" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 34 16"><path d="M1 8h30M25 3l6 5-6 5"/></svg></div>
-  <div class="arch-node"><span class="arch-node-label">grid.bin</span><small>KD-tree · ~88 MB</small><span class="arch-node-code">PredictRaw</span></div>
+  <div class="flow-arrow" aria-hidden="true"><svg width="30" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 30 14"><path d="M1 7h26M22 3l5 4-5 4"/></svg></div>
+  <div class="flow-node"><span class="k">index</span><span class="v">grid.bin</span><span class="s">KD-tree · ~88 MB</span></div>
 </div>
 
 ## Load balancer sem proxy

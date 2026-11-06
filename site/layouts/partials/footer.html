@@ -1,31 +1,30 @@
-<footer class="site-footer">
-  <div class="container footer-inner">
-    <div class="footer-brand">
-      <span class="logo-bracket">&gt;_</span><span class="logo-text">fraudctl</span>
+<footer class="foot">
+  <div class="foot-inner">
+    <div class="foot-brand">
+      <a class="brand" href="{{ .Site.Home.RelPermalink }}">
+        <span class="brand-mark" aria-hidden="true">fc</span>
+        <span>fraudctl</span>
+      </a>
       <p>{{ i18n "footer.tagline" }}</p>
-      <p class="footer-license">
+      <p class="foot-license">
         <a href="{{ .Site.Params.license_url }}" target="_blank" rel="noopener noreferrer">{{ i18n "footer.license" }}</a>
         — © {{ now.Format "2006" }} {{ .Site.Params.author }}
       </p>
     </div>
-    <div class="footer-links">
-      <div class="footer-col">
-        <p class="footer-col-title">{{ i18n "footer.project" }}</p>
-        <a href="{{ .Site.Params.github }}" target="_blank" rel="noopener">{{ i18n "footer.github" }}</a>
-        <a href="{{ .Site.Params.github }}/issues" target="_blank" rel="noopener">{{ i18n "footer.issues" }}</a>
-        <a href="{{ .Site.Params.rinha }}" target="_blank" rel="noopener">{{ i18n "footer.rinha" }}</a>
-      </div>
-      <div class="footer-col">
-        <p class="footer-col-title">{{ i18n "footer.docs" }}</p>
-        <a href="{{ "docs/" | relURL }}">{{ i18n "docs.label" }}</a>
-        <a href="{{ "docs/arquitetura/" | relURL }}">{{ "Arquitetura" }}</a>
-        <a href="{{ "docs/performance/" | relURL }}">{{ "Performance" }}</a>
-      </div>
-      <div class="footer-col">
-        <p class="footer-col-title">{{ i18n "footer.more" }}</p>
-        <a href="{{ .Site.Params.linkedin }}" target="_blank" rel="noopener">{{ i18n "footer.linkedin" }}</a>
-        <a href="{{ .Site.Params.rinha }}" target="_blank" rel="noopener">{{ i18n "nav.rinha" }}</a>
-      </div>
+
+    <div class="foot-col">
+      <h4>{{ i18n "footer.project" }}</h4>
+      <a href="{{ .Site.Params.github }}" target="_blank" rel="noopener">{{ i18n "footer.github" }}</a>
+      <a href="{{ .Site.Params.github }}/issues" target="_blank" rel="noopener">{{ i18n "footer.issues" }}</a>
+      <a href="{{ .Site.Params.rinha }}" target="_blank" rel="noopener">{{ i18n "footer.rinha" }}</a>
+    </div>
+
+    <div class="foot-col">
+      <h4>{{ i18n "footer.docs" }}</h4>
+      <a href="{{ "docs/" | relURL }}">{{ i18n "docs.label" }}</a>
+      <a href="{{ "docs/arquitetura/" | relURL }}">Arquitetura</a>
+      <a href="{{ "docs/performance/" | relURL }}">Performance</a>
+      <a href="{{ .Site.Params.linkedin }}" target="_blank" rel="noopener">{{ i18n "footer.linkedin" }}</a>
     </div>
   </div>
 </footer>
