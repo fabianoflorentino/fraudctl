@@ -15,17 +15,19 @@
       <a class="nav-link" href="{{ .URL }}"{{ if $active }} aria-current="page"{{ end }}>{{ .Name }}</a>
       {{ end }}
       <a class="nav-gh" href="{{ .Site.Params.github }}" target="_blank" rel="noopener">{{ i18n "nav.github" }} ↗</a>
-      {{ if .IsTranslated }}
-        {{ range .Translations }}
-        <a class="lang-switch" href="{{ .RelPermalink }}" hreflang="{{ .Language.Lang }}" lang="{{ .Language.Locale }}">{{ .Language.Label }}</a>
-        {{ end }}
-      {{ else }}
+      {{ $current := .Site.Language.Lang }}
+      <div class="lang-toggle" role="group" aria-label="{{ i18n "nav.language" }}">
         {{ range .Site.Sites }}
-          {{ if ne .Language.Lang $.Site.Language.Lang }}
-          <a class="lang-switch" href="{{ .Home.RelPermalink }}" hreflang="{{ .Language.Lang }}" lang="{{ .Language.Locale }}">{{ .Language.Label }}</a>
-          {{ end }}
+        {{ $site := . }}
+        {{ $lang := .Language.Lang }}
+        {{ $href := .Home.RelPermalink }}
+        {{ if eq $lang $current }}{{ $href = $.RelPermalink }}{{ end }}
+        {{ range $.Translations }}
+          {{ if eq .Language.Lang $lang }}{{ $href = .RelPermalink }}{{ end }}
         {{ end }}
-      {{ end }}
+        <a class="lang-option{{ if eq $lang $current }} is-active{{ end }}" href="{{ $href }}" hreflang="{{ $lang }}" lang="{{ $site.Language.Locale }}"{{ if eq $lang $current }} aria-current="true"{{ end }}>{{ upper $lang }}</a>
+        {{ end }}
+      </div>
     </nav>
   </div>
 </header>

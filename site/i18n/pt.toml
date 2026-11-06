@@ -4,6 +4,7 @@ github = "GitHub"
 rinha = "Rinha 2026"
 logo_home = "fraudctl — página inicial"
 back_to_top = "Voltar ao topo"
+language = "Idioma"
 
 [hero]
 badge = "Rinha de Backend 2026"

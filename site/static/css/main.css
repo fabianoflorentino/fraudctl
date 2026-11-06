@@ -192,17 +192,24 @@ table { border-collapse: collapse; width: 100%; }
 }
 .nav-gh:hover { color: var(--mint); border-color: var(--mint); }
 
-.lang-switch {
+.lang-toggle {
+  display: inline-flex;
+  align-items: center;
   margin-left: 0.35rem;
-  padding: 0.4rem 0.55rem;
+  padding: 2px;
   border: 1px solid var(--line);
   border-radius: 8px;
   font-family: var(--font-mono);
-  font-size: 0.68rem;
-  color: var(--muted);
-  transition: color var(--ease), border-color var(--ease);
+  font-size: 0.66rem;
 }
-.lang-switch:hover { color: var(--mint); border-color: var(--mint); }
+.lang-option {
+  padding: 0.32rem 0.45rem;
+  border-radius: 6px;
+  color: var(--muted-2);
+  transition: color var(--ease), background var(--ease);
+}
+.lang-option:hover { color: var(--ink); }
+.lang-option.is-active { color: var(--mint); background: var(--mint-dim); }
 
 .burger {
   display: none;
