@@ -16,18 +16,21 @@
       {{ end }}
       <a class="nav-gh" href="{{ .Site.Params.github }}" target="_blank" rel="noopener">{{ i18n "nav.github" }} ↗</a>
       {{ $current := .Site.Language.Lang }}
-      <div class="lang-toggle" role="group" aria-label="{{ i18n "nav.language" }}">
-        {{ range .Site.Sites }}
-        {{ $site := . }}
-        {{ $lang := .Language.Lang }}
-        {{ $href := .Home.RelPermalink }}
-        {{ if eq $lang $current }}{{ $href = $.RelPermalink }}{{ end }}
-        {{ range $.Translations }}
-          {{ if eq .Language.Lang $lang }}{{ $href = .RelPermalink }}{{ end }}
-        {{ end }}
-        <a class="lang-option{{ if eq $lang $current }} is-active{{ end }}" href="{{ $href }}" hreflang="{{ $lang }}" lang="{{ $site.Language.Locale }}"{{ if eq $lang $current }} aria-current="true"{{ end }}>{{ upper $lang }}</a>
-        {{ end }}
-      </div>
+      {{ $other := .Site.Home }}
+      {{ range .Site.Sites }}
+        {{ if ne .Language.Lang $current }}{{ $other = . }}{{ end }}
+      {{ end }}
+      {{ $href := $other.Home.RelPermalink }}
+      {{ range .Translations }}
+        {{ if eq .Language.Lang $other.Language.Lang }}{{ $href = .RelPermalink }}{{ end }}
+      {{ end }}
+      <a class="lang-switch{{ if eq $current "en" }} is-en{{ end }}" href="{{ $href }}" hreflang="{{ $other.Language.Lang }}" lang="{{ $other.Language.Locale }}" aria-label="{{ i18n "nav.switch_language" }}">
+        <span class="lang-switch-track">
+          <span class="lang-switch-knob" aria-hidden="true"></span>
+          <span class="lang-switch-label">PT</span>
+          <span class="lang-switch-label">EN</span>
+        </span>
+      </a>
     </nav>
   </div>
 </header>

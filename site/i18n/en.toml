@@ -5,6 +5,7 @@ rinha = "Rinha 2026"
 logo_home = "fraudctl — home"
 back_to_top = "Back to top"
 language = "Language"
+switch_language = "Switch to Portuguese"
 
 [hero]
 badge = "Rinha de Backend 2026"
