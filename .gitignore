@@ -3,6 +3,7 @@ bin
 nginx.conf
 *.out
 *.html
+!site/layouts/**/*.html
 test/
 **/*.test
 **/*.prof

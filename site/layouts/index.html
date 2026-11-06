@@ -1,0 +1,445 @@
+{{ define "main" }}
+{{ $r := hugo.Data.results }}
+<!-- ============================================================
+     HERO
+     ============================================================ -->
+<section class="hero" id="hero">
+  <canvas id="particle-canvas" aria-hidden="true"></canvas>
+  <div class="hero-inner container">
+    <div class="hero-text">
+      <a class="hero-badge reveal" href="{{ .Site.Params.rinha }}" target="_blank" rel="noopener">
+        <span class="badge-dot"></span>
+        <span>{{ i18n "hero.badge" }}</span>
+        <span class="badge-sep">·</span>
+        <span class="badge-rank">{{ i18n "hero.badge_rank" }}</span>
+      </a>
+      <h1 class="hero-headline reveal">
+        {{ i18n "hero.title_a" }}<br>
+        {{ i18n "hero.title_b" }} <span class="gradient-text">{{ i18n "hero.title_gradient" }}</span>
+      </h1>
+      <p class="hero-sub reveal">{{ i18n "hero.sub" }}</p>
+      <div class="hero-actions reveal">
+        <a href="#desafio" class="btn btn-primary">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+          {{ i18n "hero.cta_primary" }}
+        </a>
+        <a href="{{ .Site.Params.github }}" target="_blank" rel="noopener" class="btn btn-outline">
+          <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.44 9.8 8.21 11.39.6.11.82-.26.82-.58v-2.03c-3.34.73-4.04-1.61-4.04-1.61-.54-1.39-1.33-1.76-1.33-1.76-1.08-.74.08-.73.08-.73 1.2.08 1.82 1.23 1.82 1.23 1.06 1.81 2.78 1.29 3.46.98.11-.76.42-1.28.76-1.58-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.13-.3-.54-1.52.12-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 3-.4c1.02.005 2.04.14 3 .4 2.28-1.55 3.29-1.23 3.29-1.23.66 1.66.25 2.88.12 3.18.77.84 1.24 1.91 1.24 3.22 0 4.61-2.81 5.63-5.48 5.93.43.37.81 1.1.81 2.22v3.29c0 .32.21.7.82.58C20.56 21.8 24 17.3 24 12 24 5.37 18.63 0 12 0z"/></svg>
+          {{ i18n "hero.cta_secondary" }}
+        </a>
+      </div>
+      <div class="hero-install reveal">
+        <div class="install-snippet">
+          <code>docker compose up -d</code>
+          <button class="copy-btn" data-copy="docker compose up -d" aria-label="Copiar comando">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="chip-row reveal">
+        {{ range $r.stack }}        <span class="chip chip-primary">{{ . }}</span>{{ end }}
+        <span class="chip">3M vetores</span>
+      </div>
+    </div>
+
+    <div class="hero-terminal reveal-right">
+      <div class="terminal-window">
+        <div class="terminal-chrome">
+          <div class="terminal-dots">
+            <span class="dot dot-red"></span>
+            <span class="dot dot-yellow"></span>
+            <span class="dot dot-green"></span>
+          </div>
+          <div class="terminal-title">{{ i18n "hero.terminal_title" }}</div>
+        </div>
+        <div class="terminal-body">
+          <div class="term-line"><span class="term-prompt">$</span><span class="term-cmd">curl -s localhost:9999/fraud-score -d @tx.json</span></div>
+          <div class="term-line"><span class="term-dim">{"approved":</span><span class="term-err">false</span><span class="term-dim">,"fraud_score":</span><span class="term-num">0.6</span><span class="term-dim">}</span></div>
+          <div class="term-gap"></div>
+          <div class="term-line"><span class="term-prompt">$</span><span class="term-cmd">k6 run load-test.js</span></div>
+          <div class="term-line"><span class="term-dim">checks.........................:</span> <span class="term-ok">100.00%</span> <span class="term-dim">&#10003; 50000 &#10007; 0</span></div>
+          <div class="term-line"><span class="term-dim">http_req_failed...............:</span> <span class="term-ok">0.00%</span></div>
+          <div class="term-line"><span class="term-dim">http_req_duration..............:</span> <span class="term-ok">p(99)=1.16ms</span></div>
+          <div class="term-line"><span class="term-dim">fraud / legit.................:</span> <span class="term-num">15038 / 34962</span></div>
+          <div class="term-line"><span class="term-dim">alloc.........................:</span> <span class="term-ok">0 B/op</span></div>
+          <div class="term-line"><span class="term-dim">index.........................:</span> <span class="term-num">grid.bin · 88 MB</span></div>
+          <div class="term-gap"></div>
+          <div class="term-line"><span class="term-prompt">$</span><span class="term-cursor"></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="hero-scroll-hint" aria-hidden="true"><span></span></div>
+</section>
+
+<!-- ============================================================
+     STATS
+     ============================================================ -->
+<section class="stats-strip">
+  <div class="container">
+    <div class="stats-grid">
+      <div class="stat-card reveal">
+        <div class="stat-value accent">{{ $r.rank }}<span class="unit">/ {{ $r.participants }}</span></div>
+        <div class="stat-label">{{ i18n "stats.rank_label" }}</div>
+        <div class="stat-note">{{ i18n "stats.rank_note" }}</div>
+      </div>
+      <div class="stat-card reveal">
+        <div class="stat-value accent">{{ $r.score_display }}<span class="unit">/ {{ $r.score_max }}</span></div>
+        <div class="stat-label">{{ i18n "stats.score_label" }}</div>
+        <div class="stat-note">{{ i18n "stats.score_note" }}</div>
+      </div>
+      <div class="stat-card reveal">
+        <div class="stat-value">{{ $r.p99_ms_display }}<span class="unit">ms</span></div>
+        <div class="stat-label">{{ i18n "stats.p99_label" }}</div>
+        <div class="stat-note">{{ i18n "stats.p99_note" }}</div>
+      </div>
+      <div class="stat-card reveal">
+        <div class="stat-value">{{ $r.false_positives }}<span class="unit">erros</span></div>
+        <div class="stat-label">{{ i18n "stats.errors_label" }}</div>
+        <div class="stat-note">{{ i18n "stats.errors_note" }}</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     DESAFIO
+     ============================================================ -->
+<section class="features-section" id="desafio">
+  <div class="container">
+    <div class="section-header">
+      <span class="eyebrow">{{ i18n "challenge.eyebrow" }}</span>
+      <h2 class="section-title reveal">{{ i18n "challenge.title" }}</h2>
+      <p class="section-sub reveal">{{ i18n "challenge.sub" }}</p>
+    </div>
+    <div class="features-grid cols-4">
+      <div class="feature-card reveal">
+        <span class="feature-icon mono">{{ $r.vectors }}</span>
+        <h3>{{ i18n "challenge.c1_title" }}</h3>
+        <p>{{ i18n "challenge.c1_text" }}</p>
+      </div>
+      <div class="feature-card reveal">
+        <span class="feature-icon mono">{{ $r.dimensions }}D</span>
+        <h3>{{ i18n "challenge.c2_title" }}</h3>
+        <p>{{ i18n "challenge.c2_text" }}</p>
+      </div>
+      <div class="feature-card reveal">
+        <span class="feature-icon mono">K = {{ $r.k }}</span>
+        <h3>{{ i18n "challenge.c3_title" }}</h3>
+        <p>{{ i18n "challenge.c3_text" }}</p>
+      </div>
+      <div class="feature-card reveal">
+        <span class="feature-icon mono">{{ $r.cpu }} CPU</span>
+        <h3>{{ i18n "challenge.c4_title" }}</h3>
+        <p>{{ i18n "challenge.c4_text" }}</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     ARQUITETURA
+     ============================================================ -->
+<section class="modes-section" id="arquitetura">
+  <div class="container">
+    <div class="section-header">
+      <span class="eyebrow">{{ i18n "arch.eyebrow" }}</span>
+      <h2 class="section-title reveal">{{ i18n "arch.title" }}</h2>
+      <p class="section-sub reveal">{{ i18n "arch.sub" }}</p>
+    </div>
+
+    <div class="arch-diagram reveal">
+      <div class="arch-node">
+        <span class="arch-node-label">{{ i18n "arch.node_client" }}</span>
+        <span class="arch-node-code">HTTP</span>
+      </div>
+      <div class="arch-arrow" aria-hidden="true">
+        <svg width="34" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 34 16"><path d="M1 8h30M25 3l6 5-6 5"/></svg>
+      </div>
+      <div class="arch-node arch-node-sidecar">
+        <span class="arch-node-label">{{ i18n "arch.node_lb" }}</span>
+        <span class="arch-node-code">{{ i18n "arch.lb_code" }}</span>
+      </div>
+      <div class="arch-arrow" aria-hidden="true">
+        <svg width="34" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 34 16"><path d="M1 8h30M25 3l6 5-6 5"/></svg>
+      </div>
+      <div class="arch-pod">
+        <span class="arch-pod-title">{{ i18n "arch.fd_code" }}</span>
+        <div class="arch-pod-inner">
+          <div class="arch-node"><span class="arch-node-label">api-1</span><small>rawhttp</small></div>
+          <div class="arch-node"><span class="arch-node-label">api-2</span><small>rawhttp</small></div>
+        </div>
+      </div>
+      <div class="arch-arrow" aria-hidden="true">
+        <svg width="34" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 34 16"><path d="M1 8h30M25 3l6 5-6 5"/></svg>
+      </div>
+      <div class="arch-node">
+        <span class="arch-node-label">{{ i18n "arch.node_index" }}</span>
+        <small>{{ i18n "arch.node_index_sub" }}</small>
+        <span class="arch-node-code">{{ i18n "arch.index_code" }}</span>
+      </div>
+    </div>
+    <p class="arch-caption">{{ i18n "arch.caption" }}</p>
+
+    <div class="callout reveal">
+      <p>{{ i18n "arch.callout" }}</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     PIPELINE
+     ============================================================ -->
+<section class="features-section" id="pipeline">
+  <div class="container">
+    <div class="section-header">
+      <span class="eyebrow">{{ i18n "pipeline.eyebrow" }}</span>
+      <h2 class="section-title reveal">{{ i18n "pipeline.title" }}</h2>
+      <p class="section-sub reveal">{{ i18n "pipeline.sub" }}</p>
+    </div>
+    <div class="pipeline">
+      <div class="pipe-step reveal">
+        <h3>{{ i18n "pipeline.s1_title" }}</h3>
+        <p>{{ i18n "pipeline.s1_text" }}</p>
+      </div>
+      <div class="pipe-step reveal">
+        <h3>{{ i18n "pipeline.s2_title" }}</h3>
+        <p>{{ i18n "pipeline.s2_text" }}</p>
+      </div>
+      <div class="pipe-step reveal">
+        <h3>{{ i18n "pipeline.s3_title" }}</h3>
+        <p>{{ i18n "pipeline.s3_text" }}</p>
+      </div>
+      <div class="pipe-step reveal">
+        <h3>{{ i18n "pipeline.s4_title" }}</h3>
+        <p>{{ i18n "pipeline.s4_text" }}</p>
+      </div>
+      <div class="pipe-step reveal">
+        <h3>{{ i18n "pipeline.s5_title" }}</h3>
+        <p>{{ i18n "pipeline.s5_text" }}</p>
+      </div>
+      <div class="pipe-step reveal">
+        <h3>{{ i18n "pipeline.s6_title" }}</h3>
+        <p>{{ i18n "pipeline.s6_text" }}</p>
+      </div>
+      <div class="pipe-step reveal">
+        <h3>{{ i18n "pipeline.s7_title" }}</h3>
+        <p>{{ i18n "pipeline.s7_text" }}</p>
+      </div>
+      <div class="pipe-step reveal">
+        <h3>{{ i18n "pipeline.s8_title" }}</h3>
+        <p>{{ i18n "pipeline.s8_text" }}</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     PERFORMANCE
+     ============================================================ -->
+<section class="modes-section" id="performance">
+  <div class="container">
+    <div class="section-header">
+      <span class="eyebrow">{{ i18n "perf.eyebrow" }}</span>
+      <h2 class="section-title reveal">{{ i18n "perf.title" }}</h2>
+      <p class="section-sub reveal">{{ i18n "perf.sub" }}</p>
+    </div>
+
+    <div class="perf-layout">
+      <div class="panel reveal">
+        <h3>{{ i18n "perf.score_title" }}</h3>
+        <p>{{ $r.score_display }} de {{ $r.score_max }} pontos possíveis.</p>
+        <div class="bar-row">
+          <div class="bar-head"><span>{{ i18n "perf.score_latency" }}</span><b>{{ $r.p99_score_display }} / 3.000</b></div>
+          <div class="bar-track"><div class="bar-fill" style="width: 98%"></div></div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-head"><span>{{ i18n "perf.score_detection" }}</span><b>{{ $r.detection_score_display }} / 3.000</b></div>
+          <div class="bar-track"><div class="bar-fill alt" style="width: 100%"></div></div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-head"><span>{{ i18n "perf.score_total" }}</span><b>{{ $r.score_display }} / 6.000</b></div>
+          <div class="bar-track"><div class="bar-fill" style="width: 99%"></div></div>
+        </div>
+        <div class="callout" style="margin-bottom:0">
+          <p>{{ i18n "perf.callout" }}</p>
+        </div>
+      </div>
+
+      <div class="panel reveal">
+        <h3>{{ i18n "perf.table_title" }}</h3>
+        <table class="data-table">
+          <thead>
+            <tr><th>{{ i18n "perf.col_optimization" }}</th><th>{{ i18n "perf.col_impact" }}</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>{{ i18n "perf.opt1_name" }}</td><td>{{ i18n "perf.opt1_impact" }}</td></tr>
+            <tr><td>{{ i18n "perf.opt2_name" }}</td><td>{{ i18n "perf.opt2_impact" }}</td></tr>
+            <tr><td>{{ i18n "perf.opt3_name" }}</td><td>{{ i18n "perf.opt3_impact" }}</td></tr>
+            <tr><td>{{ i18n "perf.opt4_name" }}</td><td>{{ i18n "perf.opt4_impact" }}</td></tr>
+            <tr><td>{{ i18n "perf.opt5_name" }}</td><td>{{ i18n "perf.opt5_impact" }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     GO IDIOMÁTICO
+     ============================================================ -->
+<section class="features-section" id="go">
+  <div class="container">
+    <div class="section-header">
+      <span class="eyebrow">{{ i18n "go.eyebrow" }}</span>
+      <h2 class="section-title reveal">{{ i18n "go.title" }}</h2>
+      <p class="section-sub reveal">{{ i18n "go.sub" }}</p>
+    </div>
+    <div class="features-grid">
+      <div class="feature-card reveal">
+        <span class="feature-icon mono">0 B/op</span>
+        <h3>{{ i18n "go.c1_title" }}</h3>
+        <p>{{ i18n "go.c1_text" }}</p>
+      </div>
+      <div class="feature-card reveal">
+        <span class="feature-icon mono">sync.Pool</span>
+        <h3>{{ i18n "go.c2_title" }}</h3>
+        <p>{{ i18n "go.c2_text" }}</p>
+      </div>
+      <div class="feature-card reveal">
+        <span class="feature-icon mono">-race</span>
+        <h3>{{ i18n "go.c3_title" }}</h3>
+        <p>{{ i18n "go.c3_text" }}</p>
+      </div>
+      <div class="feature-card reveal">
+        <span class="feature-icon mono">CI</span>
+        <h3>{{ i18n "go.c4_title" }}</h3>
+        <p>{{ i18n "go.c4_text" }}</p>
+      </div>
+      <div class="feature-card reveal">
+        <span class="feature-icon mono">non-root</span>
+        <h3>{{ i18n "go.c5_title" }}</h3>
+        <p>{{ i18n "go.c5_text" }}</p>
+      </div>
+      <div class="feature-card reveal">
+        <span class="feature-icon mono">PGO</span>
+        <h3>{{ i18n "go.c6_title" }}</h3>
+        <p>{{ i18n "go.c6_text" }}</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     RESULTADOS
+     ============================================================ -->
+<section class="modes-section" id="resultados">
+  <div class="container">
+    <div class="section-header">
+      <span class="eyebrow">{{ i18n "results.eyebrow" }}</span>
+      <h2 class="section-title reveal">{{ i18n "results.title" }}</h2>
+      <p class="section-sub reveal">{{ i18n "results.sub" }}</p>
+    </div>
+
+    <div class="stats-grid" style="margin-bottom: 1.5rem;">
+      <div class="stat-card reveal">
+        <div class="stat-value accent">{{ $r.score_display }}</div>
+        <div class="stat-label">{{ i18n "stats.score_label" }}</div>
+      </div>
+      <div class="stat-card reveal">
+        <div class="stat-value">{{ $r.p99_ms_display }}<span class="unit">ms</span></div>
+        <div class="stat-label">{{ i18n "stats.p99_label" }}</div>
+      </div>
+      <div class="stat-card reveal">
+        <div class="stat-value">{{ $r.false_positives }}</div>
+        <div class="stat-label">{{ i18n "results.row_fp" }}</div>
+      </div>
+      <div class="stat-card reveal">
+        <div class="stat-value">{{ $r.http_errors }}</div>
+        <div class="stat-label">{{ i18n "results.row_http" }}</div>
+      </div>
+    </div>
+
+    <div class="panel reveal">
+      <h3>{{ i18n "results.table_title" }}</h3>
+      <table class="data-table">
+        <thead>
+          <tr><th>{{ i18n "results.metric" }}</th><th>{{ i18n "results.value" }}</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>{{ i18n "results.row_rank" }}</td><td class="num-accent">{{ $r.rank }} / {{ $r.participants }}</td></tr>
+          <tr><td>{{ i18n "results.row_score" }}</td><td class="num-accent">{{ $r.score_display }} / {{ $r.score_max }}</td></tr>
+          <tr><td>{{ i18n "results.row_p99" }}</td><td>{{ $r.p99_ms_display }} ms</td></tr>
+          <tr><td>{{ i18n "results.row_requests" }}</td><td>{{ $r.requests }}</td></tr>
+          <tr><td>{{ i18n "results.row_edge" }}</td><td>{{ $r.edge_cases }}</td></tr>
+          <tr><td>{{ i18n "results.row_fp" }}</td><td class="num-ok">{{ $r.false_positives }}</td></tr>
+          <tr><td>{{ i18n "results.row_fn" }}</td><td class="num-ok">{{ $r.false_negatives }}</td></tr>
+          <tr><td>{{ i18n "results.row_http" }}</td><td class="num-ok">{{ $r.http_errors }}</td></tr>
+          <tr><td>{{ i18n "results.row_commit" }}</td><td>{{ $r.submitted_commit }}</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="arch-caption" style="margin-top:1rem;">{{ i18n "results.note" }}</p>
+  </div>
+</section>
+
+<!-- ============================================================
+     TIMELINE
+     ============================================================ -->
+<section class="features-section" id="licoes">
+  <div class="container">
+    <div class="section-header">
+      <span class="eyebrow">{{ i18n "timeline.eyebrow" }}</span>
+      <h2 class="section-title reveal">{{ i18n "timeline.title" }}</h2>
+      <p class="section-sub reveal">{{ i18n "timeline.sub" }}</p>
+    </div>
+    <div class="timeline">
+      <div class="tl-item dim reveal">
+        <span class="tl-tag">{{ i18n "timeline.tag_dropped" }}</span>
+        <div class="tl-title">{{ i18n "timeline.t1_title" }}</div>
+        <p class="tl-text">{{ i18n "timeline.t1_text" }}</p>
+      </div>
+      <div class="tl-item reveal">
+        <span class="tl-tag">{{ i18n "timeline.tag_kept" }}</span>
+        <div class="tl-title">{{ i18n "timeline.t2_title" }}</div>
+        <p class="tl-text">{{ i18n "timeline.t2_text" }}</p>
+      </div>
+      <div class="tl-item reveal">
+        <span class="tl-tag">{{ i18n "timeline.tag_kept" }}</span>
+        <div class="tl-title">{{ i18n "timeline.t3_title" }}</div>
+        <p class="tl-text">{{ i18n "timeline.t3_text" }}</p>
+      </div>
+      <div class="tl-item reveal">
+        <span class="tl-tag">{{ i18n "timeline.tag_kept" }}</span>
+        <div class="tl-title">{{ i18n "timeline.t4_title" }}</div>
+        <p class="tl-text">{{ i18n "timeline.t4_text" }}</p>
+      </div>
+      <div class="tl-item dim reveal">
+        <span class="tl-tag">{{ i18n "timeline.tag_dropped" }}</span>
+        <div class="tl-title">{{ i18n "timeline.t5_title" }}</div>
+        <p class="tl-text">{{ i18n "timeline.t5_text" }}</p>
+      </div>
+      <div class="tl-item reveal">
+        <span class="tl-tag">{{ i18n "timeline.tag_cleanup" }}</span>
+        <div class="tl-title">{{ i18n "timeline.t6_title" }}</div>
+        <p class="tl-text">{{ i18n "timeline.t6_text" }}</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     CTA
+     ============================================================ -->
+<section class="cta-section">
+  <div class="container cta-inner">
+    <h2>{{ i18n "cta.title" }}</h2>
+    <p>{{ i18n "cta.text" }}</p>
+    <div class="cta-actions">
+      <a href="{{ .Site.Params.github }}" target="_blank" rel="noopener" class="btn btn-primary">{{ i18n "cta.github" }}</a>
+      <a href="{{ "docs/" | relURL }}" class="btn btn-outline">{{ i18n "cta.docs" }}</a>
+      <a href="{{ .Site.Params.rinha }}" target="_blank" rel="noopener" class="btn btn-ghost">{{ i18n "cta.rinha" }}</a>
+    </div>
+  </div>
+</section>
+{{ end }}
