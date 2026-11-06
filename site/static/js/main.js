@@ -59,23 +59,6 @@
     });
   }
 
-  /* Botões de copiar. */
-  document.querySelectorAll("[data-copy]").forEach(function (button) {
-    button.addEventListener("click", function () {
-      const text = button.getAttribute("data-copy");
-      if (!text || !navigator.clipboard) return;
-      navigator.clipboard.writeText(text).then(function () {
-        const original = button.getAttribute("aria-label") || "";
-        button.classList.add("is-copied");
-        button.setAttribute("aria-label", "Copiado");
-        window.setTimeout(function () {
-          button.classList.remove("is-copied");
-          button.setAttribute("aria-label", original);
-        }, 1600);
-      });
-    });
-  });
-
   /* Voltar ao topo. */
   if (toTop) {
     toTop.addEventListener("click", function () {

@@ -21,9 +21,9 @@
 
     <div class="foot-col">
       <h4>{{ i18n "footer.docs" }}</h4>
-      <a href="{{ "docs/" | relURL }}">{{ i18n "docs.label" }}</a>
-      <a href="{{ "docs/arquitetura/" | relURL }}">Arquitetura</a>
-      <a href="{{ "docs/performance/" | relURL }}">Performance</a>
+      <a href="{{ "docs/" | relLangURL }}">{{ i18n "docs.label" }}</a>
+      <a href="{{ "docs/arquitetura/" | relLangURL }}">{{ i18n "footer.architecture" }}</a>
+      <a href="{{ "docs/performance/" | relLangURL }}">{{ i18n "footer.performance" }}</a>
       <a href="{{ .Site.Params.linkedin }}" target="_blank" rel="noopener">{{ i18n "footer.linkedin" }}</a>
     </div>
   </div>

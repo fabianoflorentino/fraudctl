@@ -4,7 +4,7 @@
   <aside class="doc-aside">
     <p class="doc-label">{{ i18n "docs.label" }}</p>
     <nav class="doc-nav" aria-label="{{ i18n "docs.label" }}">
-      <a href="{{ "docs/" | relURL }}" class="is-active">{{ .Title }}</a>
+      <a href="{{ "docs/" | relLangURL }}" class="is-active">{{ .Title }}</a>
       {{ range .Pages.ByWeight }}
       <a href="{{ .RelPermalink }}">{{ .Title }}</a>
       {{ end }}

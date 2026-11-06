@@ -1,12 +1,12 @@
 ---
 title: "Resultados"
-description: "Os números oficiais da Rinha de Backend 2026 e a composição do score do fraudctl."
+description: "Números oficiais da Rinha de Backend 2026, composição do score e leitura executiva do resultado."
 weight: 60
 ---
 
-Os números abaixo vêm de `final-results-2026.json`, publicado em [rinhadebackend.com.br](https://rinhadebackend.com.br/). A submissão avaliada foi o commit `e90aaa4`, imagem `fraudctl:v1.0.114`.
+## Resultado oficial
 
-## Colocação
+Os números abaixo são provenientes de `final-results-2026.json`, publicado em [rinhadebackend.com.br](https://rinhadebackend.com.br/). A submissão avaliada foi o commit `e90aaa4`, imagem `fraudctl:v1.0.114`.
 
 | Métrica | Valor |
 |---|---:|
@@ -27,19 +27,19 @@ Os números abaixo vêm de `final-results-2026.json`, publicado em [rinhadebacke
 | Detecção | 3.000 / 3.000 |
 | **Total** | **5.935,21 / 6.000** |
 
-A componente de detecção foi máxima porque não houve nenhum erro de decisão nem erro HTTP. A latência ficou logo acima de 1 ms, faixa em que o score satura em 3.000.
+A componente de detecção atingiu a pontuação máxima porque não houve erro de decisão nem erro HTTP. A latência ficou ligeiramente acima de 1 ms, faixa em que o score satura em 3.000.
 
-## O que isso significa
+## Leitura executiva
 
 - **Zero erros de decisão** em 50 mil requisições, incluindo 5.605 casos de borda.
 - **p99 de 1,16 ms** com 1 CPU e 350 MB no total.
 - **19ª colocação** entre 322 submissões válidas, à frente de soluções com mais recursos.
 
-A maior parte dos participantes que ficou acima saturou o score de latência (p99 ≤ 1 ms). O fraudctl chegou a 1,16 ms — perto o suficiente para garantir 2935 dos 3000 pontos, mas ainda com margem para explorar.
+A maior parte das submissões com pontuação superior saturou a componente de latência (p99 ≤ 1 ms). O fraudctl atingiu 1,16 ms — próximo o suficiente para garantir 2.935 dos 3.000 pontos, com margem para evolução.
 
 ## Próximos passos
 
-Com mais tempo, os caminhos naturais seriam:
+Com mais tempo de desenvolvimento, as frentes naturais seriam:
 
 - reduzir o p99 para abaixo de 1 ms;
 - medir o impacto real de um prefilter calibrado sem sacrificar exatidão;

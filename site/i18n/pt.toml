@@ -200,6 +200,8 @@ issues = "Issues"
 rinha = "Rinha 2026"
 linkedin = "LinkedIn"
 license = "MIT"
+architecture = "Arquitetura"
+performance = "Performance"
 
 [docs]
 label = "Documentação"

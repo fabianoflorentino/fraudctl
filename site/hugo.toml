@@ -1,14 +1,11 @@
 baseURL = "https://fraudctl.fabianoflorentino.dev/"
 title = "fraudctl"
-locale = "pt-BR"
 defaultContentLanguage = "pt"
+defaultContentLanguageInSubdir = false
 enableRobotsTXT = true
 disableKinds = ["taxonomy", "term"]
 
 [params]
-  description = "Detecção de fraude por busca vetorial em Go — 19º lugar na Rinha de Backend 2026."
-  tagline = "3 milhões de vetores. 1,16 ms. Zero erros."
-  subtitle = "Uma API em Go puro que transforma transações em vetores de 14 dimensões e busca os 5 vizinhos mais próximos entre 3 milhões de referências."
   author = "Fabiano Santos Florentino"
   github = "https://github.com/fabianoflorentino/fraudctl"
   linkedin = "https://www.linkedin.com/in/fabianosantosflorentino"
@@ -18,23 +15,56 @@ disableKinds = ["taxonomy", "term"]
   license = "MIT"
   license_url = "https://github.com/fabianoflorentino/fraudctl/blob/main/LICENSE"
 
-[menu]
-  [[menu.main]]
-    name = "Desafio"
-    url = "/#desafio"
+[languages]
+  [languages.pt]
+    label = "Português"
+    locale = "pt-BR"
     weight = 1
-  [[menu.main]]
-    name = "Arquitetura"
-    url = "/#arquitetura"
+    [languages.pt.params]
+      description = "Detecção de fraude por busca vetorial em Go — 19º lugar na Rinha de Backend 2026."
+      tagline = "3 milhões de vetores. 1,16 ms. Zero erros."
+      subtitle = "Uma API em Go puro que transforma transações em vetores de 14 dimensões e busca os 5 vizinhos mais próximos entre 3 milhões de referências."
+    [[languages.pt.menu.main]]
+      name = "Desafio"
+      url = "/#desafio"
+      weight = 1
+    [[languages.pt.menu.main]]
+      name = "Arquitetura"
+      url = "/#arquitetura"
+      weight = 2
+    [[languages.pt.menu.main]]
+      name = "Performance"
+      url = "/#performance"
+      weight = 3
+    [[languages.pt.menu.main]]
+      name = "Docs"
+      url = "/docs/"
+      weight = 4
+
+  [languages.en]
+    label = "English"
+    locale = "en-US"
     weight = 2
-  [[menu.main]]
-    name = "Performance"
-    url = "/#performance"
-    weight = 3
-  [[menu.main]]
-    name = "Docs"
-    url = "/docs/"
-    weight = 4
+    [languages.en.params]
+      description = "Vector search fraud detection in Go — 19th place at Rinha de Backend 2026."
+      tagline = "3 million vectors. 1.16 ms. Zero errors."
+      subtitle = "A pure-Go API that turns transactions into 14-dimensional vectors and searches the 5 nearest neighbors among 3 million references."
+    [[languages.en.menu.main]]
+      name = "Challenge"
+      url = "/en/#desafio"
+      weight = 1
+    [[languages.en.menu.main]]
+      name = "Architecture"
+      url = "/en/#arquitetura"
+      weight = 2
+    [[languages.en.menu.main]]
+      name = "Performance"
+      url = "/en/#performance"
+      weight = 3
+    [[languages.en.menu.main]]
+      name = "Docs"
+      url = "/en/docs/"
+      weight = 4
 
 [markup]
   [markup.highlight]
@@ -45,14 +75,3 @@ disableKinds = ["taxonomy", "term"]
   [markup.tableOfContents]
     startLevel = 2
     endLevel = 3
-
-# Idiomas: o bloco EN será habilitado na fase de tradução.
-# [languages]
-#   [languages.pt]
-#     languageName = "PT"
-#     weight = 1
-#     contentDir = "content"
-#   [languages.en]
-#     languageName = "EN"
-#     weight = 2
-#     contentDir = "content/en"

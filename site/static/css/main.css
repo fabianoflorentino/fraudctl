@@ -192,6 +192,18 @@ table { border-collapse: collapse; width: 100%; }
 }
 .nav-gh:hover { color: var(--mint); border-color: var(--mint); }
 
+.lang-switch {
+  margin-left: 0.35rem;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--muted);
+  transition: color var(--ease), border-color var(--ease);
+}
+.lang-switch:hover { color: var(--mint); border-color: var(--mint); }
+
 .burger {
   display: none;
   margin-left: auto;

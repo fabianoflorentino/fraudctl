@@ -1,5 +1,12 @@
 {{ define "main" }}
 {{ $r := hugo.Data.results }}
+{{ $en := eq .Site.Language.Lang "en" }}
+{{ $score := cond $en $r.score_display_en $r.score_display }}
+{{ $scoreMax := cond $en $r.score_max_en $r.score_max }}
+{{ $p99 := cond $en $r.p99_ms_display_en $r.p99_ms_display }}
+{{ $vectors := cond $en $r.vectors_en $r.vectors }}
+{{ $p99Score := cond $en $r.p99_score_display_en $r.p99_score_display }}
+{{ $detScore := cond $en $r.detection_score_display_en $r.detection_score_display }}
 
 <!-- ============================================================
      HERO
@@ -29,7 +36,7 @@
           <span>{{ i18n "band.rank" }}</span>
         </div>
         <div class="hero-fact">
-          <b>{{ $r.p99_ms_display }} ms</b>
+          <b>{{ $p99 }} ms</b>
           <span>{{ i18n "band.p99" }}</span>
         </div>
         <div class="hero-fact">
@@ -98,11 +105,11 @@
       <div class="band-label">{{ i18n "band.rank" }}</div>
     </div>
     <div class="band-item">
-      <div class="band-value">{{ $r.score_display }}</div>
+      <div class="band-value">{{ $score }}</div>
       <div class="band-label">{{ i18n "band.score" }}</div>
     </div>
     <div class="band-item">
-      <div class="band-value">{{ $r.p99_ms_display }} ms</div>
+      <div class="band-value">{{ $p99 }} ms</div>
       <div class="band-label">{{ i18n "band.p99" }}</div>
     </div>
     <div class="band-item">
@@ -110,7 +117,7 @@
       <div class="band-label">{{ i18n "band.errors" }}</div>
     </div>
     <div class="band-item">
-      <div class="band-value">{{ $r.vectors }}</div>
+      <div class="band-value">{{ $vectors }}</div>
       <div class="band-label">{{ i18n "band.vectors" }}</div>
     </div>
   </div>
@@ -132,7 +139,7 @@
     <div class="brief-grid reveal">
       <div class="brief">
         <p class="brief-label">dataset</p>
-        <p class="brief-value"><em>{{ $r.vectors }}</em> vetores</p>
+        <p class="brief-value"><em>{{ $vectors }}</em> {{ i18n "band.vectors" }}</p>
         <p>{{ i18n "challenge.c1_text" }}</p>
       </div>
       <div class="brief">
@@ -293,12 +300,12 @@
       <div class="score-card reveal">
         <div class="ring" style="--p: 99">
           <div class="ring-inner">
-            <b>{{ $r.score_display }}</b>
+            <b>{{ $score }}</b>
             <span>{{ i18n "perf.score_total" }}</span>
           </div>
         </div>
         <p class="score-meta">
-          {{ i18n "perf.score_latency" }} {{ $r.p99_score_display }} · {{ i18n "perf.score_detection" }} {{ $r.detection_score_display }}
+          {{ i18n "perf.score_latency" }} {{ $p99Score }} · {{ i18n "perf.score_detection" }} {{ $detScore }}
         </p>
       </div>
 
@@ -393,12 +400,12 @@
         <div class="ledger-row">
           <span class="ledger-label">{{ i18n "results.row_score" }}</span>
           <span class="ledger-leader"></span>
-          <span class="ledger-value is-accent">{{ $r.score_display }} / {{ $r.score_max }}</span>
+          <span class="ledger-value is-accent">{{ $score }} / {{ $scoreMax }}</span>
         </div>
         <div class="ledger-row">
           <span class="ledger-label">{{ i18n "results.row_p99" }}</span>
           <span class="ledger-leader"></span>
-          <span class="ledger-value">{{ $r.p99_ms_display }} ms</span>
+          <span class="ledger-value">{{ $p99 }} ms</span>
         </div>
         <div class="ledger-row">
           <span class="ledger-label">{{ i18n "results.row_requests" }}</span>
@@ -502,7 +509,7 @@
     <p>{{ i18n "cta.text" }}</p>
     <div class="cta-actions">
       <a class="btn btn-primary" href="{{ .Site.Params.github }}" target="_blank" rel="noopener">{{ i18n "cta.github" }}</a>
-      <a class="btn btn-line" href="{{ "docs/" | relURL }}">{{ i18n "cta.docs" }}</a>
+      <a class="btn btn-line" href="{{ "docs/" | relLangURL }}">{{ i18n "cta.docs" }}</a>
       <a class="btn btn-text" href="{{ .Site.Params.rinha }}" target="_blank" rel="noopener">{{ i18n "cta.rinha" }} ↗</a>
     </div>
   </div>

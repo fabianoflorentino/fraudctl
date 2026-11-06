@@ -4,13 +4,18 @@
 rank: 19
 participants: 322
 score_display: "5.935,21"
+score_display_en: "5,935.21"
 score_max: "6.000"
+score_max_en: "6,000"
 score_raw: 5935.207583061096
 p99_ms_display: "1,16"
+p99_ms_display_en: "1.16"
 p99_ms_raw: 1.1608935999999994
 p99_score_display: "2.935"
+p99_score_display_en: "2,935"
 p99_score_raw: 2935.207583061095
 detection_score_display: "3.000"
+detection_score_display_en: "3,000"
 detection_score_raw: 3000
 requests: 50000
 fraud_count: 15038
@@ -23,6 +28,7 @@ failure_rate: "0%"
 cpu: "1"
 memory_mb: 350
 vectors: "3.000.000"
+vectors_en: "3,000,000"
 dimensions: 14
 k: 5
 stack:
