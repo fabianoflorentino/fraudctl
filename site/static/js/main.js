@@ -47,15 +47,19 @@
 
       event.preventDefault();
 
+      const target = new URL(href, window.location.href);
+      target.searchParams.set("v", Date.now().toString(36));
+      const destination = target.pathname + target.search + target.hash;
+
       if (reduceMotion) {
-        window.location.href = href;
+        window.location.href = destination;
         return;
       }
 
       link.classList.toggle("is-en");
       link.classList.add("is-switching");
       window.setTimeout(function () {
-        window.location.href = href;
+        window.location.href = destination;
       }, 380);
     });
   });
