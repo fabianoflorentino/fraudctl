@@ -37,6 +37,29 @@
     });
   }
 
+  /* Switch de idioma: desliza o knob antes de navegar. */
+  document.querySelectorAll(".lang-switch").forEach(function (link) {
+    link.addEventListener("click", function (event) {
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      if (event.button !== 0) return;
+      const href = link.getAttribute("href");
+      if (!href) return;
+
+      event.preventDefault();
+
+      if (reduceMotion) {
+        window.location.href = href;
+        return;
+      }
+
+      link.classList.toggle("is-en");
+      link.classList.add("is-switching");
+      window.setTimeout(function () {
+        window.location.href = href;
+      }, 380);
+    });
+  });
+
   /* Reveal sob demanda. */
   const revealNodes = Array.from(document.querySelectorAll(".reveal"));
   if (reduceMotion || !("IntersectionObserver" in window)) {
