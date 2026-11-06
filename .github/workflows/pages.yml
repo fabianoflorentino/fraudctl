@@ -1,4 +1,4 @@
-name: Deploy site
+name: Site Build & Deploy
 
 on:
   push:
@@ -15,7 +15,7 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -28,8 +28,6 @@ jobs:
       - name: Configure Pages
         id: pages
         uses: actions/configure-pages@v6
-        with:
-          enablement: true
 
       - name: Setup Hugo
         uses: peaceiris/actions-hugo@v3
@@ -39,6 +37,8 @@ jobs:
 
       - name: Build
         working-directory: site
+        env:
+          HUGO_ENVIRONMENT: production
         run: hugo --minify --baseURL "${{ steps.pages.outputs.base_url }}/"
 
       - name: Upload artifact
@@ -51,9 +51,10 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     environment:
-      name: github-pages
+      name: github
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
+
