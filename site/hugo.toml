@@ -1,0 +1,58 @@
+baseURL = "https://fraudctl.fabianoflorentino.dev/"
+title = "fraudctl"
+locale = "pt-BR"
+defaultContentLanguage = "pt"
+enableRobotsTXT = true
+disableKinds = ["taxonomy", "term"]
+
+[params]
+  description = "Detecção de fraude por busca vetorial em Go — 19º lugar na Rinha de Backend 2026."
+  tagline = "3 milhões de vetores. 1,16 ms. Zero erros."
+  subtitle = "Uma API em Go puro que transforma transações em vetores de 14 dimensões e busca os 5 vizinhos mais próximos entre 3 milhões de referências."
+  author = "Fabiano Santos Florentino"
+  github = "https://github.com/fabianoflorentino/fraudctl"
+  linkedin = "https://www.linkedin.com/in/fabianosantosflorentino"
+  rinha = "https://rinhadebackend.com.br/"
+  edition = "Rinha de Backend 2026"
+  rank = "19º"
+  license = "MIT"
+  license_url = "https://github.com/fabianoflorentino/fraudctl/blob/main/LICENSE"
+
+[menu]
+  [[menu.main]]
+    name = "Desafio"
+    url = "/#desafio"
+    weight = 1
+  [[menu.main]]
+    name = "Arquitetura"
+    url = "/#arquitetura"
+    weight = 2
+  [[menu.main]]
+    name = "Performance"
+    url = "/#performance"
+    weight = 3
+  [[menu.main]]
+    name = "Docs"
+    url = "/docs/"
+    weight = 4
+
+[markup]
+  [markup.highlight]
+    style = "github-dark"
+    noClasses = false
+  [markup.goldmark.renderer]
+    unsafe = true
+  [markup.tableOfContents]
+    startLevel = 2
+    endLevel = 3
+
+# Idiomas: o bloco EN será habilitado na fase de tradução.
+# [languages]
+#   [languages.pt]
+#     languageName = "PT"
+#     weight = 1
+#     contentDir = "content"
+#   [languages.en]
+#     languageName = "EN"
+#     weight = 2
+#     contentDir = "content/en"
