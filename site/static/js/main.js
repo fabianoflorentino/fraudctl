@@ -86,6 +86,45 @@
     });
   }
 
+  /* Cartão de decisão do hero: encena o fluxo do POST /fraud-score. */
+  const verdict = document.querySelector(".verdict");
+  if (verdict) {
+    if (reduceMotion || !("IntersectionObserver" in window)) {
+      verdict.classList.add("is-playing");
+    } else {
+      const HOLD_MS = 7000;
+      const RESET_MS = 700;
+      let onScreen = false;
+      let timer = 0;
+
+      function replay() {
+        if (!onScreen) return;
+        verdict.classList.remove("is-playing");
+        timer = window.setTimeout(function () {
+          if (!onScreen) return;
+          verdict.classList.add("is-playing");
+          timer = window.setTimeout(replay, HOLD_MS);
+        }, RESET_MS);
+      }
+
+      const verdictObserver = new IntersectionObserver(
+        function (entries) {
+          entries.forEach(function (entry) {
+            onScreen = entry.isIntersecting;
+            window.clearTimeout(timer);
+            if (!onScreen) {
+              verdict.classList.remove("is-playing");
+              return;
+            }
+            replay();
+          });
+        },
+        { threshold: 0.3 }
+      );
+      verdictObserver.observe(verdict);
+    }
+  }
+
   /* Voltar ao topo. */
   if (toTop) {
     toTop.addEventListener("click", function () {
